@@ -1,5 +1,5 @@
-// Package auth 负责 JWT 的签发与校验。claims 携带学生身份，
-// 校验通过后由中间件注入租户上下文。
+// Package auth 负责 JWT 的签发与校验，配置与函数均为包级。
+// claims 携带学生身份，校验通过后由中间件注入租户上下文。
 package auth
 
 import (
@@ -19,48 +19,46 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// Manager 用 HS256 对称密钥签发与校验 token。
-type Manager struct {
+var (
 	secret []byte
 	issuer string
 	expire time.Duration
-}
+)
 
-func NewManager(cfg config.JWTConfig) *Manager {
-	return &Manager{
-		secret: []byte(cfg.Secret),
-		issuer: cfg.Issuer,
-		expire: time.Duration(cfg.ExpireHours) * time.Hour,
-	}
+// Init 注入 JWT 配置，须在签发与校验前调用。
+func Init(cfg config.JWTConfig) {
+	secret = []byte(cfg.Secret)
+	issuer = cfg.Issuer
+	expire = time.Duration(cfg.ExpireHours) * time.Hour
 }
 
 // Generate 为学生签发 token。
-func (m *Manager) Generate(studentID, classID string) (string, error) {
+func Generate(studentID, classID string) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		StudentID: studentID,
 		ClassID:   classID,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    m.issuer,
+			Issuer:    issuer,
 			Subject:   studentID,
 			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(m.expire)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(expire)),
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(m.secret)
+	return token.SignedString(secret)
 }
 
 // Parse 校验签名与有效期并返回 claims。
-func (m *Manager) Parse(tokenStr string) (*Claims, error) {
+func Parse(tokenStr string) (*Claims, error) {
 	var claims Claims
 	_, err := jwt.ParseWithClaims(tokenStr, &claims, func(t *jwt.Token) (any, error) {
 		// 只接受 HMAC 签名，防止算法混淆攻击。
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
-		return m.secret, nil
-	}, jwt.WithIssuer(m.issuer))
+		return secret, nil
+	}, jwt.WithIssuer(issuer))
 	if err != nil || claims.StudentID == "" {
 		return nil, errs.ErrInvalidToken
 	}

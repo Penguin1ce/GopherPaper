@@ -21,6 +21,7 @@ type Config struct {
 	Redis     RedisConfig  `toml:"redis"`
 	MQ        MQConfig     `toml:"mq"`
 	JWT       JWTConfig    `toml:"jwt"`
+	Mail      MailConfig   `toml:"mail"`
 }
 
 type ServerConfig struct {
@@ -85,6 +86,14 @@ type MQConfig struct {
 	GradeQueue string `toml:"grade_queue"` // 批改任务
 }
 
+// MailConfig SMTP 邮件配置，用于发送验证码等邮件。
+type MailConfig struct {
+	ServerMail string `toml:"server_mail"` // 发件邮箱
+	Host       string `toml:"smtp_host"`   // SMTP 服务器
+	Port       int    `toml:"smtp_port"`   // SMTP 端口，SSL 一般 465
+	Key        string `toml:"key"`         // 授权码或密码
+}
+
 // JWTConfig JWT 鉴权配置。学生登录后签发 token，请求时带
 // Authorization: Bearer <token>，中间件校验并取出租户身份。
 type JWTConfig struct {
@@ -122,5 +131,8 @@ func (c *Config) applyDefaults() {
 	}
 	if c.JWT.Issuer == "" {
 		c.JWT.Issuer = "gophercpp"
+	}
+	if c.Mail.Port == 0 {
+		c.Mail.Port = 465
 	}
 }

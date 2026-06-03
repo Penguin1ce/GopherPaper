@@ -14,7 +14,7 @@ import (
 )
 
 // JWTAuth 校验 Bearer token，把学生身份注入租户上下文供 RAG 隔离，失败返回 401。
-func JWTAuth(mgr *auth.Manager) gin.HandlerFunc {
+func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw := c.GetHeader(constant.HeaderAuthorization)
 		token, ok := bearer(raw)
@@ -24,7 +24,7 @@ func JWTAuth(mgr *auth.Manager) gin.HandlerFunc {
 			})
 			return
 		}
-		claims, err := mgr.Parse(token)
+		claims, err := auth.Parse(token)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dto.ErrorResponse{Error: err.Error()})
 			return

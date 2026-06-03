@@ -13,7 +13,7 @@ file = ""      # 留空输出到 stdout
 [models.intent]
 provider = "ollama"
 base_url = "http://localhost:11434"
-model = "qwen2.5:1.5b"
+model = "qwen2.5-coder:1.5b"
 
 # ── 下游 RAG / 出卷 / 批改 agent 的主力大模型：走 API ────────
 [models.chat]
@@ -61,3 +61,10 @@ grade_queue = "grade.submit"
 secret = "change-me-to-a-long-random-secret"  # 生产务必替换为强随机密钥
 issuer = "gophercpp"
 expire_hours = 240
+
+# ── SMTP 邮件：发送验证码等 ──────────────────────────────────
+[mail]
+server_mail = "noreply@example.com"  # 发件邮箱
+smtp_host = "smtp.example.com"       # SMTP 服务器
+smtp_port = 465                      # SSL 端口
+key = "your-smtp-auth-code"          # 授权码或密码

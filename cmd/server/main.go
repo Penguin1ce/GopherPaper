@@ -17,10 +17,12 @@ import (
 	"GopherCPP/internal/dao"
 	"GopherCPP/internal/factory"
 	"GopherCPP/internal/knowledge"
+	"GopherCPP/internal/model"
 	"GopherCPP/internal/mq"
 	"GopherCPP/internal/router"
 	"GopherCPP/internal/service"
 	"GopherCPP/internal/zlog"
+	"GopherCPP/pkg/utils"
 )
 
 func main() {
@@ -46,18 +48,18 @@ func run(cfgPath string) error {
 	ctx := context.Background()
 
 	// 2. 基础设施，均由 deploy/docker-compose.yml 提供
-	db, err := dao.NewMySQL(cfg.MySQL)
-	if err != nil {
+	if err := dao.InitMySQL(cfg.MySQL); err != nil {
 		return err
 	}
-	_ = db // 业务 DAO 后续注入，先保留连接句柄
-	zlog.Info("MySQL 已连接")
+	if err := model.AutoMigrate(dao.DB); err != nil {
+		return err
+	}
+	zlog.Info("MySQL 已连接，数据表已就绪")
 
-	rdb, err := dao.NewRedis(ctx, cfg.Redis)
-	if err != nil {
+	if err := dao.InitRedis(ctx, cfg.Redis); err != nil {
 		return err
 	}
-	defer rdb.Close()
+	defer dao.RDB.Close()
 	zlog.Info("Redis 已连接")
 
 	mqClient, err := mq.New(cfg.MQ)
@@ -90,16 +92,16 @@ func run(cfgPath string) error {
 	defer store.Close()
 	zlog.Info("Milvus 知识库已就绪")
 
-	// 5. 编排器：意图识别到 Branch 再到 rag/exam/grade
-	assistant, err := service.NewAssistant(ctx, intentModel, chatModel, store)
-	if err != nil {
+	// 5. 编排器：意图识别到 rag，出题/批改另走显式接口
+	if err := service.Init(ctx, intentModel, chatModel, store); err != nil {
 		return err
 	}
 	zlog.Info("助教编排器已编译")
 
-	// 6. JWT 与 HTTP 服务
-	jwtMgr := auth.NewManager(cfg.JWT)
-	engine := router.New(cfg.Server.Mode, jwtMgr, assistant)
+	// 6. JWT、邮件与 HTTP 服务
+	auth.Init(cfg.JWT)
+	utils.InitMail(cfg.Mail)
+	engine := router.Init(cfg.Server.Mode)
 	srv := &http.Server{Addr: cfg.Server.Addr, Handler: engine}
 
 	go func() {
