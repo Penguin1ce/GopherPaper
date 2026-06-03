@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"GopherCPP/internal/auth"
-	"GopherCPP/internal/dto"
+	"GopherCPP/internal/response"
 	"GopherCPP/internal/tenant"
 	"GopherCPP/pkg/constant"
 )
@@ -19,14 +19,12 @@ func JWTAuth() gin.HandlerFunc {
 		raw := c.GetHeader(constant.HeaderAuthorization)
 		token, ok := bearer(raw)
 		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, dto.ErrorResponse{
-				Error: "Authorization 头缺失或格式错误，应为 Bearer <token>",
-			})
+			response.Abort(c, http.StatusUnauthorized, "Authorization 头缺失或格式错误，应为 Bearer <token>")
 			return
 		}
 		claims, err := auth.Parse(token)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, dto.ErrorResponse{Error: err.Error()})
+			response.Abort(c, http.StatusUnauthorized, err.Error())
 			return
 		}
 		ctx := tenant.With(c.Request.Context(), tenant.Tenant{

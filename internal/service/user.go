@@ -1,0 +1,123 @@
+// 用户注册、登录与邮箱验证码下发。逻辑为包级函数，直接读写 dao/auth/utils。
+//
+//	注册 Register: 校验 Redis 中的邮箱验证码 → 落库 → 删验证码
+//	登录 Login:    校验学号密码 → 签发 JWT → 以邮箱前缀为键写入 Redis
+package service
+
+import (
+	"context"
+	"crypto/rand"
+	"errors"
+	"fmt"
+	"strings"
+
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
+
+	"GopherCPP/internal/auth"
+	"GopherCPP/internal/dao"
+	"GopherCPP/internal/dto"
+	"GopherCPP/internal/model"
+	"GopherCPP/pkg/constant"
+	"GopherCPP/pkg/errs"
+	"GopherCPP/pkg/utils"
+)
+
+// SendVerifyCode 生成验证码存入 Redis 并发到邮箱，有效期见 constant.VerifyCodeTTL。
+func SendVerifyCode(ctx context.Context, email string) error {
+	code := genCode()
+	if err := dao.SetTTL(ctx, codeKey(email), code, constant.VerifyCodeTTL); err != nil {
+		return fmt.Errorf("service: 存储验证码失败: %w", err)
+	}
+	return utils.SendMail(email, code)
+}
+
+// Register 校验邮箱验证码后创建用户，成功即删除验证码。
+func Register(ctx context.Context, req dto.RegisterRequest) error {
+	code, err := dao.Get(ctx, codeKey(req.Email))
+	if errors.Is(err, dao.ErrCacheMiss) {
+		return errs.ErrCodeExpired
+	}
+	if err != nil {
+		return fmt.Errorf("service: 读取验证码失败: %w", err)
+	}
+	if code != req.Code {
+		return errs.ErrCodeMismatch
+	}
+
+	var count int64
+	if err := dao.DB.WithContext(ctx).Model(&model.User{}).
+		Where("student_id = ? OR email = ?", req.StudentID, req.Email).
+		Count(&count).Error; err != nil {
+		return fmt.Errorf("service: 查询用户失败: %w", err)
+	}
+	if count > 0 {
+		return errs.ErrUserExists
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("service: 密码加密失败: %w", err)
+	}
+	user := &model.User{
+		StudentID:    req.StudentID,
+		Name:         req.Name,
+		Email:        req.Email,
+		ClassID:      req.ClassID,
+		PasswordHash: string(hash),
+	}
+	if err := dao.DB.WithContext(ctx).Create(user).Error; err != nil {
+		return fmt.Errorf("service: 创建用户失败: %w", err)
+	}
+	_, _ = dao.Del(ctx, codeKey(req.Email))
+	return nil
+}
+
+// Login 校验学号与密码，签发 JWT 并以邮箱前缀为键写入 Redis，返回 token 与用户。
+func Login(ctx context.Context, studentID, password string) (string, *model.User, error) {
+	var user model.User
+	err := dao.DB.WithContext(ctx).Where("student_id = ?", studentID).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", nil, errs.ErrUserNotFound
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("service: 查询用户失败: %w", err)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+		return "", nil, errs.ErrWrongPassword
+	}
+
+	token, err := auth.Generate(user.StudentID, user.ClassID)
+	if err != nil {
+		return "", nil, fmt.Errorf("service: 签发 token 失败: %w", err)
+	}
+	if err := dao.SetTTL(ctx, tokenKey(user.Email), token, auth.TTL()); err != nil {
+		return "", nil, fmt.Errorf("service: 存储 token 失败: %w", err)
+	}
+	return token, &user, nil
+}
+
+// genCode 生成 6 位数字验证码。
+func genCode() string {
+	const digits = "0123456789"
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	for i := range b {
+		b[i] = digits[int(b[i])%len(digits)]
+	}
+	return string(b)
+}
+
+// codeKey 验证码的 Redis 键，拼接完整邮箱。
+func codeKey(email string) string { return constant.RedisKeyVerifyCode + email }
+
+// tokenKey 登录 token 的 Redis 键，前缀取邮箱 @ 之前部分。
+func tokenKey(email string) string { return constant.RedisKeyUserToken + emailPrefix(email) }
+
+// emailPrefix 取邮箱 @ 之前的本地部分，无 @ 则返回原串。
+func emailPrefix(email string) string {
+	if i := strings.IndexByte(email, '@'); i > 0 {
+		return email[:i]
+	}
+	return email
+}

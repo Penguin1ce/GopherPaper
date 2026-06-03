@@ -21,7 +21,7 @@ func SendMail(email, code string) error {
 	m.SetHeader("From", mailCfg.ServerMail)
 	m.SetHeader("To", email)
 	m.SetHeader("Subject", "GopherCPP 验证码")
-	m.SetBody("text/html", "<h1>验证码</h1><p>你的验证码是 "+code+"，有效期 1 分钟。</p>")
+	m.SetBody("text/html", "<h1>验证码</h1><p>你的验证码是 "+code+"，有效期 5 分钟。</p>")
 
 	d := gomail.NewDialer(mailCfg.Host, mailCfg.Port, mailCfg.ServerMail, mailCfg.Key)
 	d.SSL = true

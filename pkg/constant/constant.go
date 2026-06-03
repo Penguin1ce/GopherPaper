@@ -1,6 +1,8 @@
 // Package constant 集中定义全项目共享的常量与枚举。
 package constant
 
+import "time"
+
 // Provider 标识模型组件来源。
 type Provider string
 
@@ -52,6 +54,15 @@ const (
 	StudentPartitionPrefix = "s_" // 学生私有 partition 名前缀
 	TopKPerSource          = 5    // 每个检索来源带回的片段数
 )
+
+// Redis 键前缀与时效。
+const (
+	RedisKeyVerifyCode = "verify_code:" // 邮箱验证码，键拼接邮箱
+	RedisKeyUserToken  = "jwt:"         // 登录 token，键拼接邮箱前缀
+)
+
+// VerifyCodeTTL 邮箱验证码有效期。
+const VerifyCodeTTL = 5 * time.Minute
 
 // IntentPrompt 是意图识别的 system prompt，只在聊天框答疑子类间分类。
 const IntentPrompt = `你是编程助教的意图分类器，判断学生提问属于以下哪一类答疑：

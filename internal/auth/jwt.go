@@ -32,6 +32,9 @@ func Init(cfg config.JWTConfig) {
 	expire = time.Duration(cfg.ExpireHours) * time.Hour
 }
 
+// TTL 返回 token 有效期，供 Redis 存储对齐过期时间。
+func TTL() time.Duration { return expire }
+
 // Generate 为学生签发 token。
 func Generate(studentID, classID string) (string, error) {
 	now := time.Now()
