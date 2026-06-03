@@ -12,7 +12,7 @@ const (
 )
 
 // IntentType 标识一次请求的处理路径。
-// concept/debug/review 是聊天框的答疑子类，由小模型分类；
+// concept/debug/review 是聊天框的答疑子类，由 Host 调度；
 // exam/grade 是显式动作，由前端按钮触发，不经分类器。
 type IntentType string
 
@@ -25,7 +25,7 @@ const (
 	IntentGrade IntentType = "grade" // 批改
 )
 
-// IsChat 判断是否为聊天框分类器可输出的答疑子类。
+// IsChat 判断是否为聊天框可调度的答疑子类。
 func (t IntentType) IsChat() bool {
 	switch t {
 	case IntentConcept, IntentDebug, IntentReview:
@@ -51,8 +51,30 @@ const (
 
 // 知识库相关。
 const (
-	StudentPartitionPrefix = "s_" // 学生私有 partition 名前缀
-	TopKPerSource          = 5    // 每个检索来源带回的片段数
+	DefaultKnowledgeCollection = "knowledge_chunks"
+	TopKKnowledge              = 8
+)
+
+type KnowledgeScope string
+
+const (
+	KnowledgeScopePublic  KnowledgeScope = "public"
+	KnowledgeScopePrivate KnowledgeScope = "private"
+)
+
+const (
+	MilvusFieldID             = "id"
+	MilvusFieldContent        = "content"
+	MilvusFieldVector         = "vector"
+	MilvusFieldMetadata       = "metadata"
+	MilvusFieldKnowledgeScope = "knowledge_scope"
+	MilvusFieldStudentID      = "student_id"
+	MilvusFieldDocID          = "doc_id"
+	MilvusFieldSourceFile     = "source_file"
+	MilvusFieldSourceURI      = "source_uri"
+	MilvusFieldPageNo         = "page_no"
+	MilvusFieldChunkIndex     = "chunk_index"
+	MilvusFieldCreatedAt      = "created_at"
 )
 
 // Redis 键前缀与时效。
@@ -93,6 +115,15 @@ const (
 
 参考资料：
 {context}`
+
+	HostPrompt = `你是 GopherCPP 编程助教的 Host 调度器。你的唯一任务是判断学生请求应该交给哪个专家处理。
+
+必须遵守：
+- 必须且只能调用一个最合适的工具，不要直接回答用户。
+- 不要把同一个请求拆给多个专家。
+- 学生想理解概念、语法、原理、用法时，调用 concept_tutor。
+- 学生贴出报错、异常、崩溃、编译失败、运行结果不对时，调用 debug_tutor。
+- 学生要求评审、优化、重构、改进代码时，调用 code_reviewer。`
 )
 
 // RAGPromptFor 按答疑子类返回 system prompt，未知子类回退到概念讲解。
