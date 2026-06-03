@@ -1,0 +1,63 @@
+# GopherCPP 智能编程助教 —— 配置示例
+# 复制为 config/config.toml 后修改（config.toml 已被 .gitignore 忽略）
+
+[server]
+addr = ":8080"
+mode = "debug" # debug / release
+
+[log]
+level = "info" # debug / info / warn / error
+file = ""      # 留空输出到 stdout
+
+# ── 意图识别小模型：本地 ollama ──────────────────────────────
+[models.intent]
+provider = "ollama"
+base_url = "http://localhost:11434"
+model = "qwen2.5:1.5b"
+
+# ── 下游 RAG / 出卷 / 批改 agent 的主力大模型：走 API ────────
+[models.chat]
+provider = "openai"                    # openai 兼容网关
+base_url = "https://api.openai.com/v1"
+api_key = "sk-xxxx"
+model = "gpt-4o-mini"
+
+# ── RAG 向量化模型：本地 ollama ──────────────────────────────
+[embedding]
+provider = "ollama"
+base_url = "http://localhost:11434"
+model = "bge-m3"
+dim = 1024                          # 必须与 Milvus collection 的向量维度一致
+
+# ── Milvus 向量库 ────────────────────────────────────────────
+[milvus]
+address = "localhost:19530"
+username = ""
+password = ""
+shared_collection = "textbook_shared"  # 全体学生共享的教材知识库
+student_collection = "student_private" # 学生私有知识库（按 student_id 隔离）
+
+# ── MySQL：业务数据（学生/作业/试卷/批改记录）─────────────────
+[mysql]
+dsn = "gopher:gopher@tcp(localhost:3306)/gophercpp?charset=utf8mb4&parseTime=True&loc=Local"
+max_open_conns = 50
+max_idle_conns = 10
+conn_max_lifetime = 3600
+
+# ── Redis：会话/缓存/限流 ────────────────────────────────────
+[redis]
+addr = "localhost:6379"
+password = ""
+db = 0
+
+# ── 消息队列(RabbitMQ)：耗时任务异步化 ───────────────────────
+[mq]
+url = "amqp://gopher:gopher@localhost:5672/"
+exam_queue = "exam.generate"
+grade_queue = "grade.submit"
+
+# ── JWT 鉴权 ─────────────────────────────────────────────────
+[jwt]
+secret = "change-me-to-a-long-random-secret"  # 生产务必替换为强随机密钥
+issuer = "gophercpp"
+expire_hours = 240
