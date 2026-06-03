@@ -36,9 +36,9 @@ type LogConfig struct {
 
 // ModelsConfig 聚合了系统中用到的多个对话模型。
 type ModelsConfig struct {
-	// Intent 是做意图识别的小模型，本地 ollama。
+	// Intent 是旧版本地分类器配置，当前 Host 路由不再依赖。
 	Intent ModelConfig `toml:"intent"`
-	// Chat 是下游 RAG/出卷/批改 agent 使用的主力大模型，走 API。
+	// Chat 是 Host 路由与下游 RAG/出卷/批改 agent 使用的主力大模型，走 API。
 	Chat ModelConfig `toml:"chat"`
 }
 
@@ -56,11 +56,8 @@ type MilvusConfig struct {
 	Address  string `toml:"address"`  // host:port，如 localhost:19530
 	Username string `toml:"username"` // 可空
 	Password string `toml:"password"` // 可空
-	// SharedCollection 是所有租户共享的「教材知识库」collection。
-	SharedCollection string `toml:"shared_collection"`
-	// StudentCollection 是存放各学生私有知识库的 collection，
-	// 内部按 partition 做租户隔离。
-	StudentCollection string `toml:"student_collection"`
+	// Collection 存放公共知识和学生私有知识。
+	Collection string `toml:"collection"`
 }
 
 // MySQLConfig 业务数据库：学生、作业、试卷、批改记录等。
@@ -135,5 +132,8 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Mail.Port == 0 {
 		c.Mail.Port = 465
+	}
+	if c.Milvus.Collection == "" {
+		c.Milvus.Collection = constant.DefaultKnowledgeCollection
 	}
 }

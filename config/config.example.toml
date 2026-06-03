@@ -9,13 +9,7 @@ mode = "debug" # debug / release
 level = "info" # debug / info / warn / error
 file = ""      # 留空输出到 stdout
 
-# ── 意图识别小模型：本地 ollama ──────────────────────────────
-[models.intent]
-provider = "ollama"
-base_url = "http://localhost:11434"
-model = "qwen2.5-coder:1.5b"
-
-# ── 下游 RAG / 出卷 / 批改 agent 的主力大模型：走 API ────────
+# ── Host 路由 / RAG / 出卷 / 批改 agent 的主力大模型：走 API ───
 [models.chat]
 provider = "openai"                    # openai 兼容网关
 base_url = "https://api.openai.com/v1"
@@ -34,8 +28,7 @@ dim = 1024                          # 必须与 Milvus collection 的向量维�
 address = "localhost:19530"
 username = ""
 password = ""
-shared_collection = "textbook_shared"  # 全体学生共享的教材知识库
-student_collection = "student_private" # 学生私有知识库（按 student_id 隔离）
+collection = "knowledge_chunks" # 公共知识和学生私有知识共用，按字段隔离
 
 # ── MySQL：业务数据（学生/作业/试卷/批改记录）─────────────────
 [mysql]

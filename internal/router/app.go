@@ -35,7 +35,7 @@ func Init(mode string) *gin.Engine {
 		authed := api.Group("")
 		authed.Use(middleware.JWTAuth())
 		{
-			authed.POST("/chat", handler.Chat)   // 聊天答疑，经意图识别
+			authed.POST("/chat", handler.Chat)   // 聊天入口，Host 路由专家
 			authed.POST("/exam", handler.Exam)   // 出题按钮，结构化参数
 			authed.POST("/grade", handler.Grade) // 批改按钮，结构化参数
 			// 后续扩展：私有知识库上传等

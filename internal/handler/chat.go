@@ -6,13 +6,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"GopherCPP/internal/ai"
 	"GopherCPP/internal/dto"
 	"GopherCPP/internal/response"
-	"GopherCPP/internal/service"
 	"GopherCPP/internal/zlog"
 )
 
-// Chat 接收学生提问，经意图识别分到 concept/debug/review 后走 RAG 答疑。
+// Chat 接收学生提问，由 Host 路由到答疑专家。
 // POST /api/v1/chat
 func Chat(c *gin.Context) {
 	var req dto.ChatRequest
@@ -22,7 +22,7 @@ func Chat(c *gin.Context) {
 	}
 
 	// context 已由 JWT 中间件注入学生身份，RAG 检索依赖它。
-	reply, err := service.Chat(c.Request.Context(), req.Query)
+	reply, err := ai.Chat(c.Request.Context(), req.Query)
 	if err != nil {
 		zlog.Error("assistant chat failed", "err", err)
 		response.Fail(c, http.StatusInternalServerError, "处理失败")
@@ -31,7 +31,7 @@ func Chat(c *gin.Context) {
 	response.OK(c, reply2resp(reply))
 }
 
-// Exam 由前端出题按钮触发，带结构化参数直接出题，不经意图识别。
+// Exam 由前端出题按钮触发，带结构化参数直接出题。
 // POST /api/v1/exam
 func Exam(c *gin.Context) {
 	var req dto.ExamRequest
@@ -40,7 +40,7 @@ func Exam(c *gin.Context) {
 		return
 	}
 
-	reply, err := service.GenerateExam(c.Request.Context(), req.Topic, req.Count, req.Difficulty)
+	reply, err := ai.GenerateExam(c.Request.Context(), req.Topic, req.Count, req.Difficulty)
 	if err != nil {
 		zlog.Error("assistant exam failed", "err", err)
 		response.Fail(c, http.StatusInternalServerError, "出题失败")
@@ -49,7 +49,7 @@ func Exam(c *gin.Context) {
 	response.OK(c, reply2resp(reply))
 }
 
-// Grade 由前端批改按钮触发，带题目与作答直接批改，不经意图识别。
+// Grade 由前端批改按钮触发，带题目与作答直接批改。
 // POST /api/v1/grade
 func Grade(c *gin.Context) {
 	var req dto.GradeRequest
@@ -58,7 +58,7 @@ func Grade(c *gin.Context) {
 		return
 	}
 
-	reply, err := service.Grade(c.Request.Context(), buildSubmission(req))
+	reply, err := ai.Grade(c.Request.Context(), buildSubmission(req))
 	if err != nil {
 		zlog.Error("assistant grade failed", "err", err)
 		response.Fail(c, http.StatusInternalServerError, "批改失败")

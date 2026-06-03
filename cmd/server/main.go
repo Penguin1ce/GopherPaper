@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"GopherCPP/internal/ai"
 	"GopherCPP/internal/auth"
 	"GopherCPP/internal/config"
 	"GopherCPP/internal/dao"
@@ -20,7 +21,6 @@ import (
 	"GopherCPP/internal/model"
 	"GopherCPP/internal/mq"
 	"GopherCPP/internal/router"
-	"GopherCPP/internal/service"
 	"GopherCPP/internal/zlog"
 	"GopherCPP/pkg/utils"
 )
@@ -69,12 +69,8 @@ func run(cfgPath string) error {
 	defer mqClient.Close()
 	zlog.Info("RabbitMQ 已连接")
 
-	// 3. 模型工厂：意图小模型、主力大模型、embedding
+	// 3. 模型工厂：Host/API 主力大模型、embedding
 	mf := factory.NewModelFactory(cfg)
-	intentModel, err := mf.NewIntentModel(ctx)
-	if err != nil {
-		return err
-	}
 	chatModel, err := mf.NewChatModel(ctx)
 	if err != nil {
 		return err
@@ -85,15 +81,14 @@ func run(cfgPath string) error {
 	}
 
 	// 4. 多租户知识库
-	store, err := knowledge.NewStore(ctx, cfg.Milvus, embedder)
-	if err != nil {
+	if err := knowledge.Init(ctx, cfg.Milvus, embedder, cfg.Embedding.Dim); err != nil {
 		return err
 	}
-	defer store.Close()
+	defer knowledge.Close()
 	zlog.Info("Milvus 知识库已就绪")
 
-	// 5. 编排器：意图识别到 rag，出题/批改另走显式接口
-	if err := service.Init(ctx, intentModel, chatModel, store); err != nil {
+	// 5. 编排器：API 模型 Host 路由到各专家 agent，出题/批改显式接口保留
+	if err := ai.Init(ctx, chatModel); err != nil {
 		return err
 	}
 	zlog.Info("助教编排器已编译")
