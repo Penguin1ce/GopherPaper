@@ -64,7 +64,8 @@ expire_hours = 240
 
 # ── SMTP 邮件：发送验证码等 ──────────────────────────────────
 [mail]
-server_mail = "noreply@example.com"  # 发件邮箱
-smtp_host = "smtp.example.com"       # SMTP 服务器
-smtp_port = 465                      # SSL 端口
-key = "your-smtp-auth-code"          # 授权码或密码
+server_mail = "noreply@example.com"    # 发件邮箱
+smtp_host = "smtp.example.com"         # SMTP 服务器
+smtp_port = 465                        # SSL 端口
+key = "your-smtp-auth-code"            # 授权码或密码
+recipient_mail = "student@example.com" # 测试/默认收件邮箱

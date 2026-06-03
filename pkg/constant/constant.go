@@ -60,8 +60,8 @@ const IntentPrompt = `你是编程助教的意图分类器，判断学生提问�
 - review:  贴出可运行代码，想要评审、优化、改进建议
 
 只输出一个 JSON，禁止任何多余文字。格式：
-{"type":"concept|debug|review"}
-无法判断时输出 {"type":"concept"}。`
+{{"type":"concept|debug|review"}}
+无法判断时输出 {{"type":"concept"}}。`
 
 // 三类答疑 agent 的 system prompt，均带 {context} 检索占位符。
 const (
