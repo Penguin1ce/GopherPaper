@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/BurntSushi/toml"
+
+	"GopherCPP/pkg/constant"
 )
 
 // Config 是应用的全局配置，从 config/config.toml 加载。
@@ -39,22 +41,14 @@ type ModelsConfig struct {
 	Chat ModelConfig `toml:"chat"`
 }
 
-// Provider 标识一个模型组件的来源，工厂据此分发到不同实现。
-type Provider string
-
-const (
-	ProviderOllama Provider = "ollama" // 本地 ollama
-	ProviderOpenAI Provider = "openai" // openai 兼容 API
-)
-
-// ModelConfig 描述单个模型/embedding 组件的连接参数。
+// ModelConfig 描述单个模型或 embedding 组件的连接参数。
 // 同一个结构既能描述 ollama 也能描述 openai，由 Provider 决定工厂走哪条分支。
 type ModelConfig struct {
-	Provider Provider `toml:"provider"` // ollama / openai
-	BaseURL  string   `toml:"base_url"` // ollama: http://localhost:11434 ; openai: 网关地址
-	APIKey   string   `toml:"api_key"`  // openai 必填；ollama 留空
-	Model    string   `toml:"model"`    // 模型名，如 qwen2.5:1.5b / gpt-4o-mini / bge-m3
-	Dim      int      `toml:"dim"`      // 仅 embedding 用：向量维度，需与 Milvus collection 对齐
+	Provider constant.Provider `toml:"provider"` // ollama / openai
+	BaseURL  string            `toml:"base_url"` // ollama: http://localhost:11434 ; openai: 网关地址
+	APIKey   string            `toml:"api_key"`  // openai 必填，ollama 留空
+	Model    string            `toml:"model"`    // 模型名，如 qwen2.5:1.5b / bge-m3
+	Dim      int               `toml:"dim"`      // 仅 embedding 用，需与 Milvus collection 维度对齐
 }
 
 type MilvusConfig struct {

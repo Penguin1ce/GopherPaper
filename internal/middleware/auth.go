@@ -10,14 +10,13 @@ import (
 	"GopherCPP/internal/auth"
 	"GopherCPP/internal/dto"
 	"GopherCPP/internal/tenant"
+	"GopherCPP/pkg/constant"
 )
-
-const authHeader = "Authorization"
 
 // JWTAuth 校验 Bearer token，把学生身份注入租户上下文供 RAG 隔离，失败返回 401。
 func JWTAuth(mgr *auth.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		raw := c.GetHeader(authHeader)
+		raw := c.GetHeader(constant.HeaderAuthorization)
 		token, ok := bearer(raw)
 		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dto.ErrorResponse{
@@ -41,7 +40,7 @@ func JWTAuth(mgr *auth.Manager) gin.HandlerFunc {
 
 // bearer 从 Bearer xxx 中提取 token，大小写不敏感。
 func bearer(h string) (string, bool) {
-	const prefix = "bearer "
+	prefix := constant.BearerPrefix
 	if len(h) <= len(prefix) || !strings.EqualFold(h[:len(prefix)], prefix) {
 		return "", false
 	}

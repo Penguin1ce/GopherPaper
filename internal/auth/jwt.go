@@ -3,16 +3,14 @@
 package auth
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 
 	"GopherCPP/internal/config"
+	"GopherCPP/pkg/errs"
 )
-
-var ErrInvalidToken = errors.New("auth: token 无效或已过期")
 
 // Claims 是 JWT 载荷，标准声明加业务身份。
 type Claims struct {
@@ -64,7 +62,7 @@ func (m *Manager) Parse(tokenStr string) (*Claims, error) {
 		return m.secret, nil
 	}, jwt.WithIssuer(m.issuer))
 	if err != nil || claims.StudentID == "" {
-		return nil, ErrInvalidToken
+		return nil, errs.ErrInvalidToken
 	}
 	return &claims, nil
 }

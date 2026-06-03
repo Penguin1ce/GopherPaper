@@ -4,7 +4,8 @@ package tenant
 
 import (
 	"context"
-	"errors"
+
+	"GopherCPP/pkg/errs"
 )
 
 type ctxKey struct{}
@@ -15,8 +16,6 @@ type Tenant struct {
 	ClassID   string // 班级，预留按班级共享等扩展
 }
 
-var ErrNoTenant = errors.New("tenant: 上下文中缺少租户信息")
-
 // With 把租户信息注入 context。
 func With(ctx context.Context, t Tenant) context.Context {
 	return context.WithValue(ctx, ctxKey{}, t)
@@ -26,7 +25,7 @@ func With(ctx context.Context, t Tenant) context.Context {
 func From(ctx context.Context) (Tenant, error) {
 	t, ok := ctx.Value(ctxKey{}).(Tenant)
 	if !ok || t.StudentID == "" {
-		return Tenant{}, ErrNoTenant
+		return Tenant{}, errs.ErrNoTenant
 	}
 	return t, nil
 }
