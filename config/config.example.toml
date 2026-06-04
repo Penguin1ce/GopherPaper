@@ -1,4 +1,4 @@
-# GopherCPP 智能编程助教 —— 配置示例
+# GopherPaper 科研文献智能解析与知识服务系统 —— 配置示例
 # 复制为 config/config.toml 后修改（config.toml 已被 .gitignore 忽略）
 
 [server]
@@ -9,7 +9,14 @@ mode = "debug" # debug / release
 level = "info" # debug / info / warn / error
 file = ""      # 留空输出到 stdout
 
-# ── Host 路由 / RAG / 出卷 / 批改 agent 的主力大模型：走 API ───
+# ── Host 意图路由小模型：走 API，与下游解耦可单独换小模型 ──────
+[models.intent]
+provider = "openai"
+base_url = "https://api.openai.com/v1"
+api_key = "sk-xxxx"
+model = "gpt-4o-mini"
+
+# ── 下游问答 / 抽取 / 报告 agent 的主力大模型：走 API ─────────
 [models.chat]
 provider = "openai"                    # openai 兼容网关
 base_url = "https://api.openai.com/v1"
@@ -28,11 +35,19 @@ dim = 1024                          # 必须与 Milvus collection 的向量维�
 address = "localhost:19530"
 username = ""
 password = ""
-collection = "knowledge_chunks" # 公共知识和学生私有知识共用，按字段隔离
+collection = "knowledge_chunks" # 科研基础库与用户论文库共用，按字段隔离
 
-# ── MySQL：业务数据（学生/作业/试卷/批改记录）─────────────────
+# ── PDF 解析：MinerU 在线 API（异步任务制）───────────────────
+[parser]
+base_url = "https://mineru.net/api/v4"
+token = "your-mineru-api-token"
+timeout = 60       # 单次 HTTP 超时，秒
+poll_interval = 5  # 轮询任务状态间隔，秒
+poll_timeout = 600 # 轮询总超时，秒
+
+# ── MySQL：业务数据（用户/论文/元信息/会话）─────────────────
 [mysql]
-dsn = "gopher:gopher@tcp(localhost:3306)/gophercpp?charset=utf8mb4&parseTime=True&loc=Local"
+dsn = "gopher:gopher@tcp(localhost:3306)/gopherpaper?charset=utf8mb4&parseTime=True&loc=Local"
 max_open_conns = 50
 max_idle_conns = 10
 conn_max_lifetime = 3600
@@ -46,13 +61,13 @@ db = 0
 # ── 消息队列(RabbitMQ)：耗时任务异步化 ───────────────────────
 [mq]
 url = "amqp://gopher:gopher@localhost:5672/"
-exam_queue = "exam.generate"
-grade_queue = "grade.submit"
+parse_queue = "paper.parse" # PDF 解析入库流水线
+chat_queue = "chat.persist" # 会话消息异步入库
 
 # ── JWT 鉴权 ─────────────────────────────────────────────────
 [jwt]
 secret = "change-me-to-a-long-random-secret"  # 生产务必替换为强随机密钥
-issuer = "gophercpp"
+issuer = "gopherpaper"
 expire_hours = 240
 
 # ── SMTP 邮件：发送验证码等 ──────────────────────────────────
@@ -61,4 +76,4 @@ server_mail = "noreply@example.com"    # 发件邮箱
 smtp_host = "smtp.example.com"         # SMTP 服务器
 smtp_port = 465                        # SSL 端口
 key = "your-smtp-auth-code"            # 授权码或密码
-recipient_mail = "student@example.com" # 测试/默认收件邮箱
+recipient_mail = "user@example.com"    # 测试/默认收件邮箱
