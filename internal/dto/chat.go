@@ -1,29 +1,35 @@
 // Package dto 定义 HTTP 层的请求与响应结构。
 package dto
 
-// ChatRequest 是助教对话请求体。
-type ChatRequest struct {
+import "GopherPaper/internal/model"
+
+// CreateSessionRequest 创建会话，paper_id 与 title 可选。
+type CreateSessionRequest struct {
+	PaperID string `json:"paper_id"`
+	Title   string `json:"title"`
+}
+
+// SendMessageRequest 会话内发一轮消息。
+type SendMessageRequest struct {
 	Query string `json:"query" binding:"required"`
 }
 
-// ChatResponse 是助教的统一响应，出题/批改也复用。
+// SendMessageResponse 返回助教消息与本轮引用出处。
+type SendMessageResponse struct {
+	Message *model.Message `json:"message"`
+	Meta    map[string]any `json:"meta,omitempty"`
+}
+
+// ChatResponse 是问答的统一响应，研读报告也复用。
 type ChatResponse struct {
-	Intent  string         `json:"intent"`  // 命中的意图 concept/debug/review/exam/grade
+	Intent  string         `json:"intent"`  // 命中的问答子类 fact/summary/method
 	Content string         `json:"content"` // 文本回答
 	Meta    map[string]any `json:"meta,omitempty"`
 }
 
-// ExamRequest 是出题请求体，由前端按钮带结构化参数提交。
-type ExamRequest struct {
-	Topic      string `json:"topic" binding:"required"` // 知识点
-	Count      string `json:"count"`                    // 题量，缺省由 agent 兜底
-	Difficulty string `json:"difficulty"`               // 难度，缺省由 agent 兜底
-}
-
-// GradeRequest 是批改请求体。Question 可选，Answer 为学生作答。
-type GradeRequest struct {
-	Question string `json:"question"`
-	Answer   string `json:"answer" binding:"required"`
+// ReportRequest 是研读报告请求体，由前端按钮带报告类型触发。
+type ReportRequest struct {
+	Type string `json:"type" binding:"required"` // quickread/method/result/innovation/compare/future
 }
 
 // Response 是统一响应信封。Code 为 0 表示成功，非 0 时与 HTTP 状态一致；

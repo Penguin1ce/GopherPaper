@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"GopherCPP/internal/dto"
+	"GopherPaper/internal/dto"
 )
 
 // OK 写出成功响应，data 为业务载荷。

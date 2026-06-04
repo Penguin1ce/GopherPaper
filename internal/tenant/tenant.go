@@ -5,7 +5,7 @@ package tenant
 import (
 	"context"
 
-	"GopherCPP/pkg/errs"
+	"GopherPaper/pkg/errs"
 )
 
 type ctxKey struct{}

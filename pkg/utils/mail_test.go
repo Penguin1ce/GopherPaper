@@ -3,7 +3,7 @@ package utils
 //import (
 //	"testing"
 //
-//	"GopherCPP/internal/config"
+//	"GopherPaper/internal/config"
 //)
 //
 //const testConfigPath = "../../config/config.toml"

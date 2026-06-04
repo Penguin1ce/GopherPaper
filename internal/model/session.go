@@ -7,10 +7,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// Session 是一段多轮对话，归属某个学生，主键为 UUID 便于对外暴露。
+// Session 是一段多轮对话，归属某个用户，主键为 UUID 便于对外暴露。
+// PaperID 关联问答围绕的论文，可空表示跨库问答。
 type Session struct {
 	ID        string         `gorm:"size:36;primaryKey" json:"id"`
 	StudentID string         `gorm:"size:64;index;not null" json:"student_id"`
+	PaperID   string         `gorm:"size:36;index" json:"paper_id,omitempty"`
 	Title     string         `gorm:"size:128" json:"title"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

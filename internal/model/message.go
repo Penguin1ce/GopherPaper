@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"GopherCPP/pkg/constant"
+	"GopherPaper/pkg/constant"
 )
 
 // 消息角色，与 eino schema 保持一致。

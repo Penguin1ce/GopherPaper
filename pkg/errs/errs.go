@@ -12,4 +12,12 @@ var (
 	ErrUserExists    = errors.New("auth: 学号或邮箱已注册")
 	ErrUserNotFound  = errors.New("auth: 用户不存在")
 	ErrWrongPassword = errors.New("auth: 密码错误")
+
+	ErrSessionNotFound  = errors.New("chat: 会话不存在")
+	ErrSessionForbidden = errors.New("chat: 无权访问该会话")
+
+	ErrPaperNotFound  = errors.New("paper: 论文不存在")
+	ErrPaperForbidden = errors.New("paper: 无权访问该论文")
+	ErrInvalidFile    = errors.New("paper: 文件无效，仅支持 PDF")
+	ErrParseFailed    = errors.New("paper: PDF 解析失败")
 )

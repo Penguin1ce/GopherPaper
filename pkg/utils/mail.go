@@ -4,8 +4,8 @@ package utils
 import (
 	"gopkg.in/gomail.v2"
 
-	"GopherCPP/internal/config"
-	"GopherCPP/internal/zlog"
+	"GopherPaper/internal/config"
+	"GopherPaper/internal/zlog"
 )
 
 var mailCfg config.MailConfig
@@ -20,7 +20,7 @@ func SendMail(email, code string) error {
 	m := gomail.NewMessage()
 	m.SetHeader("From", mailCfg.ServerMail)
 	m.SetHeader("To", email)
-	m.SetHeader("Subject", "GopherCPP 验证码")
+	m.SetHeader("Subject", "GopherPaper 验证码")
 	m.SetBody("text/html", "<h1>验证码</h1><p>你的验证码是 "+code+"，有效期 5 分钟。</p>")
 
 	d := gomail.NewDialer(mailCfg.Host, mailCfg.Port, mailCfg.ServerMail, mailCfg.Key)

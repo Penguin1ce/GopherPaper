@@ -11,29 +11,60 @@ const (
 	ProviderOpenAI Provider = "openai"
 )
 
-// IntentType 标识一次请求的处理路径。
-// concept/debug/review 是聊天框的答疑子类，由 Host 调度；
-// exam/grade 是显式动作，由前端按钮触发，不经分类器。
+// IntentType 标识一次论文问答的处理路径。
+// fact/summary/method 是聊天框的问答子类，由 Host 调度；
+// 研读报告是显式动作，由前端按钮带 ReportType 触发，不经分类器。
 type IntentType string
 
 const (
-	IntentConcept IntentType = "concept" // 概念/语法讲解
-	IntentDebug   IntentType = "debug"   // 报错调试
-	IntentReview  IntentType = "review"  // 代码评审
-
-	IntentExam  IntentType = "exam"  // 出题
-	IntentGrade IntentType = "grade" // 批改
+	IntentFact    IntentType = "fact"    // 定位事实/数据/结论
+	IntentSummary IntentType = "summary" // 概括/解释/综述
+	IntentMethod  IntentType = "method"  // 方法/流程/实验设计解读
 )
 
-// IsChat 判断是否为聊天框可调度的答疑子类。
+// IsChat 判断是否为聊天框可调度的问答子类。
 func (t IntentType) IsChat() bool {
 	switch t {
-	case IntentConcept, IntentDebug, IntentReview:
+	case IntentFact, IntentSummary, IntentMethod:
 		return true
 	default:
 		return false
 	}
 }
+
+// ReportType 标识研读报告类型，由前端按钮触发，不经意图分类器。
+type ReportType string
+
+const (
+	ReportQuickRead  ReportType = "quickread"  // 论文速读
+	ReportMethod     ReportType = "method"     // 研究方法总结
+	ReportResult     ReportType = "result"     // 实验结果总结
+	ReportInnovation ReportType = "innovation" // 创新点与不足分析
+	ReportCompare    ReportType = "compare"    // 同类文献对比
+	ReportFuture     ReportType = "future"     // 后续研究建议
+)
+
+// Valid 判断报告类型是否合法。
+func (t ReportType) Valid() bool {
+	switch t {
+	case ReportQuickRead, ReportMethod, ReportResult, ReportInnovation, ReportCompare, ReportFuture:
+		return true
+	default:
+		return false
+	}
+}
+
+// PaperStatus 是论文从上传到就绪的解析状态机。
+type PaperStatus string
+
+const (
+	PaperUploaded  PaperStatus = "uploaded"  // 已上传待解析
+	PaperParsing   PaperStatus = "parsing"   // MinerU 解析中
+	PaperExtracted PaperStatus = "extracted" // 结构化抽取完成
+	PaperIndexed   PaperStatus = "indexed"   // 已分块入向量库
+	PaperReady     PaperStatus = "ready"     // 全流程就绪
+	PaperFailed    PaperStatus = "failed"    // 解析失败
+)
 
 // 主图节点名。
 const (
@@ -53,6 +84,11 @@ const (
 const (
 	DefaultKnowledgeCollection = "knowledge_chunks"
 	TopKKnowledge              = 8
+)
+
+// 多轮对话相关。
+const (
+	MaxContextMessages = 20 // 喂给模型的历史消息最大条数，超出只取最近的
 )
 
 type KnowledgeScope string
@@ -79,70 +115,125 @@ const (
 
 // Redis 键前缀与时效。
 const (
-	RedisKeyVerifyCode = "verify_code:" // 邮箱验证码，键拼接邮箱
-	RedisKeyUserToken  = "jwt:"         // 登录 token，键拼接邮箱前缀
+	RedisKeyVerifyCode  = "verify_code:"  // 邮箱验证码，键拼接邮箱
+	RedisKeyUserToken   = "jwt:"          // 登录 token，键拼接邮箱前缀
+	RedisKeyChatContext = "chat:ctx:"     // 会话上下文缓存，键拼接 sessionID
+	RedisKeyParseStatus = "paper:status:" // 论文解析状态缓存，键拼接 paperID
 )
 
 // VerifyCodeTTL 邮箱验证码有效期。
 const VerifyCodeTTL = 5 * time.Minute
 
-// IntentPrompt 是意图识别的 system prompt，只在聊天框答疑子类间分类。
-const IntentPrompt = `你是编程助教的意图分类器，判断学生提问属于以下哪一类答疑：
-- concept: 询问概念、语法、原理、用法等知识性问题
-- debug:   贴出报错或异常，想定位并修复 bug
-- review:  贴出可运行代码，想要评审、优化、改进建议
+// ChatContextTTL 会话上下文缓存有效期，须大于消费者落库的延迟窗口。
+const ChatContextTTL = time.Hour
+
+// IntentPrompt 是论文问答的意图分类 system prompt，只在问答子类间分类。
+const IntentPrompt = `你是科研文献问答助手的意图分类器，判断用户提问属于以下哪一类：
+- fact:    询问论文中的具体事实、数据、结论、数值、定义
+- summary: 想要对论文整体或某部分做概括、解释、综述
+- method:  关注研究方法、实验设计、技术流程、步骤细节
 
 只输出一个 JSON，禁止任何多余文字。格式：
-{{"type":"concept|debug|review"}}
-无法判断时输出 {{"type":"concept"}}。`
+{{"type":"fact|summary|method"}}
+无法判断时输出 {{"type":"summary"}}。`
 
-// 三类答疑 agent 的 system prompt，均带 {context} 检索占位符。
+// 三类问答 agent 的 system prompt，均带 {context} 检索占位符。
 const (
-	ConceptPrompt = `你是一位严谨的编程助教，负责讲解概念与语法。请优先依据下面的「参考资料」作答，
-资料不足时基于通用知识补充并说明。讲清原理，配最小可运行示例，避免空泛。
+	FactPrompt = `你是严谨的科研文献问答助手，负责定位论文中的事实、数据与结论。优先依据下面的「参考资料」作答，资料不足时明确说明，不要编造。
+回答务必简短直接：给出准确的事实/数值，并标明依据来自哪一段或哪一页。控制在 200 字以内。
 
 参考资料：
 {context}`
 
-	DebugPrompt = `你是一位编程助教，负责帮学生定位并修复报错。请结合下面的「参考资料」，
-先指出错误原因，再给出修正后的代码与验证方法，必要时点明易错点。
+	SummaryPrompt = `你是科研文献问答助手，负责概括与解释论文内容。结合下面的「参考资料」，用条理清晰的语言概括要点，避免堆砌细节。
+回答务必简短：抓主线，必要时分点。控制在 300 字以内。
 
 参考资料：
 {context}`
 
-	ReviewPrompt = `你是一位资深代码评审者。请结合下面的「参考资料」，从正确性、可读性、
-性能、风格四方面点评学生代码，给出可直接采纳的改进建议与示例。
+	MethodPrompt = `你是科研文献问答助手，负责解读研究方法与实验流程。结合下面的「参考资料」，按步骤讲清方法的关键设计、数据与流程。
+回答务必简短：聚焦方法本身，不展开无关背景。控制在 300 字以内。
 
 参考资料：
 {context}`
 
-	HostPrompt = `你是 GopherCPP 编程助教的 Host 调度器。你的唯一任务是判断学生请求应该交给哪个专家处理。
+	HostPrompt = `你是科研文献问答系统的 Host 调度器。你的唯一任务是判断用户请求应该交给哪个专家处理。
 
 必须遵守：
 - 必须且只能调用一个最合适的工具，不要直接回答用户。
 - 不要把同一个请求拆给多个专家。
-- 学生想理解概念、语法、原理、用法时，调用 concept_tutor。
-- 学生贴出报错、异常、崩溃、编译失败、运行结果不对时，调用 debug_tutor。
-- 学生要求评审、优化、重构、改进代码时，调用 code_reviewer。`
+- 用户询问论文里的具体事实、数据、结论、数值时，调用 fact_expert。
+- 用户想要概括、解释、综述论文内容时，调用 summary_expert。
+- 用户关注研究方法、实验设计、技术流程时，调用 method_expert。`
 )
 
-// RAGPromptFor 按答疑子类返回 system prompt，未知子类回退到概念讲解。
+// RAGPromptFor 按问答子类返回 system prompt，未知子类回退到概括。
 func RAGPromptFor(t IntentType) string {
 	switch t {
-	case IntentDebug:
-		return DebugPrompt
-	case IntentReview:
-		return ReviewPrompt
+	case IntentFact:
+		return FactPrompt
+	case IntentMethod:
+		return MethodPrompt
 	default:
-		return ConceptPrompt
+		return SummaryPrompt
 	}
 }
 
-// ExamPrompt 是出卷 agent 的 system prompt。
-const ExamPrompt = `你是编程课出题老师。根据要求生成练习题，覆盖知识点并控制难度。
-每题包含：题干、考察点、参考答案、评分要点。用清晰的 Markdown 输出。
-知识点：{topic}；题目数量：{count}；难度：{difficulty}`
+// ExtractPrompt 是结构化抽取 agent 的 system prompt，要求输出固定 schema 的 JSON。
+const ExtractPrompt = `你是科研论文结构化信息抽取器。阅读下面的论文正文，抽取关键信息并只输出一个 JSON，禁止任何多余文字。
+字段缺失时填空字符串或空数组，不要编造。格式：
+{{"title":"题目","authors":["作者"],"affiliations":["单位"],"abstract":"摘要","keywords":["关键词"],"research_questions":["研究问题"],"methods":"方法流程","experiments":"实验数据","results":"主要结果","innovations":["创新点"],"limitations":["局限性"],"future_work":["未来工作"]}}
 
-// GradePrompt 是批改 agent 的 system prompt。
-const GradePrompt = `你是编程作业批改老师。请阅读学生提交的内容，按正确性、可读性、复杂度三个维度评分，
-指出问题与改进建议，最后给出 0-100 的总分。用 Markdown 输出，先给分数再给评语。`
+论文正文：
+{context}`
+
+// 研读报告各类型的 system prompt，均带 {context} 论文检索片段占位符。
+const (
+	ReportQuickReadPrompt = `你是科研论文速读助手。基于下面的论文片段，生成一份速读报告：研究背景、核心问题、方法概要、主要结论、一句话总评。用清晰的 Markdown 输出，简明扼要。
+
+论文片段：
+{context}`
+
+	ReportMethodPrompt = `你是科研方法分析助手。基于下面的论文片段，总结研究方法：技术路线、关键步骤、数据与实验设置、方法优势。用 Markdown 输出。
+
+论文片段：
+{context}`
+
+	ReportResultPrompt = `你是实验结果分析助手。基于下面的论文片段，总结实验结果：主要指标、对比结论、关键数据、结果的支撑力度。用 Markdown 输出。
+
+论文片段：
+{context}`
+
+	ReportInnovationPrompt = `你是论文评议助手。基于下面的论文片段，分析创新点与不足：列出主要创新贡献，再客观指出局限性与潜在问题。用 Markdown 分两部分输出。
+
+论文片段：
+{context}`
+
+	ReportComparePrompt = `你是文献对比助手。基于下面的目标论文与同类文献片段，做对比说明：研究问题、方法、数据、结论的异同与各自优劣。用 Markdown 表格或分点输出。
+
+论文片段：
+{context}`
+
+	ReportFuturePrompt = `你是科研方向建议助手。基于下面的论文片段，给出后续研究建议：可延伸的问题、可改进的方法、潜在应用方向。用 Markdown 分点输出。
+
+论文片段：
+{context}`
+)
+
+// ReportPromptFor 按报告类型返回 system prompt，未知类型回退到速读。
+func ReportPromptFor(t ReportType) string {
+	switch t {
+	case ReportMethod:
+		return ReportMethodPrompt
+	case ReportResult:
+		return ReportResultPrompt
+	case ReportInnovation:
+		return ReportInnovationPrompt
+	case ReportCompare:
+		return ReportComparePrompt
+	case ReportFuture:
+		return ReportFuturePrompt
+	default:
+		return ReportQuickReadPrompt
+	}
+}

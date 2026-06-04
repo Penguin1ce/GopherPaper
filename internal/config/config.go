@@ -6,7 +6,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"GopherCPP/pkg/constant"
+	"GopherPaper/pkg/constant"
 )
 
 // Config 是应用的全局配置，从 config/config.toml 加载。
@@ -17,11 +17,21 @@ type Config struct {
 	Models    ModelsConfig `toml:"models"`
 	Embedding ModelConfig  `toml:"embedding"`
 	Milvus    MilvusConfig `toml:"milvus"`
+	Parser    ParserConfig `toml:"parser"`
 	MySQL     MySQLConfig  `toml:"mysql"`
 	Redis     RedisConfig  `toml:"redis"`
 	MQ        MQConfig     `toml:"mq"`
 	JWT       JWTConfig    `toml:"jwt"`
 	Mail      MailConfig   `toml:"mail"`
+}
+
+// ParserConfig 是 MinerU 在线 API 的连接参数，PDF 解析走异步任务制。
+type ParserConfig struct {
+	BaseURL      string `toml:"base_url"`      // MinerU API 根地址，默认 https://mineru.net/api/v4
+	Token        string `toml:"token"`         // API 密钥
+	Timeout      int    `toml:"timeout"`       // 单次 HTTP 超时，秒
+	PollInterval int    `toml:"poll_interval"` // 轮询任务状态间隔，秒
+	PollTimeout  int    `toml:"poll_timeout"`  // 轮询总超时，秒
 }
 
 type ServerConfig struct {
@@ -36,9 +46,9 @@ type LogConfig struct {
 
 // ModelsConfig 聚合了系统中用到的多个对话模型。
 type ModelsConfig struct {
-	// Intent 是旧版本地分类器配置，当前 Host 路由不再依赖。
+	// Intent 是 Host 意图路由模型，走 API 做 tool call 选专家，与下游解耦可单独换小模型。
 	Intent ModelConfig `toml:"intent"`
-	// Chat 是 Host 路由与下游 RAG/出卷/批改 agent 使用的主力大模型，走 API。
+	// Chat 是下游 RAG/抽取/报告 agent 使用的主力大模型，走 API。
 	Chat ModelConfig `toml:"chat"`
 }
 
@@ -60,7 +70,7 @@ type MilvusConfig struct {
 	Collection string `toml:"collection"`
 }
 
-// MySQLConfig 业务数据库：学生、作业、试卷、批改记录等。
+// MySQLConfig 业务数据库：用户、论文、元信息、会话等。
 type MySQLConfig struct {
 	DSN             string `toml:"dsn"` // user:pass@tcp(host:port)/db?charset=utf8mb4&parseTime=True&loc=Local
 	MaxOpenConns    int    `toml:"max_open_conns"`
@@ -75,12 +85,12 @@ type RedisConfig struct {
 	DB       int    `toml:"db"`
 }
 
-// MQConfig 消息队列，默认 RabbitMQ，用于出卷批改等耗时任务异步化。
+// MQConfig 消息队列，默认 RabbitMQ，用于 PDF 解析等耗时任务异步化。
 type MQConfig struct {
 	URL string `toml:"url"` // amqp://user:pass@host:port/
 	// 任务队列名，按业务划分。
-	ExamQueue  string `toml:"exam_queue"`  // 出卷任务
-	GradeQueue string `toml:"grade_queue"` // 批改任务
+	ParseQueue string `toml:"parse_queue"` // PDF 解析入库流水线
+	ChatQueue  string `toml:"chat_queue"`  // 会话消息入库
 }
 
 // MailConfig SMTP 邮件配置，用于发送验证码等邮件。
@@ -128,12 +138,30 @@ func (c *Config) applyDefaults() {
 		c.JWT.ExpireHours = 24
 	}
 	if c.JWT.Issuer == "" {
-		c.JWT.Issuer = "gophercpp"
+		c.JWT.Issuer = "gopherpaper"
 	}
 	if c.Mail.Port == 0 {
 		c.Mail.Port = 465
 	}
 	if c.Milvus.Collection == "" {
 		c.Milvus.Collection = constant.DefaultKnowledgeCollection
+	}
+	if c.MQ.ChatQueue == "" {
+		c.MQ.ChatQueue = "chat.persist"
+	}
+	if c.MQ.ParseQueue == "" {
+		c.MQ.ParseQueue = "paper.parse"
+	}
+	if c.Parser.BaseURL == "" {
+		c.Parser.BaseURL = "https://mineru.net/api/v4"
+	}
+	if c.Parser.Timeout == 0 {
+		c.Parser.Timeout = 60
+	}
+	if c.Parser.PollInterval == 0 {
+		c.Parser.PollInterval = 5
+	}
+	if c.Parser.PollTimeout == 0 {
+		c.Parser.PollTimeout = 600
 	}
 }
