@@ -5,7 +5,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"GopherCPP/pkg/constant"
+	"GopherPaper/pkg/constant"
 )
 
 // Reference 是一条召回片段的出处，回传前端渲染引用。

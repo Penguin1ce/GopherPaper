@@ -1,13 +1,17 @@
-// Package ai 编排助教的多 agent 路径，运行器与函数均为包级。
+// Package ai 编排论文问答的多 agent 路径，运行器按 userID 懒编译并缓存。
 //
-//	聊天 Chat: Host 使用 API 模型做 tool call 路由，只分发到 concept/debug/review 专家。
-//	出题 GenerateExam、批改 Grade: 显式接口带结构化参数直接调对应 agent。
+//	问答 Chat: Host 用该用户的意图模型做 tool call 路由，分发到 fact/summary/method 专家。
+//	抽取 Extract、报告 GenerateReport: 显式接口直接调对应 agent。
+//
+// 因为模型按用户单例,Host multi-agent 与各 pipeline runner 内嵌模型,编排也随之每用户化。
+// 与用户无关的全局检索器由 Init 一次性准备。
 package ai
 
 import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
@@ -15,82 +19,118 @@ import (
 	hostma "github.com/cloudwego/eino/flow/agent/multiagent/host"
 	"github.com/cloudwego/eino/schema"
 
-	localagent "GopherCPP/internal/agent"
-	"GopherCPP/internal/agent/chat_pipeline"
-	"GopherCPP/internal/agent/exam_pipeline"
-	"GopherCPP/internal/agent/grade_pipeline"
-	"GopherCPP/pkg/constant"
+	localagent "GopherPaper/internal/agent"
+	"GopherPaper/internal/agent/chat_pipeline"
+	"GopherPaper/internal/agent/extract_pipeline"
+	"GopherPaper/internal/agent/report_pipeline"
+	"GopherPaper/internal/factory"
+	"GopherPaper/internal/tenant"
+	"GopherPaper/pkg/constant"
 )
 
-// 编译好的路径，可并发复用，由 Init 初始化。
+// userRunner 是单个用户编译好的全套 agent 运行器,可并发复用。
+type userRunner struct {
+	chat    *hostma.MultiAgent
+	report  compose.Runnable[*localagent.ReportInput, *localagent.Reply]
+	extract compose.Runnable[*localagent.ParsedDoc, *localagent.PaperStructured]
+}
+
 var (
-	chatRunner  *hostma.MultiAgent
-	examRunner  compose.Runnable[*localagent.AgentInput, *localagent.Reply]
-	gradeRunner compose.Runnable[*localagent.AgentInput, *localagent.Reply]
+	ready       bool
+	userRunners sync.Map // userID -> *runnerEntry
 )
 
-// Init 组装并编译多 agent。chatModel 同时作为 Host 路由模型和下游专家模型。
-func Init(
-	ctx context.Context,
-	chatModel model.ToolCallingChatModel,
-) error {
+type runnerEntry struct {
+	once   sync.Once
+	runner *userRunner
+	err    error
+}
+
+// Init 只做与用户无关的一次性准备:构建全局检索器。模型与 runner 按用户懒编译。
+func Init(ctx context.Context) error {
 	if err := chat_pipeline.Init(ctx); err != nil {
 		return fmt.Errorf("init rag retriever: %w", err)
 	}
-	ragGraph, err := chat_pipeline.Build(chatModel)
-	if err != nil {
-		return fmt.Errorf("build rag agent: %w", err)
-	}
-	ragR, err := ragGraph.Compile(ctx)
-	if err != nil {
-		return fmt.Errorf("compile rag agent: %w", err)
-	}
-
-	examGraph, err := exam_pipeline.Build(chatModel)
-	if err != nil {
-		return fmt.Errorf("build exam agent: %w", err)
-	}
-	examR, err := examGraph.Compile(ctx)
-	if err != nil {
-		return fmt.Errorf("compile exam agent: %w", err)
-	}
-
-	gradeGraph, err := grade_pipeline.Build(chatModel)
-	if err != nil {
-		return fmt.Errorf("build grade agent: %w", err)
-	}
-	gradeR, err := gradeGraph.Compile(ctx)
-	if err != nil {
-		return fmt.Errorf("compile grade agent: %w", err)
-	}
-
-	chat, err := buildChat(ctx, chatModel, ragR)
-	if err != nil {
-		return err
-	}
-
-	chatRunner = chat
-	examRunner = examR
-	gradeRunner = gradeR
+	ready = true
 	return nil
 }
 
-// buildChat 构造 Host Multi-Agent。Host 只负责选择一个专家，不直接回答。
+// runnerFor 返回某用户的运行器,未命中则用该用户模型编译并缓存。
+func runnerFor(ctx context.Context, userID string) (*userRunner, error) {
+	if !ready {
+		return nil, fmt.Errorf("ai: 编排器未初始化")
+	}
+	if userID == "" {
+		return nil, fmt.Errorf("ai: 缺少用户身份")
+	}
+	e, _ := userRunners.LoadOrStore(userID, &runnerEntry{})
+	ent := e.(*runnerEntry)
+	ent.once.Do(func() {
+		ent.runner, ent.err = buildUserRunner(ctx, userID)
+	})
+	if ent.err != nil {
+		userRunners.Delete(userID)
+		return nil, ent.err
+	}
+	return ent.runner, nil
+}
+
+func buildUserRunner(ctx context.Context, userID string) (*userRunner, error) {
+	um, err := factory.ModelsForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	ragGraph, err := chat_pipeline.Build(um.Chat)
+	if err != nil {
+		return nil, fmt.Errorf("build rag agent: %w", err)
+	}
+	ragR, err := ragGraph.Compile(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("compile rag agent: %w", err)
+	}
+
+	reportGraph, err := report_pipeline.Build(um.Chat)
+	if err != nil {
+		return nil, fmt.Errorf("build report agent: %w", err)
+	}
+	reportR, err := reportGraph.Compile(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("compile report agent: %w", err)
+	}
+
+	extractGraph, err := extract_pipeline.Build(um.Chat)
+	if err != nil {
+		return nil, fmt.Errorf("build extract agent: %w", err)
+	}
+	extractR, err := extractGraph.Compile(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("compile extract agent: %w", err)
+	}
+
+	chat, err := buildChat(ctx, um.Intent, ragR)
+	if err != nil {
+		return nil, err
+	}
+	return &userRunner{chat: chat, report: reportR, extract: extractR}, nil
+}
+
+// buildChat 构造 Host Multi-Agent。Host 只负责选择一个专家,不直接回答。
 func buildChat(
 	ctx context.Context,
-	chatModel model.ToolCallingChatModel,
+	hostModel model.ToolCallingChatModel,
 	ragRunner compose.Runnable[*localagent.AgentInput, *localagent.Reply],
 ) (*hostma.MultiAgent, error) {
 	hostAgent, err := hostma.NewMultiAgent(ctx, &hostma.MultiAgentConfig{
-		Name: "gophercpp assistant host",
+		Name: "research literature assistant host",
 		Host: hostma.Host{
-			ToolCallingModel: chatModel,
+			ToolCallingModel: hostModel,
 			SystemPrompt:     constant.HostPrompt,
 		},
 		Specialists: []*hostma.Specialist{
-			ragSpecialist("concept_tutor", constant.IntentConcept, "讲解 C/C++ 概念、语法、原理、用法、标准库和最小示例。", ragRunner),
-			ragSpecialist("debug_tutor", constant.IntentDebug, "定位 C/C++ 编译错误、运行时异常、崩溃、未定义行为和修复方案。", ragRunner),
-			ragSpecialist("code_reviewer", constant.IntentReview, "评审、优化、重构学生给出的 C/C++ 代码，给出可执行改进建议。", ragRunner),
+			ragSpecialist("fact_expert", constant.IntentFact, "定位论文中的具体事实、数据、结论、数值。", ragRunner),
+			ragSpecialist("summary_expert", constant.IntentSummary, "概括、解释、综述论文整体或某部分内容。", ragRunner),
+			ragSpecialist("method_expert", constant.IntentMethod, "解读研究方法、实验设计、技术流程与步骤。", ragRunner),
 		},
 	})
 	if err != nil {
@@ -99,41 +139,44 @@ func buildChat(
 	return hostAgent, nil
 }
 
-// Chat 是聊天入口，ctx 须已注入租户信息供 RAG 检索隔离。
-func Chat(ctx context.Context, query string) (*localagent.Reply, error) {
-	if chatRunner == nil {
-		return nil, fmt.Errorf("assistant chat runner 未初始化")
+// Chat 是问答入口,history 为按时间升序的历史消息,query 为本轮提问。
+// ctx 须已注入租户信息供 RAG 检索隔离;Slots["paper_id"] 由调用方在 query 外另行注入到检索。
+func Chat(ctx context.Context, history []*schema.Message, query string) (*localagent.Reply, error) {
+	r, err := runnerFor(ctx, tenant.MustStudentID(ctx))
+	if err != nil {
+		return nil, err
 	}
-	out, err := chatRunner.Generate(ctx, []*schema.Message{schema.UserMessage(query)})
+	msgs := make([]*schema.Message, 0, len(history)+1)
+	msgs = append(msgs, history...)
+	msgs = append(msgs, schema.UserMessage(query))
+	out, err := r.chat.Generate(ctx, msgs)
 	if err != nil {
 		return nil, err
 	}
 	return messageToReply(out), nil
 }
 
-// GenerateExam 按结构化参数出题，由前端按钮触发。
-func GenerateExam(ctx context.Context, topic, count, difficulty string) (*localagent.Reply, error) {
-	in := &localagent.AgentInput{
-		Query: topic,
-		Intent: localagent.Intent{
-			Type: constant.IntentExam,
-			Slots: map[string]string{
-				"topic":      topic,
-				"count":      count,
-				"difficulty": difficulty,
-			},
-		},
+// Extract 把解析后的论文抽成结构化信息,由 parse worker 调用。ctx 须注入论文 owner。
+func Extract(ctx context.Context, doc *localagent.ParsedDoc) (*localagent.PaperStructured, error) {
+	r, err := runnerFor(ctx, tenant.MustStudentID(ctx))
+	if err != nil {
+		return nil, err
 	}
-	return examRunner.Invoke(ctx, in)
+	return r.extract.Invoke(ctx, doc)
 }
 
-// Grade 批改学生作答，由前端按钮触发。submission 为题目与作答拼成的文本。
-func Grade(ctx context.Context, submission string) (*localagent.Reply, error) {
-	in := &localagent.AgentInput{
-		Query:  submission,
-		Intent: localagent.Intent{Type: constant.IntentGrade},
+// GenerateReport 围绕某篇论文按类型生成研读报告,由前端按钮触发,不经分类器。
+func GenerateReport(ctx context.Context, paperID string, t constant.ReportType) (*localagent.Reply, error) {
+	owner := tenant.MustStudentID(ctx)
+	r, err := runnerFor(ctx, owner)
+	if err != nil {
+		return nil, err
 	}
-	return gradeRunner.Invoke(ctx, in)
+	return r.report.Invoke(ctx, &localagent.ReportInput{
+		PaperID:    paperID,
+		OwnerID:    owner,
+		ReportType: t,
+	})
 }
 
 func ragSpecialist(
@@ -142,26 +185,15 @@ func ragSpecialist(
 	intendedUse string,
 	runner compose.Runnable[*localagent.AgentInput, *localagent.Reply],
 ) *hostma.Specialist {
-	return agentSpecialist(name, intent, intendedUse, runner, basicInput(intent))
-}
-
-func agentSpecialist(
-	name string,
-	intent constant.IntentType,
-	intendedUse string,
-	runner compose.Runnable[*localagent.AgentInput, *localagent.Reply],
-	inputFn func(string) *localagent.AgentInput,
-) *hostma.Specialist {
 	return &hostma.Specialist{
 		AgentMeta: hostma.AgentMeta{
 			Name:        name,
 			IntendedUse: intendedUse,
 		},
 		Invokable: func(ctx context.Context, msgs []*schema.Message, _ ...einoagent.AgentOption) (*schema.Message, error) {
-			query := lastUserContent(msgs)
-			in := inputFn(query)
-			if in.Intent.Type == "" {
-				in.Intent.Type = intent
+			in := &localagent.AgentInput{
+				Query:  lastUserContent(msgs),
+				Intent: localagent.Intent{Type: intent, Slots: map[string]string{}},
 			}
 			reply, err := runner.Invoke(ctx, in)
 			if err != nil {
@@ -169,18 +201,6 @@ func agentSpecialist(
 			}
 			return replyToMessage(reply), nil
 		},
-	}
-}
-
-func basicInput(intent constant.IntentType) func(string) *localagent.AgentInput {
-	return func(query string) *localagent.AgentInput {
-		return &localagent.AgentInput{
-			Query: query,
-			Intent: localagent.Intent{
-				Type:  intent,
-				Slots: map[string]string{},
-			},
-		}
 	}
 }
 
@@ -208,7 +228,7 @@ func replyToMessage(reply *localagent.Reply) *schema.Message {
 }
 
 func messageToReply(msg *schema.Message) *localagent.Reply {
-	reply := &localagent.Reply{Intent: constant.IntentConcept}
+	reply := &localagent.Reply{Intent: constant.IntentSummary}
 	if msg == nil {
 		return reply
 	}

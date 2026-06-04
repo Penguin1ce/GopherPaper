@@ -1,6 +1,6 @@
-// Package chat_pipeline 实现聊天框答疑 agent，并内聚多租户检索与出处召回。
-// 当前只做召回 + 对话，不涉及文档切分（切分后续单独成 agent）。
-// concept/debug/review 三个答疑子类共用本 agent，按子类选 prompt，检索与引用集中在本包。
+// Package chat_pipeline 实现论文问答 agent，并内聚多租户检索与出处召回。
+// fact/summary/method 三个问答子类共用本 agent，按子类选 prompt，检索与引用集中在本包。
+// ctx 经 agent.WithPaperID 注入论文 ID 时围绕该论文检索，否则跨可见库检索。
 package chat_pipeline
 
 import (
@@ -12,9 +12,9 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
-	"GopherCPP/internal/agent"
-	"GopherCPP/internal/tenant"
-	"GopherCPP/pkg/constant"
+	"GopherPaper/internal/agent"
+	"GopherPaper/internal/tenant"
+	"GopherPaper/pkg/constant"
 )
 
 // ragState 把答疑子类透传到 reply，用于标注响应意图。
@@ -38,7 +38,7 @@ func Build(chatModel model.BaseChatModel) (*compose.Graph[*agent.AgentInput, *ag
 	})
 	saveContext := compose.WithStatePreHandler(func(ctx context.Context, in *agent.AgentInput, s *ragState) (*agent.AgentInput, error) {
 		s.Intent = in.Intent.Type
-		docs, err := RetrieveVisible(ctx, in.Query, tenant.MustStudentID(ctx))
+		docs, err := RetrieveForPaper(ctx, in.Query, tenant.MustStudentID(ctx), agent.PaperIDFrom(ctx))
 		if err != nil {
 			docs = nil
 		}

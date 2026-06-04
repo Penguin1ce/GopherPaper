@@ -12,8 +12,8 @@ import (
 	"github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 
-	"GopherCPP/internal/knowledge"
-	"GopherCPP/pkg/constant"
+	"GopherPaper/internal/knowledge"
+	"GopherPaper/pkg/constant"
 )
 
 var outputFields = []string{
@@ -45,12 +45,24 @@ func Init(ctx context.Context) error {
 	return nil
 }
 
-// RetrieveVisible 按多租户可见性检索：公共库全员可见，私有库仅本人可见。
-func RetrieveVisible(ctx context.Context, query, studentID string) ([]*schema.Document, error) {
+// RetrieveVisible 按多租户可见性检索：科研基础库全员可见，私有论文库仅本人可见。
+func RetrieveVisible(ctx context.Context, query, ownerID string) ([]*schema.Document, error) {
+	return retrieve(ctx, query, visibleFilter(ownerID))
+}
+
+// RetrieveForPaper 围绕某篇论文检索：docID 非空时限定到该论文，否则回退到 owner+public。
+func RetrieveForPaper(ctx context.Context, query, ownerID, docID string) ([]*schema.Document, error) {
+	if strings.TrimSpace(docID) == "" {
+		return retrieve(ctx, query, visibleFilter(ownerID))
+	}
+	return retrieve(ctx, query, paperFilter(ownerID, docID))
+}
+
+func retrieve(ctx context.Context, query, filter string) ([]*schema.Document, error) {
 	if retr == nil {
 		return nil, fmt.Errorf("chat_pipeline: 检索器未初始化")
 	}
-	docs, err := retr.Retrieve(ctx, query, mvretriever.WithFilter(visibleFilter(studentID)))
+	docs, err := retr.Retrieve(ctx, query, mvretriever.WithFilter(filter))
 	if err != nil {
 		if strings.Contains(err.Error(), "no results found") {
 			return nil, nil
@@ -119,20 +131,32 @@ func convertSearchResult(_ context.Context, result client.SearchResult) ([]*sche
 	return docs, nil
 }
 
-func visibleFilter(studentID string) string {
+func visibleFilter(ownerID string) string {
 	publicFilter := fmt.Sprintf("%s == %s", constant.MilvusFieldKnowledgeScope, quoteExpr(string(constant.KnowledgeScopePublic)))
-	if strings.TrimSpace(studentID) == "" {
+	if strings.TrimSpace(ownerID) == "" {
 		return publicFilter
 	}
 	privateFilter := fmt.Sprintf("%s == %s and %s == %s",
 		constant.MilvusFieldKnowledgeScope,
 		quoteExpr(string(constant.KnowledgeScopePrivate)),
 		constant.MilvusFieldStudentID,
-		quoteExpr(studentID),
+		quoteExpr(ownerID),
 	)
 	return fmt.Sprintf("(%s) or (%s)",
 		publicFilter,
 		privateFilter,
+	)
+}
+
+// paperFilter 限定到某用户的某篇私有论文。
+func paperFilter(ownerID, docID string) string {
+	return fmt.Sprintf("%s == %s and %s == %s and %s == %s",
+		constant.MilvusFieldKnowledgeScope,
+		quoteExpr(string(constant.KnowledgeScopePrivate)),
+		constant.MilvusFieldStudentID,
+		quoteExpr(ownerID),
+		constant.MilvusFieldDocID,
+		quoteExpr(docID),
 	)
 }
 

@@ -6,7 +6,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"GopherCPP/pkg/constant"
+	"GopherPaper/pkg/constant"
 )
 
 // TestVisibleFilter_EmptyStudentOnlyPublic 无学生身份时只能看到公共库。
