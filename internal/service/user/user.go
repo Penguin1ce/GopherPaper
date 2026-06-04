@@ -1,8 +1,8 @@
-// 用户注册、登录与邮箱验证码下发。逻辑为包级函数，直接读写 dao/auth/utils。
+// Package user 是用户注册、登录与邮箱验证码下发的业务逻辑，包级函数直接读写 dao/auth/utils。
 //
 //	注册 Register: 校验 Redis 中的邮箱验证码 → 落库 → 删验证码
 //	登录 Login:    校验学号密码 → 签发 JWT → 以邮箱前缀为键写入 Redis
-package service
+package user
 
 import (
 	"context"
@@ -14,13 +14,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
-	"GopherCPP/internal/auth"
-	"GopherCPP/internal/dao"
-	"GopherCPP/internal/dto"
-	"GopherCPP/internal/model"
-	"GopherCPP/pkg/constant"
-	"GopherCPP/pkg/errs"
-	"GopherCPP/pkg/utils"
+	"GopherPaper/internal/auth"
+	"GopherPaper/internal/dao"
+	"GopherPaper/internal/dto"
+	"GopherPaper/internal/model"
+	"GopherPaper/pkg/constant"
+	"GopherPaper/pkg/errs"
+	"GopherPaper/pkg/utils"
 )
 
 // SendVerifyCode 生成验证码存入 Redis 并发到邮箱，有效期见 constant.VerifyCodeTTL。
