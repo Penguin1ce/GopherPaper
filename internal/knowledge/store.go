@@ -17,8 +17,8 @@ import (
 	"github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 
-	"GopherCPP/internal/config"
-	"GopherCPP/pkg/constant"
+	"GopherPaper/internal/config"
+	"GopherPaper/pkg/constant"
 )
 
 var (
@@ -32,7 +32,7 @@ type Chunk struct {
 	ID         string
 	Content    string
 	Scope      constant.KnowledgeScope
-	StudentID  string
+	OwnerID    string // 私有库归属用户，落 Milvus 的 student_id 列
 	DocID      string
 	SourceFile string
 	SourceURI  string
@@ -143,7 +143,7 @@ func UpsertChunks(ctx context.Context, chunks []Chunk) ([]string, error) {
 		ids = append(ids, chunk.ID)
 		contents = append(contents, chunk.Content)
 		scopes = append(scopes, string(chunk.Scope))
-		studentIDs = append(studentIDs, chunk.StudentID)
+		studentIDs = append(studentIDs, chunk.OwnerID)
 		docIDs = append(docIDs, chunk.DocID)
 		sourceFiles = append(sourceFiles, chunk.SourceFile)
 		sourceURIs = append(sourceURIs, chunk.SourceURI)
@@ -195,7 +195,7 @@ func ensureCollection(ctx context.Context) error {
 func createCollection(ctx context.Context) error {
 	s := entity.NewSchema().
 		WithName(cfg.Collection).
-		WithDescription("GopherCPP knowledge chunks").
+		WithDescription("GopherPaper knowledge chunks").
 		WithAutoID(false).
 		WithField(entity.NewField().WithName(constant.MilvusFieldID).WithDataType(entity.FieldTypeVarChar).WithIsPrimaryKey(true).WithMaxLength(128)).
 		WithField(entity.NewField().WithName(constant.MilvusFieldContent).WithDataType(entity.FieldTypeVarChar).WithMaxLength(65535)).
@@ -292,11 +292,11 @@ func normalizeChunk(chunk *Chunk) error {
 	if chunk.Scope != constant.KnowledgeScopePublic && chunk.Scope != constant.KnowledgeScopePrivate {
 		return fmt.Errorf("knowledge: scope 不合法")
 	}
-	if chunk.Scope == constant.KnowledgeScopePrivate && strings.TrimSpace(chunk.StudentID) == "" {
-		return fmt.Errorf("knowledge: 私有知识必须有 studentID")
+	if chunk.Scope == constant.KnowledgeScopePrivate && strings.TrimSpace(chunk.OwnerID) == "" {
+		return fmt.Errorf("knowledge: 私有知识必须有 ownerID")
 	}
 	if chunk.Scope == constant.KnowledgeScopePublic {
-		chunk.StudentID = ""
+		chunk.OwnerID = ""
 	}
 	if chunk.CreatedAt == 0 {
 		chunk.CreatedAt = time.Now().Unix()
@@ -324,7 +324,7 @@ func toFloat32Vector(vector []float64) ([]float32, error) {
 func chunkID(chunk Chunk) string {
 	raw := strings.Join([]string{
 		string(chunk.Scope),
-		chunk.StudentID,
+		chunk.OwnerID,
 		chunk.DocID,
 		chunk.SourceFile,
 		chunk.SourceURI,

@@ -8,8 +8,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"GopherCPP/internal/config"
-	"GopherCPP/pkg/errs"
+	"GopherPaper/internal/config"
+	"GopherPaper/pkg/errs"
 )
 
 // Claims 是 JWT 载荷，标准声明加业务身份。

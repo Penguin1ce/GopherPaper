@@ -1,4 +1,4 @@
-// Package mq 封装 RabbitMQ，把出卷、批改等耗时任务从请求链路解耦。
+// Package mq 封装 RabbitMQ，把 PDF 解析等耗时任务从请求链路解耦。
 // controller 投递任务到队列即返回，worker 消费后执行并回写结果。
 package mq
 
@@ -8,7 +8,7 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
-	"GopherCPP/internal/config"
+	"GopherPaper/internal/config"
 )
 
 // Client 持有连接与 channel，并声明业务队列。
@@ -18,7 +18,7 @@ type Client struct {
 	cfg  config.MQConfig
 }
 
-// New 建立连接并声明 exam、grade 队列，幂等。
+// New 建立连接并声明 parse、chat 队列，幂等。
 func New(cfg config.MQConfig) (*Client, error) {
 	conn, err := amqp.Dial(cfg.URL)
 	if err != nil {
@@ -29,7 +29,7 @@ func New(cfg config.MQConfig) (*Client, error) {
 		_ = conn.Close()
 		return nil, fmt.Errorf("mq: 打开 channel 失败: %w", err)
 	}
-	for _, q := range []string{cfg.ExamQueue, cfg.GradeQueue} {
+	for _, q := range []string{cfg.ParseQueue, cfg.ChatQueue} {
 		if q == "" {
 			continue
 		}

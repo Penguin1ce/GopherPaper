@@ -1,10 +1,13 @@
 // Package factory 用工厂模式按配置创建 eino 的模型与向量化组件。
+// 对话模型按 userID 维护全局单例：同用户复用同一实例、不同用户隔离，
+// 为后续每用户模型配置 / 限流留口子。embedder 与用户无关，保持单全局实例。
 // 上层只依赖 eino 标准接口，新增 provider 只改这里。
 package factory
 
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	embollama "github.com/cloudwego/eino-ext/components/embedding/ollama"
@@ -13,49 +16,72 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/model"
 
-	"GopherCPP/internal/config"
-	"GopherCPP/pkg/constant"
+	"GopherPaper/internal/config"
+	"GopherPaper/pkg/constant"
 )
 
-// ModelFactory 按配置创建对话模型与向量化模型。
-type ModelFactory struct {
+// UserModels 是单个用户的模型实例集合：意图路由小模型 + 下游主力大模型。
+type UserModels struct {
+	Intent model.ToolCallingChatModel
+	Chat   model.ToolCallingChatModel
+}
+
+var (
 	cfg *config.Config
+
+	// userModels 按 userID 缓存模型集合，per-key once 保证只构建一次。
+	userModels sync.Map // userID -> *userEntry
+)
+
+type userEntry struct {
+	once   sync.Once
+	models *UserModels
+	err    error
 }
 
-func NewModelFactory(cfg *config.Config) *ModelFactory {
-	return &ModelFactory{cfg: cfg}
+// Init 保存全局配置，须在使用 ModelsForUser / NewEmbedder 前调用。
+func Init(c *config.Config) {
+	cfg = c
 }
 
-// NewIntentModel 创建意图识别小模型。
-func (f *ModelFactory) NewIntentModel(ctx context.Context) (model.BaseChatModel, error) {
-	return f.newChatModel(ctx, f.cfg.Models.Intent)
-}
-
-// NewChatModel 创建下游 agent 使用的主力大模型，支持工具调用。
-func (f *ModelFactory) NewChatModel(ctx context.Context) (model.ToolCallingChatModel, error) {
-	mc := f.cfg.Models.Chat
-	switch mc.Provider {
-	case constant.ProviderOpenAI:
-		return mdopenai.NewChatModel(ctx, &mdopenai.ChatModelConfig{
-			APIKey:  mc.APIKey,
-			BaseURL: mc.BaseURL,
-			Model:   mc.Model,
-			Timeout: 60 * time.Second,
-		})
-	case constant.ProviderOllama:
-		return mdollama.NewChatModel(ctx, &mdollama.ChatModelConfig{
-			BaseURL: mc.BaseURL,
-			Model:   mc.Model,
-			Timeout: 60 * time.Second,
-		})
-	default:
-		return nil, fmt.Errorf("factory: 不支持的 chat 模型 provider %q", mc.Provider)
+// ModelsForUser 返回该用户的模型单例，未命中则用工厂构建并缓存。
+func ModelsForUser(ctx context.Context, userID string) (*UserModels, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("factory: 未初始化")
 	}
+	if userID == "" {
+		return nil, fmt.Errorf("factory: userID 不能为空")
+	}
+	e, _ := userModels.LoadOrStore(userID, &userEntry{})
+	ent := e.(*userEntry)
+	ent.once.Do(func() {
+		ent.models, ent.err = buildUserModels(ctx, userID)
+	})
+	if ent.err != nil {
+		userModels.Delete(userID) // 构建失败不缓存，允许下次重试
+		return nil, ent.err
+	}
+	return ent.models, nil
 }
 
-// NewEmbedder 创建 RAG 向量化模型。
-func (f *ModelFactory) NewEmbedder(ctx context.Context) (embedding.Embedder, error) {
-	ec := f.cfg.Embedding
+func buildUserModels(ctx context.Context, userID string) (*UserModels, error) {
+	intent, err := newToolCallingModel(ctx, cfg.Models.Intent)
+	if err != nil {
+		return nil, fmt.Errorf("factory: 创建意图模型失败(user=%s): %w", userID, err)
+	}
+	chat, err := newToolCallingModel(ctx, cfg.Models.Chat)
+	if err != nil {
+		return nil, fmt.Errorf("factory: 创建对话模型失败(user=%s): %w", userID, err)
+	}
+	return &UserModels{Intent: intent, Chat: chat}, nil
+}
+
+// NewEmbedder 创建 RAG 向量化模型，与用户无关，启动期建一次供 knowledge 注入。
+func NewEmbedder(ctx context.Context) (embedding.Embedder, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("factory: 未初始化")
+	}
+	ec := cfg.Embedding
 	switch ec.Provider {
 	case constant.ProviderOllama:
 		return embollama.NewEmbedder(ctx, &embollama.EmbeddingConfig{
@@ -68,23 +94,23 @@ func (f *ModelFactory) NewEmbedder(ctx context.Context) (embedding.Embedder, err
 	}
 }
 
-// newChatModel 创建 BaseChatModel 的内部通用分发。
-func (f *ModelFactory) newChatModel(ctx context.Context, mc config.ModelConfig) (model.BaseChatModel, error) {
+// newToolCallingModel 按 provider 创建支持工具调用的对话模型，Host 路由与下游专家共用。
+func newToolCallingModel(ctx context.Context, mc config.ModelConfig) (model.ToolCallingChatModel, error) {
 	switch mc.Provider {
-	case constant.ProviderOllama:
-		return mdollama.NewChatModel(ctx, &mdollama.ChatModelConfig{
-			BaseURL: mc.BaseURL,
-			Model:   mc.Model,
-			Timeout: 30 * time.Second,
-		})
 	case constant.ProviderOpenAI:
 		return mdopenai.NewChatModel(ctx, &mdopenai.ChatModelConfig{
 			APIKey:  mc.APIKey,
 			BaseURL: mc.BaseURL,
 			Model:   mc.Model,
-			Timeout: 30 * time.Second,
+			Timeout: 60 * time.Second,
+		})
+	case constant.ProviderOllama:
+		return mdollama.NewChatModel(ctx, &mdollama.ChatModelConfig{
+			BaseURL: mc.BaseURL,
+			Model:   mc.Model,
+			Timeout: 60 * time.Second,
 		})
 	default:
-		return nil, fmt.Errorf("factory: 不支持的模型 provider %q", mc.Provider)
+		return nil, fmt.Errorf("factory: 不支持的对话模型 provider %q", mc.Provider)
 	}
 }

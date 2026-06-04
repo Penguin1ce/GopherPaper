@@ -8,7 +8,7 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 
-	"GopherCPP/internal/config"
+	"GopherPaper/internal/config"
 )
 
 // DB 是全局 MySQL 句柄，由 InitMySQL 初始化。

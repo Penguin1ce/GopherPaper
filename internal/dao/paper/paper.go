@@ -1,0 +1,170 @@
+// Package paper 是论文及其元信息、章节、标签的数据访问层，复用 dao.DB。
+// 论文软删，解析状态由 worker 逐步流转。
+package paper
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+
+	"GopherPaper/internal/dao"
+	"GopherPaper/internal/model"
+	"GopherPaper/pkg/constant"
+	"GopherPaper/pkg/errs"
+)
+
+// Create 新建论文记录，UUID 主键与默认状态由模型钩子生成。
+func Create(ctx context.Context, p *model.Paper) error {
+	if err := dao.DB.WithContext(ctx).Create(p).Error; err != nil {
+		return fmt.Errorf("dao/paper: 创建论文失败: %w", err)
+	}
+	return nil
+}
+
+// Get 按 id 取论文，不存在返回 errs.ErrPaperNotFound。
+func Get(ctx context.Context, id string) (*model.Paper, error) {
+	var p model.Paper
+	err := dao.DB.WithContext(ctx).Where("id = ?", id).First(&p).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errs.ErrPaperNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询论文失败: %w", err)
+	}
+	return &p, nil
+}
+
+// List 按创建时间倒序列出某用户的全部论文。
+func List(ctx context.Context, ownerID string) ([]model.Paper, error) {
+	var papers []model.Paper
+	err := dao.DB.WithContext(ctx).
+		Where("owner_id = ?", ownerID).
+		Order("created_at desc").
+		Find(&papers).Error
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询论文列表失败: %w", err)
+	}
+	return papers, nil
+}
+
+// Search 在某用户论文里按标题/文件名模糊检索，做历史文献检索。
+func Search(ctx context.Context, ownerID, keyword string) ([]model.Paper, error) {
+	var papers []model.Paper
+	like := "%" + keyword + "%"
+	err := dao.DB.WithContext(ctx).
+		Where("owner_id = ? and (title like ? or file_name like ?)", ownerID, like, like).
+		Order("created_at desc").
+		Find(&papers).Error
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 检索论文失败: %w", err)
+	}
+	return papers, nil
+}
+
+// UpdateStatus 流转解析状态，failReason 仅失败态有意义。
+func UpdateStatus(ctx context.Context, id string, status constant.PaperStatus, failReason string) error {
+	fields := map[string]any{"status": status, "fail_reason": failReason}
+	if err := dao.DB.WithContext(ctx).Model(&model.Paper{}).Where("id = ?", id).Updates(fields).Error; err != nil {
+		return fmt.Errorf("dao/paper: 更新状态失败: %w", err)
+	}
+	return nil
+}
+
+// UpdateInfo 抽取完成后回填标题与页数。
+func UpdateInfo(ctx context.Context, id, title string, pageCount int) error {
+	fields := map[string]any{}
+	if title != "" {
+		fields["title"] = title
+	}
+	if pageCount > 0 {
+		fields["page_count"] = pageCount
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	if err := dao.DB.WithContext(ctx).Model(&model.Paper{}).Where("id = ?", id).Updates(fields).Error; err != nil {
+		return fmt.Errorf("dao/paper: 回填论文信息失败: %w", err)
+	}
+	return nil
+}
+
+// UpdateProgress 记录阅读进度 0-100。
+func UpdateProgress(ctx context.Context, id string, progress int) error {
+	if err := dao.DB.WithContext(ctx).Model(&model.Paper{}).Where("id = ?", id).
+		Update("progress", progress).Error; err != nil {
+		return fmt.Errorf("dao/paper: 更新阅读进度失败: %w", err)
+	}
+	return nil
+}
+
+// Delete 软删论文并清理其元信息、章节、标签关联。
+func Delete(ctx context.Context, id string) error {
+	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperMeta{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperSection{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperTag{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", id).Delete(&model.Paper{}).Error
+	})
+}
+
+// SaveMeta 写入或覆盖论文结构化元信息。
+func SaveMeta(ctx context.Context, meta *model.PaperMeta) error {
+	meta.UpdatedAt = time.Now()
+	err := dao.DB.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "paper_id"}},
+		UpdateAll: true,
+	}).Create(meta).Error
+	if err != nil {
+		return fmt.Errorf("dao/paper: 写入元信息失败: %w", err)
+	}
+	return nil
+}
+
+// GetMeta 取论文元信息，不存在返回 errs.ErrPaperNotFound。
+func GetMeta(ctx context.Context, paperID string) (*model.PaperMeta, error) {
+	var m model.PaperMeta
+	err := dao.DB.WithContext(ctx).Where("paper_id = ?", paperID).First(&m).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errs.ErrPaperNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询元信息失败: %w", err)
+	}
+	return &m, nil
+}
+
+// SaveSections 覆盖论文章节，先删后插保证幂等。
+func SaveSections(ctx context.Context, paperID string, sections []model.PaperSection) error {
+	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("paper_id = ?", paperID).Delete(&model.PaperSection{}).Error; err != nil {
+			return err
+		}
+		if len(sections) == 0 {
+			return nil
+		}
+		return tx.Create(&sections).Error
+	})
+}
+
+// ListSections 按文档顺序列出论文章节。
+func ListSections(ctx context.Context, paperID string) ([]model.PaperSection, error) {
+	var sections []model.PaperSection
+	err := dao.DB.WithContext(ctx).
+		Where("paper_id = ?", paperID).
+		Order("order_idx asc").
+		Find(&sections).Error
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询章节失败: %w", err)
+	}
+	return sections, nil
+}

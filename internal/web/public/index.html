@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GopherPaper 科研文献智能助手</title>
+    <link rel="stylesheet" href="/static/app.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section id="authView" class="auth-view" aria-label="账号入口">
+        <div class="auth-copy">
+          <p class="eyebrow">GopherPaper</p>
+          <h1>科研文献智能助手</h1>
+          <p>登录后可以上传论文、创建会话，并围绕论文连续提问。</p>
+        </div>
+        <div class="auth-panel">
+          <div class="tab-bar" role="tablist">
+            <button class="tab-button active" id="loginTab" type="button">登录</button>
+            <button class="tab-button" id="registerTab" type="button">注册</button>
+          </div>
+
+          <form id="loginForm" class="form-stack">
+            <label>
+              <span>学号</span>
+              <input id="loginStudentID" name="student_id" autocomplete="username" required>
+            </label>
+            <label>
+              <span>密码</span>
+              <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+            </label>
+            <button class="primary-button" type="submit">登录</button>
+          </form>
+
+          <form id="registerForm" class="form-stack hidden">
+            <label>
+              <span>学号</span>
+              <input id="registerStudentID" name="student_id" autocomplete="username" required>
+            </label>
+            <label>
+              <span>姓名</span>
+              <input id="registerName" name="name" autocomplete="name">
+            </label>
+            <label>
+              <span>邮箱</span>
+              <div class="inline-field">
+                <input id="registerEmail" name="email" type="email" autocomplete="email" required>
+                <button id="sendCodeButton" class="secondary-button" type="button">发送验证码</button>
+              </div>
+            </label>
+            <label>
+              <span>班级</span>
+              <input id="registerClassID" name="class_id">
+            </label>
+            <label>
+              <span>密码</span>
+              <input id="registerPassword" name="password" type="password" autocomplete="new-password" minlength="6" required>
+            </label>
+            <label>
+              <span>验证码</span>
+              <input id="registerCode" name="code" inputmode="numeric" maxlength="6" required>
+            </label>
+            <button class="primary-button" type="submit">注册并登录</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="chatView" class="chat-view hidden" aria-label="对话工作台">
+        <aside class="session-pane">
+          <div class="brand-row">
+            <div>
+              <p class="eyebrow">GopherPaper</p>
+              <h2>会话</h2>
+            </div>
+            <button id="refreshSessionsButton" class="icon-button" type="button" title="刷新会话" aria-label="刷新会话">↻</button>
+          </div>
+
+          <form id="newSessionForm" class="new-session-form">
+            <input id="newSessionTitle" placeholder="新会话标题">
+            <button class="primary-button compact" type="submit">新建</button>
+          </form>
+
+          <div id="sessionList" class="session-list" aria-live="polite"></div>
+        </aside>
+
+        <section class="conversation-pane">
+          <header class="top-bar">
+            <div>
+              <p id="userLine" class="user-line"></p>
+              <h2 id="activeTitle">选择或新建一个会话</h2>
+            </div>
+            <button id="logoutButton" class="secondary-button" type="button">退出登录</button>
+          </header>
+
+          <div id="emptyState" class="empty-state">
+            <h3>还没有打开会话</h3>
+            <p>从左侧选择历史会话，或新建一个会话后开始提问。</p>
+          </div>
+
+          <div id="messageList" class="message-list hidden" aria-live="polite"></div>
+
+          <form id="messageForm" class="composer">
+            <textarea id="messageInput" rows="3" placeholder="输入你的问题，暂时走普通 POST，不使用 SSE"></textarea>
+            <button id="sendMessageButton" class="primary-button" type="submit">发送</button>
+          </form>
+        </section>
+      </section>
+
+      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

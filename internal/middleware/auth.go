@@ -7,10 +7,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"GopherCPP/internal/auth"
-	"GopherCPP/internal/response"
-	"GopherCPP/internal/tenant"
-	"GopherCPP/pkg/constant"
+	"GopherPaper/internal/auth"
+	"GopherPaper/internal/response"
+	"GopherPaper/internal/tenant"
+	"GopherPaper/pkg/constant"
 )
 
 // JWTAuth 校验 Bearer token，把学生身份注入租户上下文供 RAG 隔离，失败返回 401。

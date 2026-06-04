@@ -7,7 +7,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"GopherCPP/internal/config"
+	"GopherPaper/internal/config"
 )
 
 // RDB 是全局 Redis 句柄，由 InitRedis 初始化。

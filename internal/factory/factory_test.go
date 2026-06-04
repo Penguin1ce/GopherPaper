@@ -7,52 +7,57 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"GopherCPP/internal/config"
-	"GopherCPP/pkg/constant"
+	"GopherPaper/internal/config"
+	"GopherPaper/pkg/constant"
 )
 
 // configPath 测试相对仓库根的配置路径。
 const configPath = "../../config/config.toml"
 
-// loadCfg 加载测试配置，缺失时跳过。
+// loadCfg 加载测试配置并初始化工厂，缺失时跳过。
 func loadCfg(t *testing.T) *config.Config {
 	t.Helper()
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		t.Skipf("跳过：读取配置失败 %v", err)
 	}
+	Init(cfg)
 	return cfg
 }
 
-// loadFactory 加载配置并构造工厂，要求意图模型为 ollama，否则跳过。
-func loadFactory(t *testing.T) *ModelFactory {
-	t.Helper()
-	cfg := loadCfg(t)
-	if cfg.Models.Intent.Provider != constant.ProviderOllama {
-		t.Skipf("跳过：意图模型 provider 非 ollama，当前 %q", cfg.Models.Intent.Provider)
-	}
-	return NewModelFactory(cfg)
-}
-
-// TestNewIntentModel_FromFactory 验证能从工厂拿到 ollama 意图模型。
-func TestNewIntentModel_FromFactory(t *testing.T) {
-	f := loadFactory(t)
+// TestModelsForUser_Singleton 验证同 userID 返回同实例、不同 userID 隔离。
+func TestModelsForUser_Singleton(t *testing.T) {
+	loadCfg(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	m, err := f.NewIntentModel(ctx)
+	a1, err := ModelsForUser(ctx, "u1")
 	if err != nil {
-		t.Fatalf("创建意图模型失败 %v", err)
+		t.Fatalf("创建用户模型失败 %v", err)
 	}
-	if m == nil {
-		t.Fatal("意图模型为 nil")
+	a2, err := ModelsForUser(ctx, "u1")
+	if err != nil {
+		t.Fatalf("二次获取失败 %v", err)
+	}
+	if a1 != a2 {
+		t.Fatal("同 userID 应返回同一实例")
+	}
+	b1, err := ModelsForUser(ctx, "u2")
+	if err != nil {
+		t.Fatalf("创建另一用户模型失败 %v", err)
+	}
+	if a1 == b1 {
+		t.Fatal("不同 userID 应隔离为不同实例")
+	}
+	if a1.Intent == nil || a1.Chat == nil {
+		t.Fatal("模型集合不应有 nil 成员")
 	}
 }
 
-// TestNewChatModel_API 验证能从工厂拿到走 API 的下游大模型并真实可用。
+// TestUserChatModel_API 验证下游大模型走 API 真实可用。
 // 需配置有效的 chat 模型与网络，缺配置或调用失败则跳过。
-func TestNewChatModel_API(t *testing.T) {
+func TestUserChatModel_API(t *testing.T) {
 	cfg := loadCfg(t)
 	if cfg.Models.Chat.Provider == constant.ProviderOllama {
 		t.Skipf("跳过：chat 模型为本地 ollama，非 API 模型")
@@ -60,20 +65,16 @@ func TestNewChatModel_API(t *testing.T) {
 	if cfg.Models.Chat.APIKey == "" {
 		t.Skip("跳过：未配置 chat 模型 api_key")
 	}
-	f := NewModelFactory(cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	m, err := f.NewChatModel(ctx)
+	um, err := ModelsForUser(ctx, "api-test")
 	if err != nil {
-		t.Fatalf("创建 API chat 模型失败 %v", err)
-	}
-	if m == nil {
-		t.Fatal("chat 模型为 nil")
+		t.Fatalf("创建用户模型失败 %v", err)
 	}
 
-	out, err := m.Generate(ctx, []*schema.Message{
+	out, err := um.Chat.Generate(ctx, []*schema.Message{
 		schema.UserMessage("我是用户测试，你只需要说芝麻开门即可"),
 	})
 	if err != nil {

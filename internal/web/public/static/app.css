@@ -1,0 +1,511 @@
+:root {
+  color-scheme: light;
+  --bg: #eef3f0;
+  --surface: #ffffff;
+  --surface-soft: #f6f8f7;
+  --line: #d7dfdc;
+  --line-strong: #b8c5c1;
+  --text: #14211d;
+  --muted: #5c6d68;
+  --accent: #167a6b;
+  --accent-dark: #0f5d53;
+  --danger: #b42318;
+  --shadow: 0 18px 50px rgba(36, 52, 47, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.auth-view {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(320px, 420px);
+  gap: 48px;
+  align-items: center;
+  max-width: 1040px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+
+.auth-copy h1 {
+  margin: 8px 0 14px;
+  font-size: clamp(34px, 5vw, 58px);
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.auth-copy p {
+  max-width: 520px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.auth-panel,
+.session-pane,
+.conversation-pane {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.auth-panel {
+  border-radius: 8px;
+  padding: 22px;
+}
+
+.tab-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  margin-bottom: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.tab-button {
+  height: 40px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.tab-button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 2px 10px rgba(36, 52, 47, 0.08);
+}
+
+.form-stack {
+  display: grid;
+  gap: 14px;
+}
+
+label {
+  display: grid;
+  gap: 7px;
+}
+
+label span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+input {
+  height: 42px;
+  padding: 0 12px;
+}
+
+textarea {
+  min-height: 72px;
+  max-height: 190px;
+  padding: 12px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(22, 122, 107, 0.14);
+}
+
+.inline-field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.primary-button,
+.secondary-button,
+.icon-button {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-weight: 800;
+}
+
+.primary-button {
+  min-height: 42px;
+  padding: 0 16px;
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.primary-button:hover {
+  background: var(--accent-dark);
+}
+
+.secondary-button {
+  min-height: 38px;
+  padding: 0 13px;
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--line);
+}
+
+.secondary-button:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-soft);
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--line);
+  font-size: 18px;
+}
+
+.compact {
+  min-height: 38px;
+  padding: 0 12px;
+}
+
+.chat-view {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+  height: 100vh;
+  padding: 16px;
+}
+
+.session-pane,
+.conversation-pane {
+  min-height: 0;
+  border-radius: 8px;
+}
+
+.session-pane {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding: 16px;
+}
+
+.brand-row,
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.brand-row h2,
+.top-bar h2 {
+  margin: 4px 0 0;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.new-session-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin: 18px 0 14px;
+}
+
+.session-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.session-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.session-item.active {
+  border-color: var(--accent);
+  background: #edf8f5;
+}
+
+.session-main {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.session-title {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-time {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.delete-session {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--danger);
+  font-weight: 900;
+}
+
+.conversation-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding: 16px;
+}
+
+.top-bar {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.user-line {
+  min-height: 18px;
+  margin: 0 0 3px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.empty-state {
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 30px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-state h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+.message-list {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 4px 16px 0;
+}
+
+.message {
+  display: grid;
+  gap: 6px;
+  max-width: min(760px, 92%);
+}
+
+.message.user {
+  justify-self: end;
+}
+
+.message.assistant {
+  justify-self: start;
+}
+
+.message-bubble {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--surface-soft);
+}
+
+.message.user .message-bubble {
+  background: #e7f4f1;
+  border-color: #c3ddd6;
+}
+
+.message-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+}
+
+.message-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.meta-box {
+  overflow: auto;
+  max-width: min(760px, 92vw);
+  margin: 4px 0 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.composer .primary-button {
+  width: 88px;
+}
+
+.toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 20;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.toast.error {
+  border-color: #f2b8b5;
+  color: var(--danger);
+}
+
+@media (max-width: 860px) {
+  .auth-view {
+    grid-template-columns: 1fr;
+    align-content: center;
+    gap: 24px;
+  }
+
+  .chat-view {
+    grid-template-columns: 1fr;
+    grid-template-rows: 270px minmax(0, 1fr);
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .conversation-pane {
+    min-height: 620px;
+  }
+}
+
+@media (max-width: 560px) {
+  .auth-view,
+  .chat-view {
+    padding: 10px;
+  }
+
+  .auth-panel,
+  .session-pane,
+  .conversation-pane {
+    border-radius: 8px;
+  }
+
+  .inline-field,
+  .new-session-form,
+  .composer {
+    grid-template-columns: 1fr;
+  }
+
+  .top-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .message {
+    max-width: 100%;
+  }
+
+  .composer .primary-button {
+    width: 100%;
+  }
+}
