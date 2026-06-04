@@ -1,4 +1,4 @@
-// GopherCPP 智能编程助教 —— 服务入口。
+// GopherPaper 科研文献智能解析与知识服务系统 —— 服务入口。
 // 启动顺序：配置、日志、基础设施、模型工厂、知识库、编排器、HTTP 路由。
 package main
 
@@ -12,17 +12,20 @@ import (
 	"syscall"
 	"time"
 
-	"GopherCPP/internal/ai"
-	"GopherCPP/internal/auth"
-	"GopherCPP/internal/config"
-	"GopherCPP/internal/dao"
-	"GopherCPP/internal/factory"
-	"GopherCPP/internal/knowledge"
-	"GopherCPP/internal/model"
-	"GopherCPP/internal/mq"
-	"GopherCPP/internal/router"
-	"GopherCPP/internal/zlog"
-	"GopherCPP/pkg/utils"
+	"GopherPaper/internal/ai"
+	"GopherPaper/internal/auth"
+	"GopherPaper/internal/config"
+	"GopherPaper/internal/dao"
+	"GopherPaper/internal/factory"
+	"GopherPaper/internal/knowledge"
+	"GopherPaper/internal/model"
+	"GopherPaper/internal/mq"
+	"GopherPaper/internal/parser"
+	"GopherPaper/internal/router"
+	chatservice "GopherPaper/internal/service/chat"
+	paperservice "GopherPaper/internal/service/paper"
+	"GopherPaper/internal/zlog"
+	"GopherPaper/pkg/utils"
 )
 
 func main() {
@@ -69,13 +72,9 @@ func run(cfgPath string) error {
 	defer mqClient.Close()
 	zlog.Info("RabbitMQ 已连接")
 
-	// 3. 模型工厂：Host/API 主力大模型、embedding
-	mf := factory.NewModelFactory(cfg)
-	chatModel, err := mf.NewChatModel(ctx)
-	if err != nil {
-		return err
-	}
-	embedder, err := mf.NewEmbedder(ctx)
+	// 3. 模型工厂：embedding 启动期建一次,意图/对话模型按用户懒建
+	factory.Init(cfg)
+	embedder, err := factory.NewEmbedder(ctx)
 	if err != nil {
 		return err
 	}
@@ -87,13 +86,29 @@ func run(cfgPath string) error {
 	defer knowledge.Close()
 	zlog.Info("Milvus 知识库已就绪")
 
-	// 5. 编排器：API 模型 Host 路由到各专家 agent，出题/批改显式接口保留
-	if err := ai.Init(ctx, chatModel); err != nil {
+	// 5. PDF 解析：MinerU 在线 API 客户端
+	parser.Init(cfg.Parser)
+	zlog.Info("PDF 解析器已就绪")
+
+	// 6. 编排器：只准备全局检索器,模型与 runner 按用户懒编译
+	if err := ai.Init(ctx); err != nil {
 		return err
 	}
-	zlog.Info("助教编排器已编译")
+	zlog.Info("编排器已就绪")
 
-	// 6. JWT、邮件与 HTTP 服务
+	// 7. 会话消息异步入库：注入 MQ 句柄并拉起消费者
+	if err := chatservice.Init(ctx, mqClient, cfg.MQ.ChatQueue); err != nil {
+		return err
+	}
+	zlog.Info("会话入库消费者已启动")
+
+	// 8. 论文解析入库：注入 MQ 句柄并拉起解析消费者
+	if err := paperservice.Init(ctx, mqClient, cfg.MQ.ParseQueue); err != nil {
+		return err
+	}
+	zlog.Info("论文解析消费者已启动")
+
+	// 7. JWT、邮件与 HTTP 服务
 	auth.Init(cfg.JWT)
 	utils.InitMail(cfg.Mail)
 	engine := router.Init(cfg.Server.Mode)

@@ -5,10 +5,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"GopherCPP/internal/auth"
-	"GopherCPP/internal/dto"
-	"GopherCPP/internal/response"
-	"GopherCPP/internal/zlog"
+	"GopherPaper/internal/auth"
+	"GopherPaper/internal/dto"
+	"GopherPaper/internal/response"
+	"GopherPaper/internal/zlog"
 )
 
 // Token 按 student_id 签发 JWT，公开接口。

@@ -8,11 +8,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"GopherCPP/internal/dto"
-	"GopherCPP/internal/response"
-	"GopherCPP/internal/service"
-	"GopherCPP/internal/zlog"
-	"GopherCPP/pkg/errs"
+	"GopherPaper/internal/dto"
+	"GopherPaper/internal/response"
+	userservice "GopherPaper/internal/service/user"
+	"GopherPaper/internal/zlog"
+	"GopherPaper/pkg/errs"
 )
 
 // SendCode 下发邮箱验证码，有效期 5 分钟。
@@ -23,7 +23,7 @@ func SendCode(c *gin.Context) {
 		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	if err := service.SendVerifyCode(c.Request.Context(), req.Email); err != nil {
+	if err := userservice.SendVerifyCode(c.Request.Context(), req.Email); err != nil {
 		zlog.Error("发送验证码失败", "email", req.Email, "err", err)
 		response.Fail(c, http.StatusInternalServerError, "验证码发送失败")
 		return
@@ -39,7 +39,7 @@ func Register(c *gin.Context) {
 		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	if err := service.Register(c.Request.Context(), req); err != nil {
+	if err := userservice.Register(c.Request.Context(), req); err != nil {
 		switch {
 		case errors.Is(err, errs.ErrCodeExpired),
 			errors.Is(err, errs.ErrCodeMismatch),
@@ -62,7 +62,7 @@ func Login(c *gin.Context) {
 		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	token, user, err := service.Login(c.Request.Context(), req.StudentID, req.Password)
+	token, user, err := userservice.Login(c.Request.Context(), req.StudentID, req.Password)
 	if err != nil {
 		switch {
 		case errors.Is(err, errs.ErrUserNotFound), errors.Is(err, errs.ErrWrongPassword):
