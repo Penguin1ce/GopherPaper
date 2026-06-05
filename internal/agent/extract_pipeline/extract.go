@@ -25,7 +25,11 @@ func Build(chatModel model.BaseChatModel) (*compose.Graph[*agent.ParsedDoc, *age
 
 	prepare := compose.InvokableLambda(func(_ context.Context, doc *agent.ParsedDoc) ([]*schema.Message, error) {
 		sysPrompt := strings.ReplaceAll(constant.ExtractPrompt, "{context}", bodyText(doc))
-		return []*schema.Message{schema.SystemMessage(sysPrompt)}, nil
+		// 须带 user 轮次,否则推理模型只见 system 指令会返回空 content。
+		return []*schema.Message{
+			schema.SystemMessage(sysPrompt),
+			schema.UserMessage("请基于以上论文正文输出抽取的 JSON。"),
+		}, nil
 	})
 	toStruct := compose.InvokableLambda(func(_ context.Context, msg *schema.Message) (*agent.PaperStructured, error) {
 		return parseStructured(msg.Content)
@@ -68,11 +72,23 @@ func bodyText(doc *agent.ParsedDoc) string {
 // parseStructured 容错解析模型返回的 JSON，剥离可能的代码围栏。
 func parseStructured(content string) (*agent.PaperStructured, error) {
 	raw := stripFence(content)
+	if strings.TrimSpace(raw) == "" {
+		return nil, fmt.Errorf("extract_pipeline: 模型返回空内容")
+	}
 	var s agent.PaperStructured
 	if err := json.Unmarshal([]byte(raw), &s); err != nil {
-		return nil, fmt.Errorf("extract_pipeline: 解析抽取结果失败: %w", err)
+		return nil, fmt.Errorf("extract_pipeline: 解析抽取结果失败: %w (content_len=%d, raw=%q)", err, len(content), snippet(raw, 300))
 	}
 	return &s, nil
+}
+
+// snippet 截取前 n 个字符,用于报错回显模型返回。
+func snippet(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
 }
 
 // stripFence 去掉 ```json ... ``` 围栏，并截取首个 { 到末个 }。

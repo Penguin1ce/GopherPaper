@@ -14,10 +14,10 @@ import (
 	hostma "github.com/cloudwego/eino/flow/agent/multiagent/host"
 	"github.com/cloudwego/eino/schema"
 
-	localagent "GopherCPP/internal/agent"
-	"GopherCPP/internal/config"
-	"GopherCPP/internal/factory"
-	"GopherCPP/pkg/constant"
+	localagent "GopherPaper/internal/agent"
+	"GopherPaper/internal/config"
+	"GopherPaper/internal/factory"
+	"GopherPaper/pkg/constant"
 )
 
 func TestHostRoutesToExpectedSpecialist(t *testing.T) {
@@ -35,19 +35,19 @@ func TestHostRoutesToExpectedSpecialist(t *testing.T) {
 		want  constant.IntentType
 	}{
 		{
-			name:  "concept",
-			query: "C++ 引用和指针有什么区别？",
-			want:  constant.IntentConcept,
+			name:  "fact",
+			query: "这篇论文在 ImageNet 上的准确率是多少？",
+			want:  constant.IntentFact,
 		},
 		{
-			name:  "debug",
-			query: "这段代码运行时报 Segmentation fault，帮我定位一下",
-			want:  constant.IntentDebug,
+			name:  "method",
+			query: "请讲讲这篇论文的实验方法和流程",
+			want:  constant.IntentMethod,
 		},
 		{
-			name:  "review",
-			query: "帮我评审并优化这段 C++ 排序代码",
-			want:  constant.IntentReview,
+			name:  "summary",
+			query: "帮我概括一下这篇论文讲了什么",
+			want:  constant.IntentSummary,
 		},
 	}
 
@@ -69,9 +69,9 @@ func TestHostRoutesToExpectedSpecialist(t *testing.T) {
 	}
 
 	for _, want := range []constant.IntentType{
-		constant.IntentConcept,
-		constant.IntentDebug,
-		constant.IntentReview,
+		constant.IntentFact,
+		constant.IntentSummary,
+		constant.IntentMethod,
 	} {
 		if got := totalCalls(want, ragRunner); got != 1 {
 			t.Fatalf("specialist %q call count mismatch: want 1 got %d", want, got)
@@ -80,31 +80,32 @@ func TestHostRoutesToExpectedSpecialist(t *testing.T) {
 }
 
 func TestHostClassifyWithAPIModel(t *testing.T) {
-	//if os.Getenv("GOPHERCPP_RUN_API_TESTS") != "1" {
-	//	t.Skip("跳过：设置 GOPHERCPP_RUN_API_TESTS=1 后才真实调用 API 模型测试 Host 分类")
+	//if os.Getenv("GOPHERPAPER_RUN_API_TESTS") != "1" {
+	//	t.Skip("跳过：设置 GOPHERPAPER_RUN_API_TESTS=1 后才真实调用 API 模型测试 Host 分类")
 	//}
 
 	cfg, err := config.Load("../../config/config.toml")
 	if err != nil {
 		t.Skipf("跳过：读取配置失败 %v", err)
 	}
-	if cfg.Models.Chat.Provider != constant.ProviderOpenAI {
-		t.Skipf("跳过：chat 模型不是 API provider，当前 %q", cfg.Models.Chat.Provider)
+	if cfg.Models.Intent.Provider != constant.ProviderOpenAI {
+		t.Skipf("跳过：intent 模型不是 API provider，当前 %q", cfg.Models.Intent.Provider)
 	}
-	if cfg.Models.Chat.APIKey == "" {
-		t.Skip("跳过：未配置 chat 模型 api_key")
+	if cfg.Models.Intent.APIKey == "" {
+		t.Skip("跳过：未配置 intent 模型 api_key")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	chatModel, err := factory.NewModelFactory(cfg).NewChatModel(ctx)
+	factory.Init(cfg)
+	um, err := factory.ModelsForUser(ctx, "host-test")
 	if err != nil {
-		t.Fatalf("创建 API chat 模型失败: %v", err)
+		t.Fatalf("创建 API intent 模型失败: %v", err)
 	}
 
 	ragRunner := &recordingRunner{}
-	host, err := buildChat(ctx, chatModel, ragRunner)
+	host, err := buildChat(ctx, um.Intent, ragRunner)
 	if err != nil {
 		t.Fatalf("build host: %v", err)
 	}
@@ -115,19 +116,19 @@ func TestHostClassifyWithAPIModel(t *testing.T) {
 		want  constant.IntentType
 	}{
 		{
-			name:  "concept",
-			query: "C++ 里的引用和指针有什么区别？只需要选择合适专家处理。",
-			want:  constant.IntentConcept,
+			name:  "fact",
+			query: "这篇论文在 ImageNet 上的准确率是多少？只需要选择合适专家处理。",
+			want:  constant.IntentFact,
 		},
 		{
-			name:  "debug",
-			query: "我的 C++ 程序运行时报 Segmentation fault，请选择合适专家处理。",
-			want:  constant.IntentDebug,
+			name:  "method",
+			query: "请讲讲这篇论文的实验方法与流程，只需要选择合适专家处理。",
+			want:  constant.IntentMethod,
 		},
 		{
-			name:  "review",
-			query: "请评审并优化这段 C++ 排序代码，只需要选择合适专家处理。",
-			want:  constant.IntentReview,
+			name:  "summary",
+			query: "请概括这篇论文的主要内容，只需要选择合适专家处理。",
+			want:  constant.IntentSummary,
 		},
 	}
 
@@ -185,12 +186,12 @@ func (m *routingChatModel) Stream(ctx context.Context, input []*schema.Message, 
 
 func (m *routingChatModel) route(query string) string {
 	switch {
-	case strings.Contains(query, "评审") || strings.Contains(query, "优化"):
-		return "code_reviewer"
-	case strings.Contains(query, "Segmentation") || strings.Contains(query, "报错") || strings.Contains(query, "错误"):
-		return "debug_tutor"
+	case strings.Contains(query, "方法") || strings.Contains(query, "流程") || strings.Contains(query, "实验"):
+		return "method_expert"
+	case strings.Contains(query, "准确率") || strings.Contains(query, "数据") || strings.Contains(query, "多少"):
+		return "fact_expert"
 	default:
-		return "concept_tutor"
+		return "summary_expert"
 	}
 }
 

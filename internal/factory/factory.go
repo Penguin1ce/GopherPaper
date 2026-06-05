@@ -98,12 +98,21 @@ func NewEmbedder(ctx context.Context) (embedding.Embedder, error) {
 func newToolCallingModel(ctx context.Context, mc config.ModelConfig) (model.ToolCallingChatModel, error) {
 	switch mc.Provider {
 	case constant.ProviderOpenAI:
-		return mdopenai.NewChatModel(ctx, &mdopenai.ChatModelConfig{
+		oc := &mdopenai.ChatModelConfig{
 			APIKey:  mc.APIKey,
 			BaseURL: mc.BaseURL,
 			Model:   mc.Model,
 			Timeout: 60 * time.Second,
-		})
+		}
+		// 推理模型(gpt-5/o 系列)不认 max_tokens,须用 max_completion_tokens
+		// (含 reasoning 与可见输出),否则走网关默认小上限会把输出截断。
+		if mc.MaxTokens > 0 {
+			oc.MaxCompletionTokens = &mc.MaxTokens
+		}
+		if mc.ReasoningEffort != "" {
+			oc.ReasoningEffort = mdopenai.ReasoningEffortLevel(mc.ReasoningEffort)
+		}
+		return mdopenai.NewChatModel(ctx, oc)
 	case constant.ProviderOllama:
 		return mdollama.NewChatModel(ctx, &mdollama.ChatModelConfig{
 			BaseURL: mc.BaseURL,

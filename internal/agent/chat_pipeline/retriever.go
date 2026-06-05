@@ -73,6 +73,12 @@ func retrieve(ctx context.Context, query, filter string) ([]*schema.Document, er
 }
 
 func newRetriever(ctx context.Context) (retriever.Retriever, error) {
+	// 显式给普通 top-k 搜索参数。不传 Sp 时组件默认会把向量维度当成 range search 的
+	// radius(AddRadius(dim)),对 COSINE 触发 "range_filter > radius" 断言失败。
+	sp, err := entity.NewIndexAUTOINDEXSearchParam(1)
+	if err != nil {
+		return nil, fmt.Errorf("chat_pipeline: 构建搜索参数失败: %w", err)
+	}
 	return mvretriever.NewRetriever(ctx, &mvretriever.RetrieverConfig{
 		Client:            knowledge.Client(),
 		Collection:        knowledge.Collection(),
@@ -82,6 +88,7 @@ func newRetriever(ctx context.Context) (retriever.Retriever, error) {
 		VectorConverter:   denseVectorConverter,
 		MetricType:        entity.COSINE,
 		TopK:              constant.TopKKnowledge,
+		Sp:                sp,
 		Embedding:         knowledge.Embedder(),
 	})
 }

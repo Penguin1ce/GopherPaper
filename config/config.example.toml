@@ -15,6 +15,7 @@ provider = "openai"
 base_url = "https://api.openai.com/v1"
 api_key = "sk-xxxx"
 model = "gpt-4o-mini"
+max_tokens = 4096                      # 输出上限，推理模型须配足(reasoning token 也算)，0/省略走默认
 
 # ── 下游问答 / 抽取 / 报告 agent 的主力大模型：走 API ─────────
 [models.chat]
@@ -22,6 +23,8 @@ provider = "openai"                    # openai 兼容网关
 base_url = "https://api.openai.com/v1"
 api_key = "sk-xxxx"
 model = "gpt-4o-mini"
+max_tokens = 16384                     # openai 分支映射到 max_completion_tokens(含 reasoning)，推理模型须配足避免 JSON 截断
+# reasoning_effort = "low"             # 仅 gpt-5/o 系列推理模型有效，结构化输出建议 low，省额度防 reasoning 吃光输出
 
 # ── RAG 向量化模型：本地 ollama ──────────────────────────────
 [embedding]

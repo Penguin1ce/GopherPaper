@@ -14,6 +14,7 @@ import (
 
 	"GopherPaper/internal/agent"
 	"GopherPaper/internal/tenant"
+	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 )
 
@@ -38,9 +39,15 @@ func Build(chatModel model.BaseChatModel) (*compose.Graph[*agent.AgentInput, *ag
 	})
 	saveContext := compose.WithStatePreHandler(func(ctx context.Context, in *agent.AgentInput, s *ragState) (*agent.AgentInput, error) {
 		s.Intent = in.Intent.Type
-		docs, err := RetrieveForPaper(ctx, in.Query, tenant.MustStudentID(ctx), agent.PaperIDFrom(ctx))
+		owner := tenant.MustStudentID(ctx)
+		paperID := agent.PaperIDFrom(ctx)
+		docs, err := RetrieveForPaper(ctx, in.Query, owner, paperID)
 		if err != nil {
+			// 检索报错与"无召回"表现相同,这里记日志区分,避免误判成没数据
+			zlog.Error("RAG 检索失败", "owner", owner, "paper_id", paperID, "err", err)
 			docs = nil
+		} else if len(docs) == 0 {
+			zlog.Info("RAG 未召回到任何片段", "owner", owner, "paper_id", paperID)
 		}
 		s.Sources = References(docs)
 		if in.Intent.Slots == nil {

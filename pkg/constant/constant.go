@@ -84,6 +84,9 @@ const (
 const (
 	DefaultKnowledgeCollection = "knowledge_chunks"
 	TopKKnowledge              = 8
+	// MaxChunkRunes 单个知识块正文的字符上限,同标题同页的碎段合并到此为止,超出再切。
+	// bge-m3 支持长文,但块过大召回精度下降,取折中值。
+	MaxChunkRunes = 1000
 )
 
 // 多轮对话相关。
@@ -180,9 +183,11 @@ func RAGPromptFor(t IntentType) string {
 }
 
 // ExtractPrompt 是结构化抽取 agent 的 system prompt，要求输出固定 schema 的 JSON。
+// 注意：除题目/作者/单位/关键词外，其余字段一律要求用自己的话概括、禁止照抄原文。
+// 部分模型(经网关路由到 Claude 等)在逐字照抄长段输入时会被截断，导致 JSON 不闭合。
 const ExtractPrompt = `你是科研论文结构化信息抽取器。阅读下面的论文正文，抽取关键信息并只输出一个 JSON，禁止任何多余文字。
-字段缺失时填空字符串或空数组，不要编造。格式：
-{{"title":"题目","authors":["作者"],"affiliations":["单位"],"abstract":"摘要","keywords":["关键词"],"research_questions":["研究问题"],"methods":"方法流程","experiments":"实验数据","results":"主要结果","innovations":["创新点"],"limitations":["局限性"],"future_work":["未来工作"]}}
+要求：题目/作者/单位/关键词按原文填写；abstract、research_questions、methods、experiments、results、innovations、limitations、future_work 一律用中文简要概括，禁止大段照抄原文。字段缺失时填空字符串或空数组，不要编造。格式：
+{"title":"题目","authors":["作者"],"affiliations":["单位"],"abstract":"用一两句话概括摘要","keywords":["关键词"],"research_questions":["研究问题"],"methods":"概括方法流程","experiments":"概括实验设置与数据","results":"概括主要结果","innovations":["创新点"],"limitations":["局限性"],"future_work":["未来工作"]}
 
 论文正文：
 {context}`

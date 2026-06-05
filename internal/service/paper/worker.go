@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"GopherPaper/internal/agent"
 	"GopherPaper/internal/ai"
@@ -117,20 +118,55 @@ func toSections(paperID string, doc *agent.ParsedDoc) []model.PaperSection {
 }
 
 // buildChunks 把正文段落切成带页码出处的知识块,归属上传者私有库。
+// 切分策略:把同一标题、同一页的连续碎段合并成一个块,并把章节路径前缀进正文一起
+// 向量化,让小标题语义进入向量(问"实验方法"能召回方法段);换标题、换页或累计超
+// MaxChunkRunes 即切块,保证页码出处精确、块不过大。
 func buildChunks(task parseTask, doc *agent.ParsedDoc) []knowledge.Chunk {
-	chunks := make([]knowledge.Chunk, 0, len(doc.Paragraphs))
-	for i, p := range doc.Paragraphs {
+	var chunks []knowledge.Chunk
+	var buf []string
+	var bufRunes int
+	var curSection string
+	var curPage int
+
+	flush := func() {
+		if len(buf) == 0 {
+			return
+		}
+		body := strings.Join(buf, "\n\n")
+		content := body
+		if curSection != "" {
+			content = curSection + "\n\n" + body // 标题语境进 embedding
+		}
 		chunks = append(chunks, knowledge.Chunk{
-			Content:    p.Text,
+			Content:    content,
 			Scope:      constant.KnowledgeScopePrivate,
 			OwnerID:    task.OwnerID,
 			DocID:      task.PaperID,
 			SourceFile: task.FileName,
-			PageNo:     int64(p.PageNo),
-			ChunkIndex: int64(i),
-			Metadata:   map[string]any{"section": p.SectionPath},
+			PageNo:     int64(curPage),
+			ChunkIndex: int64(len(chunks)),
+			Metadata:   map[string]any{"section": curSection},
 		})
+		buf = buf[:0]
+		bufRunes = 0
 	}
+
+	for _, p := range doc.Paragraphs {
+		text := strings.TrimSpace(p.Text)
+		if text == "" {
+			continue
+		}
+		n := len([]rune(text))
+		// 边界:换标题、换页或累计超上限,先冲刷已攒的块再开新块。
+		if len(buf) > 0 && (p.SectionPath != curSection || p.PageNo != curPage || bufRunes+n > constant.MaxChunkRunes) {
+			flush()
+		}
+		curSection = p.SectionPath
+		curPage = p.PageNo
+		buf = append(buf, text)
+		bufRunes += n
+	}
+	flush()
 	return chunks
 }
 
