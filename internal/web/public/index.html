@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>GopherPaper 科研文献智能助手</title>
-    <link rel="stylesheet" href="/static/app.css">
+    <link rel="stylesheet" href="static/app.css">
   </head>
   <body>
     <main class="app-shell">
@@ -12,10 +12,11 @@
         <div class="auth-copy">
           <p class="eyebrow">GopherPaper</p>
           <h1>科研文献智能助手</h1>
-          <p>登录后可以上传论文、创建会话，并围绕论文连续提问。</p>
+          <p>论文问答测试台已覆盖登录、注册、上传 PDF、新建会话和围绕论文提问的基本流程。</p>
         </div>
+
         <div class="auth-panel">
-          <div class="tab-bar" role="tablist">
+          <div class="tab-bar" role="tablist" aria-label="账号操作">
             <button class="tab-button active" id="loginTab" type="button">登录</button>
             <button class="tab-button" id="registerTab" type="button">注册</button>
           </div>
@@ -29,7 +30,7 @@
               <span>密码</span>
               <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
             </label>
-            <button class="primary-button" type="submit">登录</button>
+            <button class="primary-button" type="submit">登录测试</button>
           </form>
 
           <form id="registerForm" class="form-stack hidden">
@@ -65,49 +66,131 @@
         </div>
       </section>
 
-      <section id="chatView" class="chat-view hidden" aria-label="对话工作台">
-        <aside class="session-pane">
+      <section id="workspaceView" class="workspace-view hidden" aria-label="论文问答工作台">
+        <aside class="side-pane">
           <div class="brand-row">
             <div>
               <p class="eyebrow">GopherPaper</p>
-              <h2>会话</h2>
+              <h2>测试流程</h2>
             </div>
-            <button id="refreshSessionsButton" class="icon-button" type="button" title="刷新会话" aria-label="刷新会话">↻</button>
+            <button id="logoutButton" class="secondary-button compact" type="button">退出</button>
           </div>
 
-          <form id="newSessionForm" class="new-session-form">
-            <input id="newSessionTitle" placeholder="新会话标题">
-            <button class="primary-button compact" type="submit">新建</button>
-          </form>
+          <div class="user-card">
+            <span class="avatar" aria-hidden="true">GP</span>
+            <div>
+              <strong id="userName">未登录</strong>
+              <p id="userLine"></p>
+            </div>
+          </div>
 
-          <div id="sessionList" class="session-list" aria-live="polite"></div>
+          <ol class="flow-list">
+            <li class="flow-step active">
+              <span>1</span>
+              <div>
+                <strong>登录或注册</strong>
+                <p>拿到 JWT 后进入测试工作台。</p>
+              </div>
+            </li>
+            <li class="flow-step" id="flowPaper">
+              <span>2</span>
+              <div>
+                <strong>上传 PDF 论文</strong>
+                <p>文件上传后等待解析与索引。</p>
+              </div>
+            </li>
+            <li class="flow-step" id="flowSession">
+              <span>3</span>
+              <div>
+                <strong>新建论文会话</strong>
+                <p>会话可绑定当前选中的论文。</p>
+              </div>
+            </li>
+            <li class="flow-step" id="flowQuestion">
+              <span>4</span>
+              <div>
+                <strong>输入问题</strong>
+                <p>发送后查看助教回答和引用信息。</p>
+              </div>
+            </li>
+          </ol>
+
+          <section class="side-section">
+            <div class="section-heading">
+              <h3>历史会话</h3>
+              <button id="refreshSessionsButton" class="icon-button" type="button" title="刷新会话" aria-label="刷新会话">↻</button>
+            </div>
+            <div id="sessionList" class="session-list" aria-live="polite"></div>
+          </section>
         </aside>
 
-        <section class="conversation-pane">
-          <header class="top-bar">
+        <section class="paper-pane">
+          <div class="panel-header">
             <div>
-              <p id="userLine" class="user-line"></p>
+              <p class="eyebrow">Paper</p>
+              <h2>论文上传与选择</h2>
+            </div>
+            <button id="refreshPapersButton" class="secondary-button compact" type="button">刷新论文</button>
+          </div>
+
+          <form id="uploadForm" class="upload-box">
+            <label class="file-drop">
+              <input id="paperFile" type="file" accept="application/pdf,.pdf" required>
+              <span class="file-icon" aria-hidden="true">PDF</span>
+              <strong id="fileDropTitle">选择一篇 PDF 论文</strong>
+              <small id="fileDropHint">支持 50MB 以内的 PDF 文件</small>
+            </label>
+            <button id="uploadButton" class="primary-button" type="submit">上传论文</button>
+          </form>
+
+          <div id="activePaperBox" class="active-paper hidden">
+            <p class="eyebrow">当前论文</p>
+            <h3 id="activePaperTitle"></h3>
+            <div id="activePaperMeta" class="muted-line"></div>
+            <div class="paper-actions">
+              <button id="checkPaperStatusButton" class="secondary-button compact" type="button">查询状态</button>
+              <button id="createSessionForPaperButton" class="primary-button compact" type="button">新建会话</button>
+            </div>
+          </div>
+
+          <div class="section-heading paper-heading">
+            <h3>我的论文</h3>
+            <form id="paperSearchForm" class="search-form">
+              <input id="paperSearchInput" placeholder="搜索标题或文件名">
+              <button class="secondary-button compact" type="submit">搜索</button>
+            </form>
+          </div>
+          <div id="paperList" class="paper-list" aria-live="polite"></div>
+        </section>
+
+        <section class="chat-pane">
+          <header class="chat-header">
+            <div>
+              <p id="activeSessionPaper" class="eyebrow">Question</p>
               <h2 id="activeTitle">选择或新建一个会话</h2>
             </div>
-            <button id="logoutButton" class="secondary-button" type="button">退出登录</button>
+            <form id="newSessionForm" class="new-session-form">
+              <input id="newSessionTitle" placeholder="会话标题">
+              <button class="primary-button compact" type="submit">新建</button>
+            </form>
           </header>
 
           <div id="emptyState" class="empty-state">
-            <h3>还没有打开会话</h3>
-            <p>从左侧选择历史会话，或新建一个会话后开始提问。</p>
+            <h3>准备开始论文问答</h3>
+            <p>先选择一篇论文并新建会话，或者从左侧打开已有会话。</p>
           </div>
 
           <div id="messageList" class="message-list hidden" aria-live="polite"></div>
 
           <form id="messageForm" class="composer">
-            <textarea id="messageInput" rows="3" placeholder="输入你的问题，暂时走普通 POST，不使用 SSE"></textarea>
-            <button id="sendMessageButton" class="primary-button" type="submit">发送</button>
+            <textarea id="messageInput" rows="3" placeholder="例如：这篇论文的核心贡献是什么？"></textarea>
+            <button id="sendMessageButton" class="primary-button" type="submit">提问</button>
           </form>
         </section>
       </section>
 
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
-    <script src="/static/app.js"></script>
+    <script src="static/app.js"></script>
   </body>
 </html>
