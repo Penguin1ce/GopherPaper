@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store";
 import { formatTime, intentLabel, paperTitle, sessionTitle } from "../utils";
 import type { Message, Reference } from "../types";
+import { Markdown } from "./Markdown";
 import { Empty, useGuard } from "./ui";
 
 // 从助教消息 meta.sources 解析出引用出处。
@@ -48,7 +49,11 @@ function MessageBubble({ message }: { message: Message }) {
   return (
     <article className={`message ${isAssistant ? "assistant" : "user"}`}>
       <div className="message-bubble">
-        <p className="message-text">{message.content}</p>
+        {isAssistant ? (
+          <Markdown>{message.content}</Markdown>
+        ) : (
+          <p className="message-text">{message.content}</p>
+        )}
         {isAssistant && refs.length > 0 && <Sources refs={refs} />}
       </div>
       <div className="message-meta">
@@ -75,6 +80,30 @@ function Thinking() {
         <span className="thinking-text">助教正在检索并作答…</span>
       </div>
     </article>
+  );
+}
+
+// 常用问题,点一下填进输入框。空会话与欢迎页都展示。
+const PROMPT_HINTS = [
+  "这篇论文的核心贡献是什么?",
+  "用了哪些数据集和评测指标?",
+  "方法部分的整体流程是怎样的?",
+];
+
+function PromptHints({ onPick }: { onPick: (q: string) => void }) {
+  return (
+    <div className="prompt-hints">
+      {PROMPT_HINTS.map((h) => (
+        <button
+          key={h}
+          type="button"
+          className="hint-chip"
+          onClick={() => onPick(h)}
+        >
+          {h}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -111,16 +140,10 @@ export function ChatPane() {
       await createSession(title, activePaper?.id);
     });
 
-  // 当前会话绑定的论文,以及它与选中论文是否一致。
+  // 当前会话绑定的论文(会话列表已按论文过滤,通常即 activePaper)。
   const sessionPaper = activeSession?.paper_id
     ? papers.find((p) => p.id === activeSession.paper_id) || null
     : null;
-  const mismatch = Boolean(
-    activeSession &&
-      activePaper &&
-      activeSession.paper_id &&
-      activeSession.paper_id !== activePaper.id,
-  );
 
   const hasSession = Boolean(activeSession);
   const hasContent = hasSession || messages.length > 0;
@@ -155,14 +178,6 @@ export function ChatPane() {
             ＋ 新建会话
           </button>
         </div>
-        {mismatch && activePaper && (
-          <div className="ctx-mismatch">
-            <span>当前会话属于另一篇论文,继续提问会发到该会话。</span>
-            <button type="button" className="link-button" onClick={newSession}>
-              为《{paperTitle(activePaper)}》新建会话
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="message-list" ref={listRef}>
@@ -176,31 +191,19 @@ export function ChatPane() {
                   : "先在中栏选择一篇论文,再开始提问。下方输入也会自动建会话。"
               }
             />
-            <div className="prompt-hints">
-              {[
-                "这篇论文的核心贡献是什么?",
-                "用了哪些数据集和评测指标?",
-                "方法部分的整体流程是怎样的?",
-              ].map((h) => (
-                <button
-                  key={h}
-                  type="button"
-                  className="hint-chip"
-                  onClick={() => setInput(h)}
-                >
-                  {h}
-                </button>
-              ))}
-            </div>
+            <PromptHints onPick={setInput} />
           </div>
         ) : (
           <>
             {messages.length === 0 && (
-              <Empty
-                title="这个会话还没有消息"
-                text="在下方输入问题,开始第一轮论文问答。"
-                inline
-              />
+              <div className="empty-session">
+                <Empty
+                  title="这个会话还没有消息"
+                  text="在下方输入问题,开始第一轮论文问答。"
+                  inline
+                />
+                <PromptHints onPick={setInput} />
+              </div>
             )}
             {messages.map((m) => (
               <MessageBubble key={String(m.id)} message={m} />

@@ -17,7 +17,7 @@ import type {
   RegisterPayload,
   Session,
 } from "./types";
-import { isSettled, paperTitle } from "./utils";
+import { isSettled, paperTitle, sessionsForPaper } from "./utils";
 
 const AUTH_KEY = "gopherpaper.auth";
 
@@ -295,8 +295,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const sessionList = Array.isArray(sl) ? sl : [];
       setPapers(paperList);
       setSessions(sessionList);
-      if (paperList.length > 0) setActivePaperID(paperList[0].id);
-      if (sessionList.length > 0) await openSession(sessionList[0].id);
+      if (paperList.length > 0) {
+        const first = paperList[0];
+        setActivePaperID(first.id);
+        const list = sessionsForPaper(sessionList, first.id);
+        if (list.length > 0) await openSession(list[0].id);
+      } else if (sessionList.length > 0) {
+        await openSession(sessionList[0].id);
+      }
       toast("登录成功");
     },
     [connectWs, openSession, persist, toast],
@@ -326,13 +332,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
           paper,
           ...list.filter((p) => p.id !== paper.id),
         ]);
+        // 新论文还没有会话,切过去并进入欢迎态。
         setActivePaperID(paper.id);
+        setActiveSessionID("");
+        setMessages([]);
       }
     },
     [],
   );
 
-  const selectPaper = useCallback((id: string) => setActivePaperID(id), []);
+  // 选论文:同一篇保持当前会话不动;切到不同论文则跳到该论文最新会话,
+  // 没有会话则清空进入欢迎态(会话因此永远归属当前论文)。
+  const selectPaper = useCallback(
+    (id: string) => {
+      if (id === activePaperID) return;
+      setActivePaperID(id);
+      const list = sessionsForPaper(sessions, id);
+      if (list.length > 0) {
+        openSession(list[0].id);
+      } else {
+        setActiveSessionID("");
+        setMessages([]);
+      }
+    },
+    [activePaperID, sessions, openSession],
+  );
 
   const createSession = useCallback(
     async (title: string, paperID?: string) => {
@@ -411,8 +435,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const sessionList = Array.isArray(sl) ? sl : [];
         setPapers(paperList);
         setSessions(sessionList);
-        if (paperList.length > 0) setActivePaperID((cur) => cur || paperList[0].id);
-        if (sessionList.length > 0) openSession(sessionList[0].id);
+        if (paperList.length > 0) {
+          const first = paperList[0];
+          setActivePaperID((cur) => cur || first.id);
+          const list = sessionsForPaper(sessionList, first.id);
+          if (list.length > 0) openSession(list[0].id);
+        } else if (sessionList.length > 0) {
+          openSession(sessionList[0].id);
+        }
       })
       .catch((err) => toast(err?.message || "加载失败", "error"));
     return () => {

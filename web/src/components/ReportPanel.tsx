@@ -4,6 +4,7 @@ import * as api from "../api";
 import { useApp } from "../store";
 import { paperTitle } from "../utils";
 import type { ChatResponse, ReportType } from "../types";
+import { Markdown } from "./Markdown";
 import { Empty, Skeleton, useGuard } from "./ui";
 
 const REPORTS: { type: ReportType; label: string; desc: string }[] = [
@@ -97,7 +98,9 @@ export function ReportPanel() {
                 <span className="intent-chip">{report.intent}</span>
               )}
             </header>
-            <div className="report-content">{report.content}</div>
+            <div className="report-content">
+              <Markdown>{report.content}</Markdown>
+            </div>
           </article>
         ) : (
           <Empty

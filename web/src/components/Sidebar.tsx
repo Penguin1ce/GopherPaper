@@ -1,11 +1,12 @@
 import { useApp } from "../store";
-import { formatTime, sessionTitle } from "../utils";
+import { formatTime, sessionsForPaper, sessionTitle } from "../utils";
 import { Empty, useGuard } from "./ui";
 
 export function Sidebar() {
   const {
     user,
     sessions,
+    activePaperID,
     activeSessionID,
     openSession,
     removeSession,
@@ -17,6 +18,9 @@ export function Sidebar() {
   const initials = (user?.name || user?.student_id || "GP")
     .slice(0, 2)
     .toUpperCase();
+
+  // 只展示当前论文的会话(按最近活动倒序);未选论文时展示全部。
+  const visibleSessions = sessionsForPaper(sessions, activePaperID);
 
   return (
     <aside className="side-pane">
@@ -70,10 +74,18 @@ export function Sidebar() {
         </div>
 
         <div className="session-list">
-          {sessions.length === 0 ? (
-            <Empty title="暂无会话" text="创建会话后会出现在这里。" inline />
+          {visibleSessions.length === 0 ? (
+            <Empty
+              title="暂无会话"
+              text={
+                activePaperID
+                  ? "这篇论文还没有会话,在右侧提问会自动创建。"
+                  : "创建会话后会出现在这里。"
+              }
+              inline
+            />
           ) : (
-            sessions.map((s) => (
+            visibleSessions.map((s) => (
               <div
                 key={s.id}
                 className={`session-item${

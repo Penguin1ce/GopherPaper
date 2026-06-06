@@ -14,6 +14,22 @@ export function sessionTitle(session: Session): string {
   return session.title || "未命名会话";
 }
 
+function sessionTime(s: Session): number {
+  const t = new Date(s.updated_at || s.created_at).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+// 某篇论文的会话,按最近活动倒序(最新在前)。paperID 为空时原样返回全部。
+export function sessionsForPaper(
+  sessions: Session[],
+  paperID: string,
+): Session[] {
+  if (!paperID) return sessions;
+  return sessions
+    .filter((s) => s.paper_id === paperID)
+    .sort((a, b) => sessionTime(b) - sessionTime(a));
+}
+
 export function formatTime(value?: string): string {
   if (!value) return "";
   const date = new Date(value);
