@@ -1,5 +1,5 @@
 // Package chat 是会话元数据的数据访问层，复用 dao.DB。会话软删。
-// 消息历史已迁到 trpc Session（Redis），不再经此层落 MySQL。
+// 消息历史由 internal/history 管理。
 package chat
 
 import (
@@ -49,7 +49,7 @@ func GetSession(ctx context.Context, id string) (*model.Session, error) {
 	return &s, nil
 }
 
-// DeleteSession 软删会话。消息已迁到 trpc Session（Redis），其清理由调用方另行处理。
+// DeleteSession 软删会话。消息历史由调用方另行处理。
 func DeleteSession(ctx context.Context, id string) error {
 	return dao.DB.WithContext(ctx).Where("id = ?", id).Delete(&model.Session{}).Error
 }

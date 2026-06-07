@@ -18,7 +18,7 @@ type Client struct {
 	cfg  config.MQConfig
 }
 
-// New 建立连接并声明 parse、chat 队列，幂等。
+// New 建立连接并声明解析队列，幂等。
 func New(cfg config.MQConfig) (*Client, error) {
 	conn, err := amqp.Dial(cfg.URL)
 	if err != nil {
@@ -29,15 +29,12 @@ func New(cfg config.MQConfig) (*Client, error) {
 		_ = conn.Close()
 		return nil, fmt.Errorf("mq: 打开 channel 失败: %w", err)
 	}
-	for _, q := range []string{cfg.ParseQueue, cfg.ChatQueue} {
-		if q == "" {
-			continue
-		}
+	if cfg.ParseQueue != "" {
 		// durable 队列，重启不丢。
-		if _, err := ch.QueueDeclare(q, true, false, false, false, nil); err != nil {
+		if _, err := ch.QueueDeclare(cfg.ParseQueue, true, false, false, false, nil); err != nil {
 			_ = ch.Close()
 			_ = conn.Close()
-			return nil, fmt.Errorf("mq: 声明队列 %s 失败: %w", q, err)
+			return nil, fmt.Errorf("mq: 声明队列 %s 失败: %w", cfg.ParseQueue, err)
 		}
 	}
 	return &Client{conn: conn, ch: ch, cfg: cfg}, nil

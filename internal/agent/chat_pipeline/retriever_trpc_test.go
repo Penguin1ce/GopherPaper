@@ -13,8 +13,8 @@ import (
 	"GopherPaper/pkg/constant"
 )
 
-// TestRetrieveForPaperBridge 验证阶段B 桥接:UpsertChunksTRPC 写入 → RetrieveForPaper 经
-// trpc vectorstore 检索并转回 schema.Document → References 还原出处。需 Milvus+Ollama。
+// TestRetrieveForPaperBridge 验证 UpsertChunksTRPC 写入后可经 RetrieveForPaper 检索。
+// References 应能从召回文档还原出处。需 Milvus 与 Ollama。
 func TestRetrieveForPaperBridge(t *testing.T) {
 	cfg, err := config.Load("../../../config/config.toml")
 	if err != nil {
@@ -68,7 +68,7 @@ func TestRetrieveForPaperBridge(t *testing.T) {
 	if !hasSource {
 		t.Fatalf("出处缺 scope/source_file: %+v", refs)
 	}
-	t.Logf("阶段B 检索桥接 OK: docs=%d refs=%d", len(docs), len(refs))
+	t.Logf("检索桥接 OK: docs=%d refs=%d", len(docs), len(refs))
 }
 
 func dropBridgeCollection(ctx context.Context, mc config.MilvusConfig, name string) {

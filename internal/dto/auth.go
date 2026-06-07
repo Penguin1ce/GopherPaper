@@ -1,6 +1,6 @@
 package dto
 
-// TokenRequest 申请 token，骨架阶段直接按 student_id 签发。
+// TokenRequest 申请 token。
 type TokenRequest struct {
 	StudentID string `json:"student_id" binding:"required"`
 	ClassID   string `json:"class_id"`

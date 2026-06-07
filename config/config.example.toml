@@ -65,7 +65,6 @@ db = 0
 [mq]
 url = "amqp://gopher:gopher@localhost:5672/"
 parse_queue = "paper.parse" # PDF 解析入库流水线
-chat_queue = "chat.persist" # 会话消息异步入库
 
 # ── JWT 鉴权 ─────────────────────────────────────────────────
 [jwt]

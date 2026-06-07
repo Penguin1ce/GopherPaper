@@ -11,8 +11,8 @@ import (
 	"GopherPaper/internal/factory"
 )
 
-// TestExtractTRPC 是 extract 垂直切片的端到端验证:trpc model → 调用 → 结构化输出。
-// 跑真实网关,缺配置则 skip。
+// TestExtractTRPC 验证 extract 链路端到端输出结构化信息。
+// 跑真实网关，缺配置则 skip。
 func TestExtractTRPC(t *testing.T) {
 	cfg, err := config.Load("../../../config/config.toml")
 	if err != nil {
@@ -42,5 +42,5 @@ func TestExtractTRPC(t *testing.T) {
 	if strings.TrimSpace(got.Title) == "" && strings.TrimSpace(got.Abstract) == "" {
 		t.Fatalf("抽取结果为空: %+v", got)
 	}
-	t.Logf("trpc extract 切片跑通: title=%q methods_len=%d innovations=%d", got.Title, len(got.Methods), len(got.Innovations))
+	t.Logf("trpc extract 跑通: title=%q methods_len=%d innovations=%d", got.Title, len(got.Methods), len(got.Innovations))
 }

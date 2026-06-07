@@ -4,7 +4,7 @@
 // 故不做自主路由,而是显式两段:
 //
 //	1 ClassifyIntentTRPC: intent 小模型把自由文本分到问答子类
-//	2 ChatRAGTRPC:        chat 模型按子类选 prompt 做 RAG,检索桥接 retriever
+//	2 ChatRAGTRPC:        chat 模型按子类选 prompt 做 RAG，并调用 retriever
 //
 // 二者解耦、两模型分用,忠实 CLAUDE.md「小模型意图识别 + 下游 RAG」的设计。
 package chat_pipeline
@@ -57,7 +57,7 @@ func ClassifyIntentTRPC(ctx context.Context, intentModel *trpcopenai.Model, mc c
 	return parseIntent(content)
 }
 
-// ChatRAGTRPC 按意图做参数化 RAG:检索桥接现有 retriever,trpc 生成,收集出处进 Meta。
+// ChatRAGTRPC 按意图做参数化 RAG，调用 retriever 检索，由 trpc 生成并收集出处进 Meta。
 // history 为多轮上下文,夹在 system prompt 与当前 query 之间。
 func ChatRAGTRPC(ctx context.Context, chatModel *trpcopenai.Model, mc config.ModelConfig, in *agent.AgentInput, history []trpcmodel.Message) (*agent.Reply, error) {
 	owner := tenant.MustStudentID(ctx)

@@ -1,15 +1,7 @@
-// Package history 是会话历史的存储与读取，由 trpc-agent-go 的 MySQL Session 承载。
-//
-// 迁移 Step 4：取代原先「Redis 上下文缓存 + chat_queue 入库 worker + MySQL messages 表」
-// 三件套。会话的每轮对话作为 Session 事件落 MySQL，既做多轮上下文窗口，也做历史展示。
-//
-// 依 CLAUDE.md「包级函数 + Init，不做 DI」：Service 藏在包级变量 svc 之后，
-// 其他包直接调 history.Load / Append / List / Delete，不持有句柄。
-//
-// 持久化用同步写：MySQL 是历史唯一存储（system-of-record，与业务库同实例），
-// AppendEvent 的几次写相对秒级模型调用可忽略，同步换取「应答即落库、下一轮立即可见」。
-// 若要削延迟可在 NewService 加 WithEnableAsyncPersist（进程内 worker，非 MQ）。
-// 表由框架自动创建（session_*），软删除默认开启；TTL 设为 0（不过期）。
+// Package history 管理会话历史与多轮上下文，由 trpc MySQL Session 承载。
+// 每轮对话作为 Session 事件写入 MySQL，供上下文窗口和历史展示复用。
+// Service 由 Init 初始化到包级变量，其他包直接调用 Load、Append、List、Delete。
+// Append 同步写入，保证应答后历史立即可读。Session 表由框架自动创建，TTL 为 0。
 package history
 
 import (
@@ -36,7 +28,7 @@ const invocationID = "gopherpaper-chat"
 func Init(cfg config.MySQLConfig) error {
 	s, err := mysqlsession.NewService(
 		mysqlsession.WithMySQLClientDSN(cfg.DSN),
-		mysqlsession.WithSessionTTL(0), // 历史唯一存储，不过期
+		mysqlsession.WithSessionTTL(0), // 不过期
 	)
 	if err != nil {
 		return fmt.Errorf("history: 初始化 MySQL Session 失败: %w", err)
@@ -69,7 +61,7 @@ func List(ctx context.Context, userID, sessionID string) ([]model.Message, error
 	return toMessages(sessionID, sess.GetEvents()), nil
 }
 
-// Append 把一轮消息追加进会话，会话不存在则先建。开启异步持久化后写入快速返回。
+// Append 把一轮消息追加进会话，会话不存在则先建。
 func Append(ctx context.Context, userID, sessionID string, msgs ...*model.Message) error {
 	if len(msgs) == 0 {
 		return nil

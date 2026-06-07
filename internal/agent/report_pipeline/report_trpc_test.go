@@ -12,9 +12,8 @@ import (
 	"GopherPaper/pkg/constant"
 )
 
-// TestGenerateReportTRPC 验证 report 垂直切片链路:检索桥接(未 Init 时优雅降级为无片段)
-// + trpc model 生成 + report_type 标记。跑真实网关,缺配置则 skip。
-// 不依赖 Milvus:检索器未初始化时 RetrieveForPaper 报错被吞,prompt 退化为"无相关片段"仍能生成。
+// TestGenerateReportTRPC 验证 report 链路的检索容错、trpc model 生成和 report_type 标记。
+// 跑真实网关，缺配置则 skip。不依赖 Milvus，检索器未初始化时仍可生成无片段报告。
 func TestGenerateReportTRPC(t *testing.T) {
 	cfg, err := config.Load("../../../config/config.toml")
 	if err != nil {

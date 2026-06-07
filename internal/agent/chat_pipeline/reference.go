@@ -18,7 +18,7 @@ type Doc struct {
 // Reference 是一条召回片段的出处，回传前端渲染引用。
 type Reference struct {
 	ID         string                  `json:"id"`
-	Scope      constant.KnowledgeScope `json:"scope"`
+	Scope      constant.KnowledgeScope `json:"knowledge_scope"`
 	StudentID  string                  `json:"student_id,omitempty"`
 	DocID      string                  `json:"doc_id,omitempty"`
 	SourceFile string                  `json:"source_file,omitempty"`

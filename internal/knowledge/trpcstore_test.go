@@ -14,8 +14,8 @@ import (
 	"GopherPaper/pkg/constant"
 )
 
-// TestTRPCStoreEndToEnd 在真实 Milvus 上验证方案Y 封装层:建 collection(含 BM25)、写入、
-// 多租户向量检索过滤。校准 searchfilter 字段前缀。缺 Milvus/Ollama 则 skip。
+// TestTRPCStoreEndToEnd 在真实 Milvus 上验证 collection 初始化、写入和多租户检索过滤。
+// 同时校准 searchfilter 字段前缀。缺 Milvus 或 Ollama 则 skip。
 func TestTRPCStoreEndToEnd(t *testing.T) {
 	cfg, err := config.Load("../../config/config.toml")
 	if err != nil {

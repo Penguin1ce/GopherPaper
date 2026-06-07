@@ -1,9 +1,6 @@
-// trpcstore.go 是 Step 2 方案Y(全 trpc Knowledge)的封装层。
-//
-// 用 trpc 的 milvus vectorstore(底层走新版 SDK milvus-io/milvus/client/v2)+ trpc embedder。
-// trpc vectorstore 是固定 schema(id/name/content/sparse/vector/metadata/created_at/
-// updated_at + BM25),故本项目的标量字段(scope/student_id/doc_id/...)全部落入 metadata
-// JSON,多租户过滤经 searchfilter 在 metadata 上表达。BM25 全文检索需 Milvus 2.5+。
+// trpcstore.go 封装 trpc Milvus vectorstore 与 trpc embedder。
+// trpc vectorstore 使用固定 schema，项目标量字段统一写入 metadata JSON。
+// 多租户过滤经 searchfilter 表达，BM25 全文检索需 Milvus 2.5 及以上版本。
 package knowledge
 
 import (
@@ -12,8 +9,8 @@ import (
 	"maps"
 
 	mventity "github.com/milvus-io/milvus/client/v2/entity"
-	trpcembedder "trpc.group/trpc-go/trpc-agent-go/knowledge/embedder"
 	"trpc.group/trpc-go/trpc-agent-go/knowledge/document"
+	trpcembedder "trpc.group/trpc-go/trpc-agent-go/knowledge/embedder"
 	"trpc.group/trpc-go/trpc-agent-go/knowledge/searchfilter"
 	"trpc.group/trpc-go/trpc-agent-go/knowledge/vectorstore"
 	mvstore "trpc.group/trpc-go/trpc-agent-go/knowledge/vectorstore/milvus"
@@ -28,7 +25,7 @@ var (
 	trpcDim   int
 )
 
-// InitTRPCStore 用 trpc vectorstore + embedder 初始化方案Y 知识库,走独立 collection。
+// InitTRPCStore 用 trpc vectorstore 与 embedder 初始化知识库 collection。
 func InitTRPCStore(ctx context.Context, mc config.MilvusConfig, collection string, emb trpcembedder.Embedder, dim int) error {
 	if emb == nil {
 		return fmt.Errorf("knowledge: trpc embedder 不能为空")

@@ -1,4 +1,4 @@
-// trpccall.go 是各 trpc 垂直切片共用的 model 调用辅助(迁移期)。
+// trpccall.go 是各 trpc 链路共用的 model 调用辅助。
 package agent
 
 import (

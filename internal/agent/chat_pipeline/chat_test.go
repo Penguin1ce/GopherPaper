@@ -1,6 +1,7 @@
 package chat_pipeline
 
 import (
+	"encoding/json"
 	"testing"
 
 	"GopherPaper/pkg/constant"
@@ -37,6 +38,28 @@ func TestReferenceFromDocument(t *testing.T) {
 	}
 	if ref.Score != 0.87 {
 		t.Fatalf("Score 提取错误: %+v", ref)
+	}
+}
+
+// TestReferenceJSONContract 校验前后端引用出处字段契约。
+func TestReferenceJSONContract(t *testing.T) {
+	ref := Reference{
+		ID:    "chunk-1",
+		Scope: constant.KnowledgeScopePublic,
+	}
+	b, err := json.Marshal(ref)
+	if err != nil {
+		t.Fatalf("Reference 序列化失败: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(b, &body); err != nil {
+		t.Fatalf("Reference 反序列化失败: %v", err)
+	}
+	if body["knowledge_scope"] != string(constant.KnowledgeScopePublic) {
+		t.Fatalf("knowledge_scope 字段错误: %s", string(b))
+	}
+	if _, ok := body["scope"]; ok {
+		t.Fatalf("不应输出旧字段 scope: %s", string(b))
 	}
 }
 

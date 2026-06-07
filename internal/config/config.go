@@ -61,8 +61,8 @@ type ModelConfig struct {
 	Model    string            `toml:"model"`    // 模型名，如 qwen2.5:1.5b / bge-m3
 	Dim      int               `toml:"dim"`      // 仅 embedding 用，需与 Milvus collection 维度对齐
 	// MaxTokens 输出 token 上限，0 表示不显式设置走 provider 默认。
-	// openai 分支映射到 max_completion_tokens(含 reasoning+可见输出)，
-	// 推理模型(gpt-5/o 系列)不认旧的 max_tokens，留默认易把 JSON 输出截断，须配足。
+	// openai 分支映射到 max_completion_tokens，覆盖 reasoning 与可见输出。
+	// gpt-5 或 o 系列需要配足，避免 JSON 输出截断。
 	MaxTokens int `toml:"max_tokens"`
 	// ReasoningEffort 推理强度 low/medium/high，仅 openai 推理模型有效，留空走默认 medium。
 	ReasoningEffort string `toml:"reasoning_effort"`
@@ -91,12 +91,10 @@ type RedisConfig struct {
 	DB       int    `toml:"db"`
 }
 
-// MQConfig 消息队列，默认 RabbitMQ，用于 PDF 解析等耗时任务异步化。
+// MQConfig 消息队列，默认 RabbitMQ，用于 PDF 解析异步化。
 type MQConfig struct {
-	URL string `toml:"url"` // amqp://user:pass@host:port/
-	// 任务队列名，按业务划分。
+	URL        string `toml:"url"`         // amqp://user:pass@host:port/
 	ParseQueue string `toml:"parse_queue"` // PDF 解析入库流水线
-	ChatQueue  string `toml:"chat_queue"`  // 会话消息入库
 }
 
 // MailConfig SMTP 邮件配置，用于发送验证码等邮件。
@@ -151,9 +149,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Milvus.Collection == "" {
 		c.Milvus.Collection = constant.DefaultKnowledgeCollection
-	}
-	if c.MQ.ChatQueue == "" {
-		c.MQ.ChatQueue = "chat.persist"
 	}
 	if c.MQ.ParseQueue == "" {
 		c.MQ.ParseQueue = "paper.parse"

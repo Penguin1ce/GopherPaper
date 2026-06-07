@@ -81,7 +81,7 @@ func run(cfgPath string) error {
 	// 3. 模型工厂：embedding 启动期建一次,意图/对话模型按用户懒建
 	factory.Init(cfg)
 
-	// 4. 多租户知识库(trpc vectorstore + trpc embedder,方案Y)
+	// 4. 多租户知识库
 	if err := knowledge.InitTRPCStore(ctx, cfg.Milvus, cfg.Milvus.Collection, factory.NewTRPCEmbedder(cfg.Embedding), cfg.Embedding.Dim); err != nil {
 		return err
 	}

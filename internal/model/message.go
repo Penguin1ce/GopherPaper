@@ -13,9 +13,9 @@ const (
 	RoleSystem    = "system"
 )
 
-// Message 是会话里的一条对话内容。会话历史已迁到 trpc Session（Redis 事件），
-// 不再落 MySQL，故无 gorm 标签：本结构仅作 HTTP 层的传输载体。
-// ID 取自底层 Session 事件的 ID（字符串）；新生成、尚未落 Session 的助教消息 ID 为空。
+// Message 是会话里的一条对话内容，底层由 trpc MySQL Session 事件承载。
+// 本结构仅作 HTTP 层与 AI 层的传输载体。
+// ID 取自底层 Session 事件的 ID，新生成、尚未落 Session 的助教消息 ID 为空。
 // Intent 仅助教消息有值，按 created_at 升序还原上下文。
 type Message struct {
 	ID        string              `json:"id"`
