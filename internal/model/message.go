@@ -6,22 +6,22 @@ import (
 	"GopherPaper/pkg/constant"
 )
 
-// 消息角色，与 eino schema 保持一致。
+// 消息角色，与 trpc model 的 role 取值保持一致。
 const (
 	RoleUser      = "user"
 	RoleAssistant = "assistant"
 	RoleSystem    = "system"
 )
 
-// Message 是会话里的一条对话内容，追加写、不可变，
-// 按 created_at 升序还原上下文。Intent 仅用户消息有值。
+// Message 是会话里的一条对话内容。会话历史已迁到 trpc Session（Redis 事件），
+// 不再落 MySQL，故无 gorm 标签：本结构仅作 HTTP 层的传输载体。
+// ID 取自底层 Session 事件的 ID（字符串）；新生成、尚未落 Session 的助教消息 ID 为空。
+// Intent 仅助教消息有值，按 created_at 升序还原上下文。
 type Message struct {
-	ID        uint64              `gorm:"primaryKey" json:"id"`
-	SessionID string              `gorm:"size:36;not null;index:idx_session_created" json:"session_id"`
-	Role      string              `gorm:"size:16;not null" json:"role"`
-	Content   string              `gorm:"type:text;not null" json:"content"`
-	Intent    constant.IntentType `gorm:"size:16" json:"intent,omitempty"`
-	CreatedAt time.Time           `gorm:"not null;index:idx_session_created" json:"created_at"`
+	ID        string              `json:"id"`
+	SessionID string              `json:"session_id"`
+	Role      string              `json:"role"`
+	Content   string              `json:"content"`
+	Intent    constant.IntentType `json:"intent,omitempty"`
+	CreatedAt time.Time           `json:"created_at"`
 }
-
-func (Message) TableName() string { return "messages" }

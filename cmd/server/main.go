@@ -17,12 +17,12 @@ import (
 	"GopherPaper/internal/config"
 	"GopherPaper/internal/dao"
 	"GopherPaper/internal/factory"
+	"GopherPaper/internal/history"
 	"GopherPaper/internal/knowledge"
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/mq"
 	"GopherPaper/internal/parser"
 	"GopherPaper/internal/router"
-	chatservice "GopherPaper/internal/service/chat"
 	paperservice "GopherPaper/internal/service/paper"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/utils"
@@ -59,6 +59,12 @@ func run(cfgPath string) error {
 	}
 	zlog.Info("MySQL 已连接，数据表已就绪")
 
+	// 会话历史：trpc MySQL Session 承载多轮上下文与历史，须在 MySQL 之后
+	if err := history.Init(cfg.MySQL); err != nil {
+		return err
+	}
+	zlog.Info("会话历史 Session 已就绪")
+
 	if err := dao.InitRedis(ctx, cfg.Redis); err != nil {
 		return err
 	}
@@ -74,16 +80,11 @@ func run(cfgPath string) error {
 
 	// 3. 模型工厂：embedding 启动期建一次,意图/对话模型按用户懒建
 	factory.Init(cfg)
-	embedder, err := factory.NewEmbedder(ctx)
-	if err != nil {
-		return err
-	}
 
-	// 4. 多租户知识库
-	if err := knowledge.Init(ctx, cfg.Milvus, embedder, cfg.Embedding.Dim); err != nil {
+	// 4. 多租户知识库(trpc vectorstore + trpc embedder,方案Y)
+	if err := knowledge.InitTRPCStore(ctx, cfg.Milvus, cfg.Milvus.Collection, factory.NewTRPCEmbedder(cfg.Embedding), cfg.Embedding.Dim); err != nil {
 		return err
 	}
-	defer knowledge.Close()
 	zlog.Info("Milvus 知识库已就绪")
 
 	// 5. PDF 解析：MinerU 在线 API 客户端
@@ -96,13 +97,7 @@ func run(cfgPath string) error {
 	}
 	zlog.Info("编排器已就绪")
 
-	// 7. 会话消息异步入库：注入 MQ 句柄并拉起消费者
-	if err := chatservice.Init(ctx, mqClient, cfg.MQ.ChatQueue); err != nil {
-		return err
-	}
-	zlog.Info("会话入库消费者已启动")
-
-	// 8. 论文解析入库：注入 MQ 句柄并拉起解析消费者
+	// 7. 论文解析入库：注入 MQ 句柄并拉起解析消费者
 	if err := paperservice.Init(ctx, mqClient, cfg.MQ.ParseQueue); err != nil {
 		return err
 	}

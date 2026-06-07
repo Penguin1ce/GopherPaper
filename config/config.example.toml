@@ -29,7 +29,7 @@ max_tokens = 16384                     # openai 分支映射到 max_completion_t
 # ── RAG 向量化模型：本地 ollama ──────────────────────────────
 [embedding]
 provider = "ollama"
-base_url = "http://localhost:11434"
+base_url = "http://localhost:11434/v1" # trpc openai 兼容 embedder 走 Ollama 的 /v1 端点
 model = "bge-m3"
 dim = 1024                          # 必须与 Milvus collection 的向量维度一致
 
@@ -38,7 +38,7 @@ dim = 1024                          # 必须与 Milvus collection 的向量维�
 address = "localhost:19530"
 username = ""
 password = ""
-collection = "knowledge_chunks" # 科研基础库与用户论文库共用，按字段隔离
+collection = "knowledge_chunks_trpc" # trpc vectorstore 专用 schema,科研基础库与用户论文库共用,按 metadata 字段隔离
 
 # ── PDF 解析：MinerU 在线 API（异步任务制）───────────────────
 [parser]

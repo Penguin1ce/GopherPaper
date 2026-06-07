@@ -91,7 +91,8 @@ const (
 
 // 多轮对话相关。
 const (
-	MaxContextMessages = 20 // 喂给模型的历史消息最大条数，超出只取最近的
+	MaxContextMessages = 20            // 喂给模型的历史消息最大条数，超出只取最近的
+	SessionAppName     = "gopherpaper" // trpc Session 的 appName，与 userID/sessionID 共同定位会话事件
 )
 
 type KnowledgeScope string
@@ -120,15 +121,11 @@ const (
 const (
 	RedisKeyVerifyCode  = "verify_code:"  // 邮箱验证码，键拼接邮箱
 	RedisKeyUserToken   = "jwt:"          // 登录 token，键拼接邮箱前缀
-	RedisKeyChatContext = "chat:ctx:"     // 会话上下文缓存，键拼接 sessionID
 	RedisKeyParseStatus = "paper:status:" // 论文解析状态缓存，键拼接 paperID
 )
 
 // VerifyCodeTTL 邮箱验证码有效期。
 const VerifyCodeTTL = 5 * time.Minute
-
-// ChatContextTTL 会话上下文缓存有效期，须大于消费者落库的延迟窗口。
-const ChatContextTTL = time.Hour
 
 // IntentPrompt 是论文问答的意图分类 system prompt，只在问答子类间分类。
 const IntentPrompt = `你是科研文献问答助手的意图分类器，判断用户提问属于以下哪一类：

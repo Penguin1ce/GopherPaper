@@ -1,53 +1,14 @@
 package chat_pipeline
 
 import (
-	"strings"
 	"testing"
-
-	"github.com/cloudwego/eino/schema"
 
 	"GopherPaper/pkg/constant"
 )
 
-// TestVisibleFilter_EmptyStudentOnlyPublic 无学生身份时只能看到公共库。
-func TestVisibleFilter_EmptyStudentOnlyPublic(t *testing.T) {
-	got := visibleFilter("")
-	want := "knowledge_scope == 'public'"
-	if got != want {
-		t.Fatalf("空 studentID 应只过滤公共库\n want %q\n got  %q", want, got)
-	}
-}
-
-// TestVisibleFilter_WithStudent 有学生身份时是公共库或本人私有库的并集。
-func TestVisibleFilter_WithStudent(t *testing.T) {
-	got := visibleFilter("s_42")
-	for _, sub := range []string{
-		"knowledge_scope == 'public'",
-		"knowledge_scope == 'private'",
-		"student_id == 's_42'",
-		" or ",
-	} {
-		if !strings.Contains(got, sub) {
-			t.Fatalf("过滤表达式缺少 %q\n got %q", sub, got)
-		}
-	}
-	// 不应出现别的学生
-	if strings.Contains(got, "s_43") {
-		t.Fatalf("过滤表达式泄漏了其他学生: %q", got)
-	}
-}
-
-// TestVisibleFilter_EscapesQuote 学生 ID 含单引号时必须转义，防止过滤表达式注入。
-func TestVisibleFilter_EscapesQuote(t *testing.T) {
-	got := visibleFilter("a'b")
-	if !strings.Contains(got, `student_id == 'a\'b'`) {
-		t.Fatalf("单引号未正确转义: %q", got)
-	}
-}
-
 // TestReferenceFromDocument 从检索文档的 metadata 还原出处。
 func TestReferenceFromDocument(t *testing.T) {
-	doc := &schema.Document{
+	doc := &Doc{
 		ID: "chunk-1",
 		MetaData: map[string]any{
 			constant.MilvusFieldKnowledgeScope: "private",
@@ -58,8 +19,8 @@ func TestReferenceFromDocument(t *testing.T) {
 			constant.MilvusFieldPageNo:         int64(3),
 			constant.MilvusFieldChunkIndex:     int64(2),
 		},
+		Score: 0.87,
 	}
-	doc.WithScore(0.87)
 
 	ref := ReferenceFromDocument(doc)
 	if ref.ID != "chunk-1" || ref.Scope != constant.KnowledgeScopePrivate {

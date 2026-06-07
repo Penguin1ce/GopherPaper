@@ -3,47 +3,15 @@
 package extract_pipeline
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
-	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/schema"
-
 	"GopherPaper/internal/agent"
-	"GopherPaper/pkg/constant"
 )
 
 // maxBodyChars 喂给模型的正文字符上限，超长截断避免超出上下文窗。
 const maxBodyChars = 12000
-
-// Build 构造结构化抽取 agent 子图。
-func Build(chatModel model.BaseChatModel) (*compose.Graph[*agent.ParsedDoc, *agent.PaperStructured], error) {
-	g := compose.NewGraph[*agent.ParsedDoc, *agent.PaperStructured]()
-
-	prepare := compose.InvokableLambda(func(_ context.Context, doc *agent.ParsedDoc) ([]*schema.Message, error) {
-		sysPrompt := strings.ReplaceAll(constant.ExtractPrompt, "{context}", bodyText(doc))
-		// 须带 user 轮次,否则推理模型只见 system 指令会返回空 content。
-		return []*schema.Message{
-			schema.SystemMessage(sysPrompt),
-			schema.UserMessage("请基于以上论文正文输出抽取的 JSON。"),
-		}, nil
-	})
-	toStruct := compose.InvokableLambda(func(_ context.Context, msg *schema.Message) (*agent.PaperStructured, error) {
-		return parseStructured(msg.Content)
-	})
-
-	_ = g.AddLambdaNode("prepare", prepare)
-	_ = g.AddChatModelNode("model", chatModel)
-	_ = g.AddLambdaNode("parse", toStruct)
-	_ = g.AddEdge(compose.START, "prepare")
-	_ = g.AddEdge("prepare", "model")
-	_ = g.AddEdge("model", "parse")
-	_ = g.AddEdge("parse", compose.END)
-	return g, nil
-}
 
 // bodyText 把段落按章节拼成正文，带截断。
 func bodyText(doc *agent.ParsedDoc) string {

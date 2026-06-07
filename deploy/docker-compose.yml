@@ -98,7 +98,7 @@ services:
       retries: 3
 
   milvus:
-    image: milvusdb/milvus:v2.4.5
+    image: milvusdb/milvus:v2.5.4
     container_name: gopher-milvus
     restart: unless-stopped
     command: ["milvus", "run", "standalone"]

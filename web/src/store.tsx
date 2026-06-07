@@ -414,6 +414,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const data = await api.sendMessage(sessionID, query);
         if (data?.message) {
           const assistant: Message = { ...data.message };
+          // 助教消息的真实 ID 落 Session 后才有,即时应答 ID 为空,
+          // 这里补个本地唯一 ID 避免多轮渲染 key 冲突;重开会话时由 listMessages 还原真实 ID。
+          if (!assistant.id) assistant.id = `local-a-${Date.now()}`;
           if (data.meta) assistant.meta = data.meta;
           setMessages((list) => [...list, assistant]);
         }

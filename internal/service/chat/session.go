@@ -4,7 +4,9 @@ import (
 	"context"
 
 	chatdao "GopherPaper/internal/dao/chat"
+	"GopherPaper/internal/history"
 	"GopherPaper/internal/model"
+	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/errs"
 )
 
@@ -22,20 +24,26 @@ func ListSessions(ctx context.Context, studentID string) ([]model.Session, error
 	return chatdao.ListSessions(ctx, studentID)
 }
 
-// DeleteSession 删除会话，仅限本人。
+// DeleteSession 删除会话，仅限本人。会话元数据软删，历史事件从 Session 清理。
 func DeleteSession(ctx context.Context, studentID, sessionID string) error {
 	if _, err := ownedSession(ctx, studentID, sessionID); err != nil {
 		return err
 	}
-	return chatdao.DeleteSession(ctx, sessionID)
+	if err := chatdao.DeleteSession(ctx, sessionID); err != nil {
+		return err
+	}
+	if err := history.Delete(ctx, studentID, sessionID); err != nil {
+		zlog.Error("清理会话历史失败", "session_id", sessionID, "err", err)
+	}
+	return nil
 }
 
-// ListMessages 还原会话历史消息，仅限本人。
+// ListMessages 还原会话历史消息，仅限本人，从 trpc Session 读。
 func ListMessages(ctx context.Context, studentID, sessionID string) ([]model.Message, error) {
 	if _, err := ownedSession(ctx, studentID, sessionID); err != nil {
 		return nil, err
 	}
-	return chatdao.ListMessages(ctx, sessionID)
+	return history.List(ctx, studentID, sessionID)
 }
 
 // ownedSession 取会话并校验归属，非本人返回 errs.ErrSessionForbidden。
