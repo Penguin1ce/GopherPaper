@@ -143,6 +143,31 @@ func GetMeta(ctx context.Context, paperID string) (*model.PaperMeta, error) {
 	return &m, nil
 }
 
+// GetReport 取某篇论文某类研读报告缓存，不存在返回 errs.ErrPaperNotFound。
+func GetReport(ctx context.Context, paperID string, t constant.ReportType) (*model.PaperReport, error) {
+	var r model.PaperReport
+	err := dao.DB.WithContext(ctx).Where("paper_id = ? and report_type = ?", paperID, t).First(&r).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errs.ErrReportNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询研读报告失败: %w", err)
+	}
+	return &r, nil
+}
+
+// SaveReport 写入或覆盖某篇论文某类研读报告缓存，按 (paper_id, report_type) 幂等。
+func SaveReport(ctx context.Context, r *model.PaperReport) error {
+	err := dao.DB.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "paper_id"}, {Name: "report_type"}},
+		DoUpdates: clause.AssignmentColumns([]string{"content", "meta", "updated_at"}),
+	}).Create(r).Error
+	if err != nil {
+		return fmt.Errorf("dao/paper: 写入研读报告失败: %w", err)
+	}
+	return nil
+}
+
 // SaveSections 覆盖论文章节，先删后插保证幂等。
 func SaveSections(ctx context.Context, paperID string, sections []model.PaperSection) error {
 	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

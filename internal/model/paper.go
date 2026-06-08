@@ -44,6 +44,38 @@ func (s *JSONStrings) Scan(src any) error {
 	return json.Unmarshal(b, s)
 }
 
+// JSONMap 是落库为 JSON 文本的键值表，用于报告附带的结构化元数据。
+type JSONMap map[string]any
+
+func (m JSONMap) Value() (driver.Value, error) {
+	if m == nil {
+		return "{}", nil
+	}
+	b, err := json.Marshal(m)
+	return string(b), err
+}
+
+func (m *JSONMap) Scan(src any) error {
+	if src == nil {
+		*m = nil
+		return nil
+	}
+	var b []byte
+	switch v := src.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
+		return fmt.Errorf("model: JSONMap 不支持的类型 %T", src)
+	}
+	if len(b) == 0 {
+		*m = nil
+		return nil
+	}
+	return json.Unmarshal(b, m)
+}
+
 // Paper 是一篇上传的论文，归属某个用户,主键 UUID 便于对外暴露。
 // Status 是从上传到就绪的解析状态机。
 type Paper struct {
@@ -106,6 +138,20 @@ type PaperSection struct {
 }
 
 func (PaperSection) TableName() string { return "paper_sections" }
+
+// PaperReport 是某篇论文某类研读报告的持久化结果，按 (paper_id, report_type) 唯一。
+// 同类报告生成一次后落库，再次点击同一按钮命中缓存直接复用,不重复调模型。
+type PaperReport struct {
+	ID         uint64              `gorm:"primaryKey" json:"-"`
+	PaperID    string              `gorm:"size:36;not null;uniqueIndex:idx_paper_report_type" json:"paper_id"`
+	ReportType constant.ReportType `gorm:"size:16;not null;uniqueIndex:idx_paper_report_type" json:"report_type"`
+	Content    string              `gorm:"type:longtext" json:"content"`
+	Meta       JSONMap             `gorm:"type:text" json:"meta,omitempty"`
+	CreatedAt  time.Time           `json:"created_at"`
+	UpdatedAt  time.Time           `json:"updated_at"`
+}
+
+func (PaperReport) TableName() string { return "paper_reports" }
 
 // Tag 是用户自定义的论文标签。
 type Tag struct {

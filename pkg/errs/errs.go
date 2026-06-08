@@ -20,4 +20,5 @@ var (
 	ErrPaperForbidden = errors.New("paper: 无权访问该论文")
 	ErrInvalidFile    = errors.New("paper: 文件无效，仅支持 PDF")
 	ErrParseFailed    = errors.New("paper: PDF 解析失败")
+	ErrReportNotFound = errors.New("paper: 研读报告缓存不存在")
 )
