@@ -6,8 +6,8 @@ addr = ":8080"
 mode = "debug" # debug / release
 
 [log]
-level = "info" # debug / info / warn / error
-file = ""      # 留空输出到 stdout
+level = "info"         # debug / info / warn / error
+file = "log/app.log"   # 留空输出到 stdout；填路径则写文件（自动建目录、追加写）
 
 # ── Host 意图路由小模型：走 API，与下游解耦可单独换小模型 ──────
 [models.intent]

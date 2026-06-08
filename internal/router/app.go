@@ -14,13 +14,15 @@ import (
 	"GopherPaper/internal/middleware"
 	"GopherPaper/internal/response"
 	"GopherPaper/internal/web"
+	"GopherPaper/internal/zlog"
 )
 
 // Init 构建 gin 引擎。mode 为运行模式，依赖已由各包 Init 初始化。
 func Init(mode string) *gin.Engine {
 	gin.SetMode(mode)
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery())
+	// 访问日志与 panic 恢复都写到 zlog 的输出目标，和应用日志同去向（文件或 stdout）。
+	r.Use(gin.LoggerWithWriter(zlog.Writer()), gin.RecoveryWithWriter(zlog.Writer()))
 
 	r.GET("/", func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", web.IndexHTML())

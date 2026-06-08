@@ -2,17 +2,26 @@
 package zlog
 
 import (
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
 var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-// Init 初始化全局 logger，file 为空则输出到 stdout。
+// out 是当前日志输出目标，供 Writer 交给 gin 等共用同一去向。
+var out io.Writer = os.Stdout
+
+// Init 初始化全局 logger，file 为空则输出到 stdout，否则写入该文件（自动建目录、追加写）。
 func Init(level, file string) error {
-	out := os.Stdout
 	if file != "" {
+		if dir := filepath.Dir(file); dir != "" && dir != "." {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+		}
 		f, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
 			return err
@@ -23,6 +32,9 @@ func Init(level, file string) error {
 	slog.SetDefault(logger)
 	return nil
 }
+
+// Writer 返回当前日志输出目标，供 gin 访问日志等导向同一文件。
+func Writer() io.Writer { return out }
 
 func parseLevel(s string) slog.Level {
 	switch strings.ToLower(s) {
