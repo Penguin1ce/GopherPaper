@@ -6,6 +6,7 @@ package history
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	trpcevent "trpc.group/trpc-go/trpc-agent-go/event"
@@ -23,6 +24,9 @@ var svc trpcsession.Service
 
 // invocationID 标记本服务写入的事件来源，便于排查。
 const invocationID = "gopherpaper-chat"
+
+// metaExtKey 是出处等结构化 meta 在事件 Extensions 里的命名空间键。
+const metaExtKey = "gopherpaper/meta"
 
 // Init 用项目的 MySQL DSN 建 trpc MySQL Session 服务（自动建表）。须在 dao.InitMySQL 之后调用。
 func Init(cfg config.MySQLConfig) error {
@@ -109,6 +113,12 @@ func toEvent(m *model.Message) *trpcevent.Event {
 	if m.Intent != "" {
 		e.Tag = string(m.Intent)
 	}
+	// 出处等结构化 meta 存进事件 Extensions,随 Session 持久化,历史还原时取回。
+	if len(m.Meta) > 0 {
+		if b, err := json.Marshal(m.Meta); err == nil {
+			e.Extensions = map[string]json.RawMessage{metaExtKey: b}
+		}
+	}
 	return e
 }
 
@@ -124,14 +134,21 @@ func toMessages(sessionID string, events []trpcevent.Event) []model.Message {
 		if msg.Content == "" {
 			continue
 		}
-		msgs = append(msgs, model.Message{
+		out := model.Message{
 			ID:        e.ID,
 			SessionID: sessionID,
 			Role:      string(msg.Role),
 			Content:   msg.Content,
 			Intent:    constant.IntentType(e.Tag),
 			CreatedAt: e.Timestamp,
-		})
+		}
+		if raw, ok := e.Extensions[metaExtKey]; ok {
+			var meta map[string]any
+			if err := json.Unmarshal(raw, &meta); err == nil {
+				out.Meta = meta
+			}
+		}
+		msgs = append(msgs, out)
 	}
 	return msgs
 }

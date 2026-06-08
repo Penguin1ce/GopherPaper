@@ -23,5 +23,6 @@ type Message struct {
 	Role      string              `json:"role"`
 	Content   string              `json:"content"`
 	Intent    constant.IntentType `json:"intent,omitempty"`
+	Meta      map[string]any      `json:"meta,omitempty"` // 助教消息的出处等结构化数据,随 Session 事件持久化与还原
 	CreatedAt time.Time           `json:"created_at"`
 }

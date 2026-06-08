@@ -37,7 +37,10 @@ func TestAppendListRoundtrip(t *testing.T) {
 	t.Cleanup(func() { _ = Delete(ctx, user, sess) })
 
 	user1 := &model.Message{SessionID: sess, Role: model.RoleUser, Content: "这篇论文的方法是什么"}
-	ai1 := &model.Message{SessionID: sess, Role: model.RoleAssistant, Content: "采用了对比学习", Intent: constant.IntentMethod}
+	ai1 := &model.Message{
+		SessionID: sess, Role: model.RoleAssistant, Content: "采用了对比学习", Intent: constant.IntentMethod,
+		Meta: map[string]any{"sources": []any{map[string]any{"doc_id": "p1", "block_type": "image", "img_name": "fig1.jpg"}}},
+	}
 	if err := Append(ctx, user, sess, user1, ai1); err != nil {
 		t.Fatalf("Append 失败: %v", err)
 	}
@@ -57,6 +60,14 @@ func TestAppendListRoundtrip(t *testing.T) {
 	}
 	if msgs[1].ID == "" {
 		t.Fatal("还原的消息应带 Session 事件 ID")
+	}
+	// 出处 meta 须经 Session 事件 Extensions 持久化并还原,退出重进后引用与内联图才不丢。
+	srcs, ok := msgs[1].Meta["sources"].([]any)
+	if !ok || len(srcs) != 1 {
+		t.Fatalf("出处 meta 未随历史还原: %+v", msgs[1].Meta)
+	}
+	if got := srcs[0].(map[string]any)["img_name"]; got != "fig1.jpg" {
+		t.Fatalf("出处图片名还原错误: %v", got)
 	}
 }
 

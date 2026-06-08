@@ -45,7 +45,7 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string) (*mode
 	step = time.Now()
 	now := time.Now()
 	userMsg := &model.Message{SessionID: sessionID, Role: model.RoleUser, Content: query, CreatedAt: now}
-	aiMsg := &model.Message{SessionID: sessionID, Role: model.RoleAssistant, Content: reply.Content, Intent: reply.Intent, CreatedAt: now}
+	aiMsg := &model.Message{SessionID: sessionID, Role: model.RoleAssistant, Content: reply.Content, Intent: reply.Intent, Meta: reply.Meta, CreatedAt: now}
 
 	// 追加进 Session，失败不阻断应答，仅丢失本轮历史。
 	if err := history.Append(ctx, studentID, sessionID, userMsg, aiMsg); err != nil {
