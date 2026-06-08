@@ -12,7 +12,7 @@ const (
 )
 
 // IntentType 标识一次论文问答的处理路径。
-// fact/summary/method 是聊天框的问答子类，由 Host 调度；
+// fact/summary/method 是聊天框的问答子类,由意图分类模型选择;
 // 研读报告是显式动作，由前端按钮带 ReportType 触发，不经分类器。
 type IntentType string
 
@@ -64,14 +64,6 @@ const (
 	PaperIndexed   PaperStatus = "indexed"   // 已分块入向量库
 	PaperReady     PaperStatus = "ready"     // 全流程就绪
 	PaperFailed    PaperStatus = "failed"    // 解析失败
-)
-
-// 主图节点名。
-const (
-	NodePrepare     = "prepare"
-	NodeIntentTpl   = "intent_tpl"
-	NodeIntentModel = "intent_model"
-	NodeParseIntent = "parse_intent"
 )
 
 // HTTP 鉴权相关。
@@ -156,15 +148,6 @@ const (
 
 参考资料：
 {context}`
-
-	HostPrompt = `你是科研文献问答系统的 Host 调度器。你的唯一任务是判断用户请求应该交给哪个专家处理。
-
-必须遵守：
-- 必须且只能调用一个最合适的工具，不要直接回答用户。
-- 不要把同一个请求拆给多个专家。
-- 用户询问论文里的具体事实、数据、结论、数值时，调用 fact_expert。
-- 用户想要概括、解释、综述论文内容时，调用 summary_expert。
-- 用户关注研究方法、实验设计、技术流程时，调用 method_expert。`
 )
 
 // RAGPromptFor 按问答子类返回 system prompt，未知子类回退到概括。

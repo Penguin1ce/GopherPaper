@@ -1,5 +1,5 @@
-// trpccall.go 是各 trpc 链路共用的 model 调用辅助。
-package agent
+// Package core trpccall.go 是各 trpc 链路共用的 model 调用辅助。
+package core
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 )
 
 // GenerateText 调 trpc model 非流式聚合为完整文本。
+// 各链路均不开启流式,只读 Message.Content;若误开流式应改读 Delta,不可两者同取以免重复计数。
 func GenerateText(ctx context.Context, m *trpcopenai.Model, req *trpcmodel.Request) (string, error) {
 	ch, err := m.GenerateContent(ctx, req)
 	if err != nil {
@@ -23,8 +24,11 @@ func GenerateText(ctx context.Context, m *trpcopenai.Model, req *trpcmodel.Reque
 		}
 		for _, c := range rsp.Choices {
 			sb.WriteString(c.Message.Content)
-			sb.WriteString(c.Delta.Content)
 		}
 	}
-	return sb.String(), nil
+	out := sb.String()
+	if strings.TrimSpace(out) == "" {
+		return "", fmt.Errorf("agent: 模型返回空内容")
+	}
+	return out, nil
 }

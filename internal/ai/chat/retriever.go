@@ -1,4 +1,4 @@
-package chat_pipeline
+package chat
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 // Init 校验 trpc 知识库已就绪(InitTRPCStore 须在 main 启动期先调)。
 func Init(_ context.Context) error {
 	if !knowledge.TRPCReady() {
-		return fmt.Errorf("chat_pipeline: trpc 知识库未初始化")
+		return fmt.Errorf("chat: trpc 知识库未初始化")
 	}
 	return nil
 }

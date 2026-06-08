@@ -1,4 +1,4 @@
-package chat_pipeline
+package chat
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/config"
-	"GopherPaper/internal/factory"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/pkg/constant"
 )
@@ -24,26 +24,24 @@ func loadChatTestModels(t *testing.T) (*config.Config, bool) {
 	return cfg, true
 }
 
-// TestClassifyIntentTRPC 验证意图分类链路:返回值须是三个合法子类之一。
+// TestClassifyIntentTRPC 验证意图分类链路把各类 query 路由到期望子类。
 func TestClassifyIntentTRPC(t *testing.T) {
 	cfg, _ := loadChatTestModels(t)
-	m := factory.NewTRPCChatModel(cfg.Models.Intent)
+	m := aimodel.NewChatModel(cfg.Models.Intent)
 
 	cases := map[string]constant.IntentType{
 		"这篇论文在 DBLP 数据集上的准确率是多少？": constant.IntentFact,
 		"帮我概括一下这篇论文讲了什么":          constant.IntentSummary,
 		"它用了什么模型结构和实验设计？":         constant.IntentMethod,
 	}
-	valid := map[constant.IntentType]bool{constant.IntentFact: true, constant.IntentSummary: true, constant.IntentMethod: true}
 
 	for q, want := range cases {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		got := ClassifyIntentTRPC(ctx, m, cfg.Models.Intent, q)
 		cancel()
-		if !valid[got] {
-			t.Fatalf("分类返回非法子类: %q -> %q", q, got)
+		if got != want {
+			t.Errorf("意图分类不符: %q 期望 %q 实得 %q", q, want, got)
 		}
-		t.Logf("分类 %q -> %q (期望参考 %q)", q, got, want)
 	}
 }
 
@@ -51,14 +49,14 @@ func TestClassifyIntentTRPC(t *testing.T) {
 // 检索器未 Init 时降级为无片段(像 report 切片),仍能生成,故不依赖 Milvus。
 func TestChatTRPC(t *testing.T) {
 	cfg, _ := loadChatTestModels(t)
-	intentModel := factory.NewTRPCChatModel(cfg.Models.Intent)
-	chatModel := factory.NewTRPCChatModel(cfg.Models.Chat)
+	aimodel.Init(cfg) // RAG 生成经 agentrt 按 userID 取模型,须先注入配置
+	intentModel := aimodel.NewChatModel(cfg.Models.Intent)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	ctx = tenant.With(ctx, tenant.Tenant{StudentID: "test-user"})
 
-	reply, err := ChatTRPC(ctx, intentModel, chatModel, cfg.Models.Intent, cfg.Models.Chat, nil, "请简要介绍这篇论文的研究方法")
+	reply, err := ChatTRPC(ctx, intentModel, cfg.Models.Intent, nil, "请简要介绍这篇论文的研究方法")
 	if err != nil {
 		t.Fatalf("ChatTRPC 失败: %v", err)
 	}

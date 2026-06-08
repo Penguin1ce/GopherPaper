@@ -1,4 +1,4 @@
-package extract_pipeline
+package extract
 
 import (
 	"context"
@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"GopherPaper/internal/agent"
+	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/config"
-	"GopherPaper/internal/factory"
+	"GopherPaper/internal/tenant"
 )
 
 // TestExtractTRPC 验证 extract 链路端到端输出结构化信息。
@@ -22,10 +23,10 @@ func TestExtractTRPC(t *testing.T) {
 	if mc.APIKey == "" || mc.BaseURL == "" {
 		t.Skip("跳过:chat 模型未配置网关或密钥")
 	}
-	m := factory.NewTRPCChatModel(mc)
+	aimodel.Init(cfg) // 抽取经 agentrt 按 owner 取模型
 
-	doc := &agent.ParsedDoc{
-		Paragraphs: []agent.Paragraph{
+	doc := &core.ParsedDoc{
+		Paragraphs: []core.Paragraph{
 			{SectionPath: "Abstract", Text: "本文提出一种基于图神经网络的论文引用预测方法 GopherGNN,通过双塔编码器联合建模文本语义与引用拓扑,在三个公开数据集上相比基线提升 8.3% 的 MAP。", PageNo: 1},
 			{SectionPath: "Method", Text: "GopherGNN 由文本编码器与图编码器组成,二者输出经对比学习对齐,损失函数为 InfoNCE。", PageNo: 2},
 			{SectionPath: "Results", Text: "在 DBLP/PubMed/arXiv 上,GopherGNN 的 MAP 分别为 0.71/0.68/0.65,均优于 GCN 与 BERT 基线。", PageNo: 5},
@@ -35,7 +36,8 @@ func TestExtractTRPC(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	got, err := ExtractTRPC(ctx, m, mc, doc)
+	ctx = tenant.With(ctx, tenant.Tenant{StudentID: "test-user"})
+	got, err := ExtractTRPC(ctx, doc)
 	if err != nil {
 		t.Fatalf("ExtractTRPC 失败: %v", err)
 	}

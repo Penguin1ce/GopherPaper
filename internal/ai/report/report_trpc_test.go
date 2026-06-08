@@ -1,4 +1,4 @@
-package report_pipeline
+package report
 
 import (
 	"context"
@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"GopherPaper/internal/agent"
+	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/config"
-	"GopherPaper/internal/factory"
 	"GopherPaper/pkg/constant"
 )
 
@@ -23,9 +23,9 @@ func TestGenerateReportTRPC(t *testing.T) {
 	if mc.APIKey == "" || mc.BaseURL == "" {
 		t.Skip("跳过:chat 模型未配置网关或密钥")
 	}
-	m := factory.NewTRPCChatModel(mc)
+	aimodel.Init(cfg) // 报告经 agentrt 按 owner 取模型
 
-	in := &agent.ReportInput{
+	in := &core.ReportInput{
 		PaperID:    "test-paper",
 		OwnerID:    "test-user",
 		ReportType: constant.ReportQuickRead,
@@ -34,7 +34,7 @@ func TestGenerateReportTRPC(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	reply, err := GenerateReportTRPC(ctx, m, mc, in)
+	reply, err := GenerateReportTRPC(ctx, in)
 	if err != nil {
 		t.Fatalf("GenerateReportTRPC 失败: %v", err)
 	}

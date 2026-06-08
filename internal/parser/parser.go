@@ -1,6 +1,6 @@
 // Package parser 把 PDF 经 MinerU 在线 API 解析为结构化 ParsedDoc。
 // 只在 parse worker 的异步链路调用：流程含分钟级轮询，不进 HTTP 请求主链路。
-// MinerU 的 content_list.json 细节在本包内消化，对外只暴露 agent.ParsedDoc。
+// MinerU 的 content_list.json 细节在本包内消化，对外只暴露 core.ParsedDoc。
 package parser
 
 import (
@@ -14,7 +14,7 @@ import (
 	"regexp"
 	"strings"
 
-	"GopherPaper/internal/agent"
+	"GopherPaper/internal/ai/core"
 )
 
 // contentBlock 是 MinerU content_list.json 里的一个块。
@@ -30,7 +30,7 @@ type contentBlock struct {
 var refTitleRe = regexp.MustCompile(`(?i)^\s*(references|bibliography|参考文献)\s*$`)
 
 // Parse 把本地 PDF 解析为 ParsedDoc。
-func Parse(ctx context.Context, fileURI string) (*agent.ParsedDoc, error) {
+func Parse(ctx context.Context, fileURI string) (*core.ParsedDoc, error) {
 	if httpClient == nil {
 		return nil, fmt.Errorf("parser: 未初始化")
 	}
@@ -90,8 +90,8 @@ func readContentList(zipData []byte) ([]contentBlock, error) {
 }
 
 // mapBlocks 把 MinerU 块流映射为 ParsedDoc，维护章节路径栈并分流参考文献。
-func mapBlocks(blocks []contentBlock) *agent.ParsedDoc {
-	doc := &agent.ParsedDoc{}
+func mapBlocks(blocks []contentBlock) *core.ParsedDoc {
+	doc := &core.ParsedDoc{}
 	var sectionStack []string // 按层级维护当前标题链
 	inReferences := false
 	maxPage := 0
@@ -117,7 +117,7 @@ func mapBlocks(blocks []contentBlock) *agent.ParsedDoc {
 			}
 			sectionStack = append(sectionStack, b.Text)
 			inReferences = refTitleRe.MatchString(b.Text)
-			doc.Sections = append(doc.Sections, agent.Section{
+			doc.Sections = append(doc.Sections, core.Section{
 				Level:    level,
 				Title:    b.Text,
 				PageNo:   page,
@@ -131,7 +131,7 @@ func mapBlocks(blocks []contentBlock) *agent.ParsedDoc {
 				doc.References = append(doc.References, b.Text)
 				break
 			}
-			doc.Paragraphs = append(doc.Paragraphs, agent.Paragraph{
+			doc.Paragraphs = append(doc.Paragraphs, core.Paragraph{
 				Text:        b.Text,
 				PageNo:      page,
 				SectionPath: strings.Join(nonEmpty(sectionStack), " / "),
@@ -139,7 +139,7 @@ func mapBlocks(blocks []contentBlock) *agent.ParsedDoc {
 		case "image", "table":
 			caption := strings.TrimSpace(strings.Join(append(b.ImgCaption, b.TableCaption...), " "))
 			if caption != "" {
-				doc.Figures = append(doc.Figures, agent.Figure{Caption: caption, PageNo: page})
+				doc.Figures = append(doc.Figures, core.Figure{Caption: caption, PageNo: page})
 			}
 		}
 		order++

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"strings"
 
 	mventity "github.com/milvus-io/milvus/client/v2/entity"
 	"trpc.group/trpc-go/trpc-agent-go/knowledge/document"
@@ -50,13 +51,18 @@ func InitTRPCStore(ctx context.Context, mc config.MilvusConfig, collection strin
 	return nil
 }
 
-// AddChunkTRPC 把一个 chunk 写入 trpc vectorstore:标量字段落 metadata,向量经 trpc embedder 现算。
+// AddChunkTRPC 把一个 chunk 规整后写入 trpc vectorstore。
 func AddChunkTRPC(ctx context.Context, chunk Chunk) error {
-	if trpcStore == nil || trpcEmb == nil {
-		return fmt.Errorf("knowledge: trpc store 未初始化")
-	}
 	if err := normalizeChunk(&chunk); err != nil {
 		return err
+	}
+	return addChunk(ctx, chunk)
+}
+
+// addChunk 把一个已规整的 chunk 写入 trpc vectorstore:标量字段落 metadata,向量经 trpc embedder 现算。
+func addChunk(ctx context.Context, chunk Chunk) error {
+	if trpcStore == nil || trpcEmb == nil {
+		return fmt.Errorf("knowledge: trpc store 未初始化")
 	}
 	vec, err := trpcEmb.GetEmbedding(ctx, chunk.Content)
 	if err != nil {
@@ -76,14 +82,22 @@ func AddChunkTRPC(ctx context.Context, chunk Chunk) error {
 // TRPCReady 报告 trpc 知识库是否已初始化。
 func TRPCReady() bool { return trpcStore != nil && trpcEmb != nil }
 
-// UpsertChunksTRPC 批量写入 chunk(逐条 Add),返回写入的 id。
+// CloseTRPC 关闭 trpc vectorstore 的 Milvus 连接,在服务关停时调用。
+func CloseTRPC() error {
+	if trpcStore == nil {
+		return nil
+	}
+	return trpcStore.Close()
+}
+
+// UpsertChunksTRPC 批量写入 chunk(逐条 Add,只规整一次),返回写入的 id。
 func UpsertChunksTRPC(ctx context.Context, chunks []Chunk) ([]string, error) {
 	ids := make([]string, 0, len(chunks))
 	for i := range chunks {
 		if err := normalizeChunk(&chunks[i]); err != nil {
 			return ids, err
 		}
-		if err := AddChunkTRPC(ctx, chunks[i]); err != nil {
+		if err := addChunk(ctx, chunks[i]); err != nil {
 			return ids, err
 		}
 		ids = append(ids, chunks[i].ID)
@@ -100,12 +114,19 @@ func SearchTRPC(ctx context.Context, query, ownerID, docID string, topK int) (*v
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: trpc 查询向量化失败: %w", err)
 	}
-	return trpcStore.Search(ctx, &vectorstore.SearchQuery{
+	res, err := trpcStore.Search(ctx, &vectorstore.SearchQuery{
 		Vector:     vec,
 		Limit:      topK,
 		SearchMode: vectorstore.SearchModeVector,
 		Filter:     &vectorstore.SearchFilter{FilterCondition: scopeCondition(ownerID, docID)},
 	})
+	if err != nil {
+		if strings.Contains(err.Error(), "no results found") {
+			return &vectorstore.SearchResult{}, nil
+		}
+		return nil, err
+	}
+	return res, nil
 }
 
 // chunkMetadata 把 chunk 的标量字段汇成 metadata(trpc schema 无独立标量列,全部落此)。

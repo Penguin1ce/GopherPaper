@@ -15,6 +15,7 @@ type Config struct {
 	Server    ServerConfig `toml:"server"`
 	Log       LogConfig    `toml:"log"`
 	Models    ModelsConfig `toml:"models"`
+	Tools     ToolsConfig  `toml:"tools"`
 	Embedding ModelConfig  `toml:"embedding"`
 	Milvus    MilvusConfig `toml:"milvus"`
 	Parser    ParserConfig `toml:"parser"`
@@ -50,6 +51,22 @@ type ModelsConfig struct {
 	Intent ModelConfig `toml:"intent"`
 	// Chat 是下游 RAG/抽取/报告 agent 使用的主力大模型，走 API。
 	Chat ModelConfig `toml:"chat"`
+}
+
+// ToolsConfig 是 ai agent 的工具来源,挂在下游 chat agent 上供 mcp 调用与 skill 加载。
+// 全部留空时 agent 退化为纯对话,与无工具时行为一致。
+type ToolsConfig struct {
+	MCP    []MCPServerConfig `toml:"mcp"`    // mcp 工具服务,每项一个 toolset
+	Skills []string          `toml:"skills"` // 本地 skill 目录,作为 FSRepository 的根
+}
+
+// MCPServerConfig 描述一个 mcp 工具服务的连接方式。
+type MCPServerConfig struct {
+	Name      string   `toml:"name"`       // 工具集名,用于日志与冲突区分
+	Transport string   `toml:"transport"`  // stdio / sse / streamable
+	ServerURL string   `toml:"server_url"` // sse 与 streamable 用
+	Command   string   `toml:"command"`    // stdio 用,可执行文件
+	Args      []string `toml:"args"`       // stdio 用,启动参数
 }
 
 // ModelConfig 描述单个模型或 embedding 组件的连接参数。

@@ -7,7 +7,7 @@
 //	2 ChatRAGTRPC:        chat 模型按子类选 prompt 做 RAG，并调用 retriever
 //
 // 二者解耦、两模型分用,忠实 CLAUDE.md「小模型意图识别 + 下游 RAG」的设计。
-package chat_pipeline
+package chat
 
 import (
 	"context"
@@ -17,23 +17,20 @@ import (
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
 	trpcopenai "trpc.group/trpc-go/trpc-agent-go/model/openai"
 
-	"GopherPaper/internal/agent"
+	"GopherPaper/internal/ai/agentrt"
+	"GopherPaper/internal/ai/core"
 	"GopherPaper/internal/config"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 )
 
-// ChatTRPC 是 chat 切片入口:intent 模型分类 + chat 模型参数化 RAG。
+// ChatTRPC 是 chat 切片入口:intent 小模型分类 + 带工具 chat agent 做 RAG。
 // history 为本会话多轮上下文(来自 trpc Session),按时间升序、不含当前 query;
 // 意图分类只看当前 query,history 仅注入 RAG 生成。
-func ChatTRPC(ctx context.Context, intentModel, chatModel *trpcopenai.Model, intentMC, chatMC config.ModelConfig, history []trpcmodel.Message, query string) (*agent.Reply, error) {
+func ChatTRPC(ctx context.Context, intentModel *trpcopenai.Model, intentMC config.ModelConfig, history []trpcmodel.Message, query string) (*core.Reply, error) {
 	intent := ClassifyIntentTRPC(ctx, intentModel, intentMC, query)
-	in := &agent.AgentInput{
-		Query:  query,
-		Intent: agent.Intent{Type: intent, Slots: map[string]string{}},
-	}
-	return ChatRAGTRPC(ctx, chatModel, chatMC, in, history)
+	return ChatRAGTRPC(ctx, query, intent, history)
 }
 
 // ClassifyIntentTRPC 用 intent 小模型把自由文本分到问答子类,无法判断兜底 summary。
@@ -49,7 +46,7 @@ func ClassifyIntentTRPC(ctx context.Context, intentModel *trpcopenai.Model, mc c
 	if mc.MaxTokens > 0 {
 		req.MaxTokens = &mc.MaxTokens
 	}
-	content, err := agent.GenerateText(ctx, intentModel, req)
+	content, err := core.GenerateText(ctx, intentModel, req)
 	if err != nil {
 		zlog.Error("意图分类失败,兜底 summary", "err", err)
 		return constant.IntentSummary
@@ -57,12 +54,12 @@ func ClassifyIntentTRPC(ctx context.Context, intentModel *trpcopenai.Model, mc c
 	return parseIntent(content)
 }
 
-// ChatRAGTRPC 按意图做参数化 RAG，调用 retriever 检索，由 trpc 生成并收集出处进 Meta。
-// history 为多轮上下文,夹在 system prompt 与当前 query 之间。
-func ChatRAGTRPC(ctx context.Context, chatModel *trpcopenai.Model, mc config.ModelConfig, in *agent.AgentInput, history []trpcmodel.Message) (*agent.Reply, error) {
+// ChatRAGTRPC 按意图做参数化 RAG:检索片段拼进 system prompt,经带工具 chat agent 生成并收集出处进 Meta。
+// history 为多轮上下文,经 agent 注入,夹在 system prompt 与当前 query 之间。
+func ChatRAGTRPC(ctx context.Context, query string, intent constant.IntentType, history []trpcmodel.Message) (*core.Reply, error) {
 	owner := tenant.MustStudentID(ctx)
-	paperID := agent.PaperIDFrom(ctx)
-	docs, err := RetrieveForPaper(ctx, in.Query, owner, paperID)
+	paperID := core.PaperIDFrom(ctx)
+	docs, err := RetrieveForPaper(ctx, query, owner, paperID)
 	if err != nil {
 		zlog.Error("RAG 检索失败", "owner", owner, "paper_id", paperID, "err", err)
 		docs = nil
@@ -71,23 +68,12 @@ func ChatRAGTRPC(ctx context.Context, chatModel *trpcopenai.Model, mc config.Mod
 	}
 	sources := References(docs)
 
-	sysPrompt := strings.ReplaceAll(constant.RAGPromptFor(in.Intent.Type), "{context}", formatDocs(docs))
-	msgs := make([]trpcmodel.Message, 0, len(history)+2)
-	msgs = append(msgs, trpcmodel.NewSystemMessage(sysPrompt))
-	msgs = append(msgs, history...)
-	msgs = append(msgs, trpcmodel.NewUserMessage(in.Query))
-	req := &trpcmodel.Request{Messages: msgs}
-	if mc.MaxTokens > 0 {
-		req.MaxTokens = &mc.MaxTokens
-	}
-	if mc.ReasoningEffort != "" {
-		req.ReasoningEffort = &mc.ReasoningEffort
-	}
-	content, err := agent.GenerateText(ctx, chatModel, req)
+	sysPrompt := strings.ReplaceAll(constant.RAGPromptFor(intent), "{context}", FormatDocs(docs))
+	content, err := agentrt.Generate(ctx, owner, sysPrompt, history, query)
 	if err != nil {
 		return nil, err
 	}
-	reply := &agent.Reply{Content: content, Intent: in.Intent.Type}
+	reply := &core.Reply{Content: content, Intent: intent}
 	if len(sources) > 0 {
 		reply.Meta = map[string]any{"sources": sources}
 	}

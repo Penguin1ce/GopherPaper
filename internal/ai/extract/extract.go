@@ -1,20 +1,20 @@
-// Package extract_pipeline 实现论文结构化抽取 agent，把解析后的正文抽成 PaperStructured。
+// Package extract 实现论文结构化抽取，把解析后的正文抽成 PaperStructured。
 // 由 parse worker 在 PDF 解析完成后调用，输出题目/作者/方法/结果/创新点等字段。
-package extract_pipeline
+package extract
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
 
-	"GopherPaper/internal/agent"
+	"GopherPaper/internal/ai/core"
 )
 
 // maxBodyChars 喂给模型的正文字符上限，超长截断避免超出上下文窗。
 const maxBodyChars = 12000
 
 // bodyText 把段落按章节拼成正文，带截断。
-func bodyText(doc *agent.ParsedDoc) string {
+func bodyText(doc *core.ParsedDoc) string {
 	var b strings.Builder
 	lastSection := ""
 	for _, p := range doc.Paragraphs {
@@ -38,14 +38,14 @@ func bodyText(doc *agent.ParsedDoc) string {
 }
 
 // parseStructured 容错解析模型返回的 JSON，剥离可能的代码围栏。
-func parseStructured(content string) (*agent.PaperStructured, error) {
+func parseStructured(content string) (*core.PaperStructured, error) {
 	raw := stripFence(content)
 	if strings.TrimSpace(raw) == "" {
-		return nil, fmt.Errorf("extract_pipeline: 模型返回空内容")
+		return nil, fmt.Errorf("extract: 模型返回空内容")
 	}
-	var s agent.PaperStructured
+	var s core.PaperStructured
 	if err := json.Unmarshal([]byte(raw), &s); err != nil {
-		return nil, fmt.Errorf("extract_pipeline: 解析抽取结果失败: %w (content_len=%d, raw=%q)", err, len(content), snippet(raw, 300))
+		return nil, fmt.Errorf("extract: 解析抽取结果失败: %w (content_len=%d, raw=%q)", err, len(content), snippet(raw, 300))
 	}
 	return &s, nil
 }

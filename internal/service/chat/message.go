@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"GopherPaper/internal/agent"
 	"GopherPaper/internal/ai"
+	"GopherPaper/internal/ai/core"
 	chatdao "GopherPaper/internal/dao/chat"
 	"GopherPaper/internal/history"
 	"GopherPaper/internal/model"
@@ -25,7 +25,7 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string) (*mode
 		return nil, nil, err
 	}
 	// 会话绑定了论文时围绕该论文检索。
-	ctx = agent.WithPaperID(ctx, sess.PaperID)
+	ctx = core.WithPaperID(ctx, sess.PaperID)
 	checkMS := time.Since(start).Milliseconds()
 
 	step := time.Now()

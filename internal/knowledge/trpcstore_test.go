@@ -9,8 +9,8 @@ import (
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"trpc.group/trpc-go/trpc-agent-go/knowledge/vectorstore"
 
+	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/config"
-	"GopherPaper/internal/factory"
 	"GopherPaper/pkg/constant"
 )
 
@@ -23,8 +23,8 @@ func TestTRPCStoreEndToEnd(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	ec := cfg.Embedding // config 的 base_url 已含 /v1,apikey 占位由 NewTRPCEmbedder 处理
-	emb := factory.NewTRPCEmbedder(ec)
+	ec := cfg.Embedding // config 的 base_url 已含 /v1,apikey 占位由 NewEmbedder 处理
+	emb := aimodel.NewEmbedder(ec)
 	if _, e := emb.GetEmbedding(ctx, "ping"); e != nil {
 		t.Skipf("跳过:Ollama embedder 不可用: %v", e)
 	}

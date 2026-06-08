@@ -1,5 +1,5 @@
 // GopherPaper 科研文献智能解析与知识服务系统 —— 服务入口。
-// 启动顺序：配置、日志、基础设施、模型工厂、知识库、编排器、HTTP 路由。
+// 启动顺序：配置、日志、基础设施、模型资源、知识库、编排器、HTTP 路由。
 package main
 
 import (
@@ -13,10 +13,11 @@ import (
 	"time"
 
 	"GopherPaper/internal/ai"
+	"GopherPaper/internal/ai/toolkit"
+	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/auth"
 	"GopherPaper/internal/config"
 	"GopherPaper/internal/dao"
-	"GopherPaper/internal/factory"
 	"GopherPaper/internal/history"
 	"GopherPaper/internal/knowledge"
 	"GopherPaper/internal/model"
@@ -78,20 +79,26 @@ func run(cfgPath string) error {
 	defer mqClient.Close()
 	zlog.Info("RabbitMQ 已连接")
 
-	// 3. 模型工厂：embedding 启动期建一次,意图/对话模型按用户懒建
-	factory.Init(cfg)
+	// 3. 模型资源：embedding 启动期建一次,意图/对话模型按用户懒建
+	aimodel.Init(cfg)
 
-	// 4. 多租户知识库
-	if err := knowledge.InitTRPCStore(ctx, cfg.Milvus, cfg.Milvus.Collection, factory.NewTRPCEmbedder(cfg.Embedding), cfg.Embedding.Dim); err != nil {
+	// agent 工具来源：mcp 工具集与 skill 仓库,挂到下游 chat agent,无配置则纯对话
+	if err := toolkit.Init(cfg.Tools); err != nil {
 		return err
 	}
+
+	// 4. 多租户知识库
+	if err := knowledge.InitTRPCStore(ctx, cfg.Milvus, cfg.Milvus.Collection, aimodel.NewEmbedder(cfg.Embedding), cfg.Embedding.Dim); err != nil {
+		return err
+	}
+	defer knowledge.CloseTRPC()
 	zlog.Info("Milvus 知识库已就绪")
 
 	// 5. PDF 解析：MinerU 在线 API 客户端
 	parser.Init(cfg.Parser)
 	zlog.Info("PDF 解析器已就绪")
 
-	// 6. 编排器：只准备全局检索器,模型与 runner 按用户懒编译
+	// 6. 编排器：只准备全局检索器,模型由 aimodel 按用户缓存
 	if err := ai.Init(ctx); err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-package extract_pipeline
+package extract
 
 import "testing"
 

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"GopherPaper/internal/agent"
 	"GopherPaper/internal/ai"
+	"GopherPaper/internal/ai/core"
 	paperdao "GopherPaper/internal/dao/paper"
 	"GopherPaper/internal/knowledge"
 	"GopherPaper/internal/model"
@@ -78,7 +78,7 @@ func runPipeline(ctx context.Context, task parseTask) {
 }
 
 // saveStructured 落库结构化元信息、章节,并回填标题与页数。
-func saveStructured(ctx context.Context, paperID string, s *agent.PaperStructured, doc *agent.ParsedDoc) error {
+func saveStructured(ctx context.Context, paperID string, s *core.PaperStructured, doc *core.ParsedDoc) error {
 	meta := &model.PaperMeta{
 		PaperID:           paperID,
 		Authors:           s.Authors,
@@ -103,7 +103,7 @@ func saveStructured(ctx context.Context, paperID string, s *agent.PaperStructure
 }
 
 // toSections 把解析出的章节转成落库模型。
-func toSections(paperID string, doc *agent.ParsedDoc) []model.PaperSection {
+func toSections(paperID string, doc *core.ParsedDoc) []model.PaperSection {
 	out := make([]model.PaperSection, 0, len(doc.Sections))
 	for _, sec := range doc.Sections {
 		out = append(out, model.PaperSection{
@@ -121,7 +121,7 @@ func toSections(paperID string, doc *agent.ParsedDoc) []model.PaperSection {
 // 切分策略:把同一标题、同一页的连续碎段合并成一个块,并把章节路径前缀进正文一起
 // 向量化,让小标题语义进入向量(问"实验方法"能召回方法段);换标题、换页或累计超
 // MaxChunkRunes 即切块,保证页码出处精确、块不过大。
-func buildChunks(task parseTask, doc *agent.ParsedDoc) []knowledge.Chunk {
+func buildChunks(task parseTask, doc *core.ParsedDoc) []knowledge.Chunk {
 	var chunks []knowledge.Chunk
 	var buf []string
 	var bufRunes int

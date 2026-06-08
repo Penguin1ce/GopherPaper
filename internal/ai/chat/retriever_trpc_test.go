@@ -1,4 +1,4 @@
-package chat_pipeline
+package chat
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 
+	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/config"
-	"GopherPaper/internal/factory"
 	"GopherPaper/internal/knowledge"
 	"GopherPaper/pkg/constant"
 )
@@ -21,7 +21,7 @@ func TestRetrieveForPaperBridge(t *testing.T) {
 		t.Skipf("跳过:未找到 config.toml: %v", err)
 	}
 	ctx := context.Background()
-	emb := factory.NewTRPCEmbedder(cfg.Embedding)
+	emb := aimodel.NewEmbedder(cfg.Embedding)
 	if _, e := emb.GetEmbedding(ctx, "ping"); e != nil {
 		t.Skipf("跳过:Ollama embedder 不可用: %v", e)
 	}

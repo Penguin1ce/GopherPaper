@@ -1,4 +1,4 @@
-package chat_pipeline
+package chat
 
 import (
 	"encoding/json"
@@ -86,7 +86,7 @@ func TestFormatReference_FallbackToID(t *testing.T) {
 
 // TestFormatDocs_Empty 无召回时给模型一个明确的占位。
 func TestFormatDocs_Empty(t *testing.T) {
-	if got := formatDocs(nil); got != "无相关资料" {
+	if got := FormatDocs(nil); got != "无相关资料" {
 		t.Fatalf("空召回占位错误: %q", got)
 	}
 }

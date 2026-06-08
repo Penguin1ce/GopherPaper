@@ -1,4 +1,4 @@
-package chat_pipeline
+package chat
 
 import (
 	"fmt"
@@ -53,8 +53,9 @@ func ReferenceFromDocument(doc *Doc) Reference {
 	}
 }
 
-// formatDocs 把召回片段拼成带出处的 RAG context,无召回时给模型明确占位。
-func formatDocs(docs []*Doc) string {
+// FormatDocs 把召回片段拼成带出处的 RAG context,无召回时给模型明确占位。
+// chat 与 report 链路共用,保证两处出处格式一致。
+func FormatDocs(docs []*Doc) string {
 	if len(docs) == 0 {
 		return "无相关资料"
 	}

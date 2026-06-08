@@ -1,4 +1,4 @@
-package factory
+package aimodel
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func TestTRPCChatModelConnectivity(t *testing.T) {
 	if mc.APIKey == "" || mc.BaseURL == "" {
 		t.Skip("跳过:chat 模型未配置网关或密钥")
 	}
-	m := NewTRPCChatModel(mc)
+	m := NewChatModel(mc)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -67,7 +67,7 @@ func TestTRPCEmbedderConnectivity(t *testing.T) {
 	if ec.APIKey == "" {
 		ec.APIKey = "ollama"
 	}
-	emb := NewTRPCEmbedder(ec)
+	emb := NewEmbedder(ec)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()

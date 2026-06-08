@@ -1,30 +1,13 @@
-// Package agent 定义各下游 agent 共享的输入输出契约。
-package agent
+// Package core 定义 ai 子系统共享的输入输出契约。
+package core
 
 import "GopherPaper/pkg/constant"
 
-// Intent 是意图识别小模型的结构化输出。
-type Intent struct {
-	Type  constant.IntentType `json:"type"`
-	Slots map[string]string   `json:"slots"` // 抽取出的参数，如知识点、数量、难度
-}
-
-// Request 是一次助教请求的原始输入。学生身份经 context 透传，不放这里。
-type Request struct {
-	Query string `json:"query"`
-}
-
-// AgentInput 是 Branch 之后分发给具体 agent 的统一输入。
-type AgentInput struct {
-	Query  string
-	Intent Intent
-}
-
-// Reply 是所有 agent 的统一输出。
+// Reply 是所有 ai 链路的统一输出。
 type Reply struct {
 	Intent  constant.IntentType `json:"intent"`
 	Content string              `json:"content"`
-	Meta    map[string]any      `json:"meta,omitempty"` // agent 特有的结构化数据
+	Meta    map[string]any      `json:"meta,omitempty"` // 链路特有的结构化数据
 }
 
 // ParsedDoc 是 PDF 解析后的结构化中间产物，由 parser 产出，供抽取与分块共用。
@@ -58,7 +41,7 @@ type Figure struct {
 	PageNo  int    `json:"page_no"`
 }
 
-// PaperStructured 是论文结构化抽取结果，由 extract_pipeline 产出。
+// PaperStructured 是论文结构化抽取结果，由 extract 产出。
 type PaperStructured struct {
 	Title             string   `json:"title"`
 	Authors           []string `json:"authors"`
@@ -74,7 +57,7 @@ type PaperStructured struct {
 	FutureWork        []string `json:"future_work"`
 }
 
-// ReportInput 是研读报告 agent 的输入：围绕某篇论文按类型生成。
+// ReportInput 是研读报告输入：围绕某篇论文按类型生成。
 type ReportInput struct {
 	PaperID    string              `json:"paper_id"`
 	OwnerID    string              `json:"owner_id"`
