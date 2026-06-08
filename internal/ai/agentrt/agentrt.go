@@ -43,11 +43,23 @@ type runnerEntry struct {
 // Generate 经该用户的带工具 chat agent 跑一轮并聚合成完整文本。
 // instruction 为本轮 system prompt,history 为多轮上下文(注入不持久化),query 为当前输入。
 func Generate(ctx context.Context, userID, instruction string, history []trpcmodel.Message, query string) (string, error) {
+	return GenerateWithImages(ctx, userID, instruction, history, query, nil)
+}
+
+// Image 是带图问答的一张图片,Data 为原始字节,Format 为不带点的扩展名(png/jpeg/...)。
+type Image struct {
+	Data   []byte
+	Format string
+}
+
+// GenerateWithImages 同 Generate,额外把 images 作为当前 user 轮次的图片随 query 一起发给模型。
+// 多张图塞进同一条 user message 做一次综合推理;chat 模型须支持视觉(本项目 chat=gpt-5.5 多模态)。
+func GenerateWithImages(ctx context.Context, userID, instruction string, history []trpcmodel.Message, query string, images []Image) (string, error) {
 	rt, err := runnerForUser(userID)
 	if err != nil {
 		return "", err
 	}
-	ch, err := rt.Run(ctx, userID, sessionID, trpcmodel.NewUserMessage(query),
+	ch, err := rt.Run(ctx, userID, sessionID, userMessage(query, images),
 		agent.WithInstruction(instruction),
 		agent.WithInjectedContextMessages(history),
 	)
@@ -55,6 +67,20 @@ func Generate(ctx context.Context, userID, instruction string, history []trpcmod
 		return "", err
 	}
 	return collect(ch)
+}
+
+// userMessage 构造当前 user 轮次:无图时退化为纯文本,有图时文本与图片同放 ContentParts。
+func userMessage(query string, images []Image) trpcmodel.Message {
+	if len(images) == 0 {
+		return trpcmodel.NewUserMessage(query)
+	}
+	msg := trpcmodel.Message{Role: trpcmodel.RoleUser}
+	q := query
+	msg.ContentParts = append(msg.ContentParts, trpcmodel.ContentPart{Type: trpcmodel.ContentTypeText, Text: &q})
+	for _, img := range images {
+		msg.AddImageData(img.Data, "auto", img.Format)
+	}
+	return msg
 }
 
 // runnerForUser 懒建该用户的 runner,模型取自 aimodel,工具取自 toolkit。

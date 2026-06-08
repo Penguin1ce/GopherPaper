@@ -50,8 +50,10 @@ func NewEmbedder(ec config.ModelConfig) *trpcembedder.Embedder {
 type ModelSet struct {
 	Intent   *trpcopenai.Model  // 意图分类小模型
 	Chat     *trpcopenai.Model  // 下游 RAG/抽取/报告主力模型
+	Vlm      *trpcopenai.Model  // 带图推理视觉模型:图描述生成与带图问答
 	IntentMC config.ModelConfig // 意图模型生成参数
 	ChatMC   config.ModelConfig // 对话模型生成参数
+	VlmMC    config.ModelConfig // 视觉模型生成参数
 }
 
 // modelSets 按 userID 缓存,保留每用户隔离的口子。
@@ -76,8 +78,10 @@ func ModelsForUser(userID string) (*ModelSet, error) {
 		ent.models = &ModelSet{
 			Intent:   NewChatModel(cfg.Models.Intent),
 			Chat:     NewChatModel(cfg.Models.Chat),
+			Vlm:      NewChatModel(cfg.Models.Vlm),
 			IntentMC: cfg.Models.Intent,
 			ChatMC:   cfg.Models.Chat,
+			VlmMC:    cfg.Models.Vlm,
 		}
 	})
 	return ent.models, nil

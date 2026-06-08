@@ -16,6 +16,7 @@ import (
 	chatflow "GopherPaper/internal/ai/chat"
 	"GopherPaper/internal/ai/core"
 	extractflow "GopherPaper/internal/ai/extract"
+	figureflow "GopherPaper/internal/ai/figure"
 	reportflow "GopherPaper/internal/ai/report"
 	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/model"
@@ -71,6 +72,17 @@ func toHistory(hist []model.Message) []trpcmodel.Message {
 // 模型由 agentrt 按 owner 取,故只需 ctx 带身份。
 func Extract(ctx context.Context, doc *core.ParsedDoc) (*core.PaperStructured, error) {
 	return extractflow.ExtractTRPC(ctx, doc)
+}
+
+// DescribeFigures 给解析出的图片逐张调 vlm 生成内容描述,原地填 Figure.Desc。
+// 由 parse worker 在落盘后、建图块前调用,ctx 须注入论文 owner 以选到该用户 vlm 模型。
+func DescribeFigures(ctx context.Context, figs []core.Figure) error {
+	models, err := modelsForUser(tenant.MustStudentID(ctx))
+	if err != nil {
+		return err
+	}
+	figureflow.DescribeTRPC(ctx, models.Vlm, models.VlmMC, figs)
+	return nil
 }
 
 // GenerateReport 围绕某篇论文按类型生成研读报告,由前端按钮触发,不经分类器。

@@ -84,6 +84,9 @@ export interface Reference {
   page_no?: number;
   chunk_index?: number;
   knowledge_scope?: string;
+  doc_id?: string;
+  block_type?: string; // image 时为图块,配合 img_name 渲染缩略图
+  img_name?: string; // 图片文件名,与 doc_id 拼取图接口
   [k: string]: unknown;
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { figureUrl } from "../api";
 import { useApp } from "../store";
 import { formatTime, intentLabel, paperTitle, sessionTitle } from "../utils";
 import type { Message, Reference } from "../types";
@@ -14,6 +15,17 @@ function extractSources(meta?: Record<string, unknown>): Reference[] {
   return raw as Reference[];
 }
 
+// buildFigureMap 把图块出处汇成 文件名→docId,供 Markdown 解析正文里的 figure:// 插图。
+function buildFigureMap(refs: Reference[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const r of refs) {
+    if (r.block_type === "image" && r.img_name && r.doc_id) {
+      map[r.img_name] = r.doc_id;
+    }
+  }
+  return map;
+}
+
 function Sources({ refs }: { refs: Reference[] }) {
   if (refs.length === 0) return null;
   return (
@@ -23,12 +35,26 @@ function Sources({ refs }: { refs: Reference[] }) {
         {refs.map((r, i) => {
           const name = r.source_file || r.source_uri || `片段 ${i + 1}`;
           const scope = r.knowledge_scope === "public" ? "基础库" : "我的论文";
+          const isImage = r.block_type === "image" && !!r.img_name && !!r.doc_id;
+          const src = isImage ? figureUrl(r.doc_id!, r.img_name!) : "";
           return (
             <li key={i} className="source-item">
               <span className="source-index">{i + 1}</span>
-              <span className="source-name" title={name}>
-                {name}
-              </span>
+              {isImage ? (
+                <a
+                  className="source-figure"
+                  href={src}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="点击查看大图"
+                >
+                  <img className="source-thumb" src={src} alt={name} loading="lazy" />
+                </a>
+              ) : (
+                <span className="source-name" title={name}>
+                  {name}
+                </span>
+              )}
               {typeof r.page_no === "number" && r.page_no > 0 && (
                 <span className="source-page">p.{r.page_no}</span>
               )}
@@ -46,11 +72,12 @@ function Sources({ refs }: { refs: Reference[] }) {
 function MessageBubble({ message }: { message: Message }) {
   const isAssistant = message.role === "assistant";
   const refs = isAssistant ? extractSources(message.meta) : [];
+  const figures = isAssistant ? buildFigureMap(refs) : undefined;
   return (
     <article className={`message ${isAssistant ? "assistant" : "user"}`}>
       <div className="message-bubble">
         {isAssistant ? (
-          <Markdown>{message.content}</Markdown>
+          <Markdown figures={figures}>{message.content}</Markdown>
         ) : (
           <p className="message-text">{message.content}</p>
         )}

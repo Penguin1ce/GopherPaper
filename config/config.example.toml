@@ -26,6 +26,15 @@ model = "gpt-4o-mini"
 max_tokens = 16384                     # openai 分支映射到 max_completion_tokens(含 reasoning)，推理模型须配足避免 JSON 截断
 # reasoning_effort = "low"             # 仅 gpt-5/o 系列推理模型有效，结构化输出建议 low，省额度防 reasoning 吃光输出
 
+# ── 带图推理视觉模型：解析期给图片生成描述、问答期把召回图片喂模型 ──
+[models.vlm]
+provider = "openai"                    # openai 兼容网关
+base_url = "https://api.openai.com/v1"
+api_key = "sk-xxxx"
+model = "gpt-4o"                       # 须为多模态模型，可与 chat 同款
+max_tokens = 16384
+# reasoning_effort = "low"             # 仅 gpt-5/o 系列推理模型有效
+
 # ── RAG 向量化模型：本地 ollama ──────────────────────────────
 [embedding]
 provider = "ollama"

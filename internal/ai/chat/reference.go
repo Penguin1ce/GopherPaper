@@ -2,6 +2,7 @@ package chat
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"GopherPaper/pkg/constant"
@@ -16,6 +17,7 @@ type Doc struct {
 }
 
 // Reference 是一条召回片段的出处，回传前端渲染引用。
+// BlockType 为 image 时是图块,ImgName 为图片文件名,前端据 DocID+ImgName 拼取图接口渲染缩略图。
 type Reference struct {
 	ID         string                  `json:"id"`
 	Scope      constant.KnowledgeScope `json:"knowledge_scope"`
@@ -25,6 +27,8 @@ type Reference struct {
 	SourceURI  string                  `json:"source_uri,omitempty"`
 	PageNo     int64                   `json:"page_no,omitempty"`
 	ChunkIndex int64                   `json:"chunk_index,omitempty"`
+	BlockType  string                  `json:"block_type,omitempty"`
+	ImgName    string                  `json:"img_name,omitempty"`
 	Score      float64                 `json:"score,omitempty"`
 }
 
@@ -40,7 +44,7 @@ func ReferenceFromDocument(doc *Doc) Reference {
 	if doc == nil {
 		return Reference{}
 	}
-	return Reference{
+	ref := Reference{
 		ID:         doc.ID,
 		Scope:      constant.KnowledgeScope(metaString(doc, constant.MilvusFieldKnowledgeScope)),
 		StudentID:  metaString(doc, constant.MilvusFieldStudentID),
@@ -49,8 +53,13 @@ func ReferenceFromDocument(doc *Doc) Reference {
 		SourceURI:  metaString(doc, constant.MilvusFieldSourceURI),
 		PageNo:     metaInt64(doc, constant.MilvusFieldPageNo),
 		ChunkIndex: metaInt64(doc, constant.MilvusFieldChunkIndex),
+		BlockType:  metaString(doc, constant.MilvusFieldBlockType),
 		Score:      doc.Score,
 	}
+	if uri := metaString(doc, constant.MilvusFieldImgURI); uri != "" {
+		ref.ImgName = filepath.Base(uri)
+	}
+	return ref
 }
 
 // FormatDocs 把召回片段拼成带出处的 RAG context,无召回时给模型明确占位。

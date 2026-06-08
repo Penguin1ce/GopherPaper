@@ -66,7 +66,13 @@ func runPipeline(ctx context.Context, task parseTask) {
 	}
 	setStatus(ctx, task, constant.PaperExtracted, "")
 
+	saveFigures(task, doc) // 图片落盘并回填 ImgURI,best-effort 不阻断
+	if err := ai.DescribeFigures(ctx, doc.Figures); err != nil {
+		// 图描述失败不阻断,图块退化为只用 caption 召回。
+		zlog.Error("图片描述生成失败,降级只用 caption", "paper_id", task.PaperID, "err", err)
+	}
 	chunks := buildChunks(task, doc)
+	chunks = append(chunks, buildFigureChunks(task, doc)...)
 	if _, err := knowledge.UpsertChunksTRPC(ctx, chunks); err != nil {
 		fail(ctx, task, "写入向量库失败", err)
 		return

@@ -6,10 +6,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 
-	"GopherPaper/internal/ai"
+	"GopherPaper/internal/auth"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/response"
 	paperservice "GopherPaper/internal/service/paper"
@@ -110,6 +112,35 @@ func Detail(c *gin.Context) {
 	response.OK(c, gin.H{"paper": p, "meta": meta, "sections": sections})
 }
 
+// Figure 返回某篇论文的某张图片文件,供前端渲染召回引用的缩略图。
+// 浏览器 img 标签带不了 Authorization 头,鉴权走 query token,过同一套 auth.Parse。
+// GET /api/v1/papers/:id/figures/:name?token=<jwt>
+func Figure(c *gin.Context) {
+	claims, err := auth.Parse(c.Query("token"))
+	if err != nil {
+		response.Fail(c, http.StatusUnauthorized, "token 无效")
+		return
+	}
+	ownerID := claims.StudentID
+	paperID := c.Param("id")
+	name := filepath.Base(c.Param("name")) // 防路径穿越,只取文件名
+	if name == "." || name == ".." || name == "/" {
+		response.Fail(c, http.StatusBadRequest, "非法文件名")
+		return
+	}
+	// 校验论文归属,非本人不得取图。
+	if _, err := paperservice.GetStatus(c.Request.Context(), ownerID, paperID); err != nil {
+		writePaperErr(c, err, "查询失败")
+		return
+	}
+	path := paperservice.FigurePath(paperID, name)
+	if _, err := os.Stat(path); err != nil {
+		response.Fail(c, http.StatusNotFound, "图片不存在")
+		return
+	}
+	c.File(path)
+}
+
 // Report 按报告类型生成研读报告,前端按钮触发。
 // POST /api/v1/papers/:id/report
 func Report(c *gin.Context) {
@@ -125,13 +156,13 @@ func Report(c *gin.Context) {
 	}
 	ownerID := tenant.MustStudentID(c.Request.Context())
 	paperID := c.Param("id")
-	// 校验归属后再生成。
-	if _, err := paperservice.GetStatus(c.Request.Context(), ownerID, paperID); err != nil {
-		writePaperErr(c, err, "生成失败")
-		return
-	}
-	reply, err := ai.GenerateReport(c.Request.Context(), paperID, reportType)
+	// 校验归属 + 命中缓存复用,未命中才生成并落库。
+	reply, err := paperservice.Report(c.Request.Context(), ownerID, paperID, reportType)
 	if err != nil {
+		if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errs.ErrPaperForbidden) {
+			writePaperErr(c, err, "生成失败")
+			return
+		}
 		zlog.Error("生成研读报告失败", "paper_id", paperID, "type", req.Type, "err", err)
 		response.Fail(c, http.StatusInternalServerError, "生成失败")
 		return

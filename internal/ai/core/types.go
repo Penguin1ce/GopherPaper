@@ -36,9 +36,15 @@ type Paragraph struct {
 }
 
 // Figure 是一条图表说明。
+// ImgPath 为产物 zip 内的相对路径,ImgData 为解码出的图片字节(仅 worker 内存传递,不序列化),
+// ImgURI 在 worker 把图片落盘后回填为本地路径,供建图块与带图问答用。
 type Figure struct {
 	Caption string `json:"caption"`
 	PageNo  int    `json:"page_no"`
+	ImgPath string `json:"img_path,omitempty"`
+	ImgData []byte `json:"-"`
+	ImgURI  string `json:"img_uri,omitempty"`
+	Desc    string `json:"desc,omitempty"` // vlm 解析期生成的图片内容描述,与 caption 一起入库提升召回
 }
 
 // PaperStructured 是论文结构化抽取结果，由 extract 产出。

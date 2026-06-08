@@ -81,6 +81,14 @@ const (
 	MaxChunkRunes = 1000
 )
 
+// 带图问答相关。问答时图块走单独一轮检索,不与正文同池竞争。
+const (
+	TopKImages           = 3   // 单轮问答最多带几张召回图,vision token 贵故限张
+	ImageScoreThreshold  = 0.5 // 图召回 score 低于此阈值视为无关,不带图(COSINE 相似度)
+	MaxFigureDescribe    = 20  // 解析期单篇最多给几张图调 vlm 生成描述,超出只留 caption
+	FigureDescribeWorker = 4   // 解析期 vlm 图描述的并发上限
+)
+
 // 多轮对话相关。
 const (
 	MaxContextMessages = 20            // 喂给模型的历史消息最大条数，超出只取最近的
@@ -107,6 +115,14 @@ const (
 	MilvusFieldPageNo         = "page_no"
 	MilvusFieldChunkIndex     = "chunk_index"
 	MilvusFieldCreatedAt      = "created_at"
+	MilvusFieldBlockType      = "block_type" // 块类型 text/image,图片块带 img_uri 供带图问答
+	MilvusFieldImgURI         = "img_uri"    // 图片块对应的本地图片路径
+)
+
+// 知识块类型,区分正文文本块与图片块。
+const (
+	BlockTypeText  = "text"
+	BlockTypeImage = "image"
 )
 
 // Redis 键前缀与时效。
@@ -171,6 +187,9 @@ const ExtractPrompt = `你是科研论文结构化信息抽取器。阅读下面
 
 论文正文：
 {context}`
+
+// FigureDescribePrompt 是解析期给论文插图/表格生成内容描述的指令,描述入库供按图内容召回。
+const FigureDescribePrompt = `你是论文图表理解助手。请用中文简要描述这张论文插图或表格展示的内容：图表类型、横纵轴或行列含义、呈现的关键趋势或对比结论。只描述图中可见信息，不要臆测，控制在 80 字以内，输出纯文本不要 Markdown。`
 
 // 研读报告各类型的 system prompt，均带 {context} 论文检索片段占位符。
 const (

@@ -45,6 +45,9 @@ func Init(mode string) *gin.Engine {
 		// WebSocket 订阅解析进度，握手鉴权走 query token。
 		api.GET("/ws", wshandler.Subscribe)
 
+		// 取召回引用的图片，img 标签带不了头，鉴权走 query token。
+		api.GET("/papers/:id/figures/:name", paperhandler.Figure)
+
 		// 受保护接口：JWT 校验后注入租户身份。
 		authed := api.Group("")
 		authed.Use(middleware.JWTAuth())

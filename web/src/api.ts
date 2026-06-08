@@ -31,6 +31,13 @@ export function setToken(value: string) {
   token = value || "";
 }
 
+// figureUrl 拼出取图接口地址,带 query token(img 标签发不了 Authorization 头)。
+export function figureUrl(docId: string, imgName: string): string {
+  return `${API_BASE}/papers/${encodeURIComponent(docId)}/figures/${encodeURIComponent(
+    imgName,
+  )}?token=${encodeURIComponent(token)}`;
+}
+
 export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }

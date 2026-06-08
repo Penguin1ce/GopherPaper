@@ -1,3 +1,4 @@
+// Package config 这里是解析config.toml的配置类
 package config
 
 import (
@@ -51,6 +52,8 @@ type ModelsConfig struct {
 	Intent ModelConfig `toml:"intent"`
 	// Chat 是下游 RAG/抽取/报告 agent 使用的主力大模型，走 API。
 	Chat ModelConfig `toml:"chat"`
+	// Vlm 是带图推理用的视觉模型:解析期给图片生成描述、问答期把召回图片喂模型,与 Chat 解耦可单独换型。
+	Vlm ModelConfig `toml:"vlm"`
 }
 
 // ToolsConfig 是 ai agent 的工具来源,挂在下游 chat agent 上供 mcp 调用与 skill 加载。

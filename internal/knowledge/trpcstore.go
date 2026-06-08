@@ -107,6 +107,21 @@ func UpsertChunksTRPC(ctx context.Context, chunks []Chunk) ([]string, error) {
 
 // SearchTRPC 按多租户可见性向量检索:科研基础库全员可见,私有库仅本人可见;docID 非空时限定到该论文。
 func SearchTRPC(ctx context.Context, query, ownerID, docID string, topK int) (*vectorstore.SearchResult, error) {
+	return searchWithFilter(ctx, query, scopeCondition(ownerID, docID), topK)
+}
+
+// SearchImagesTRPC 只检索图块(block_type==image),用于问答时单独一轮带图召回,
+// 不与正文同池竞争。可见性过滤同 SearchTRPC。
+func SearchImagesTRPC(ctx context.Context, query, ownerID, docID string, topK int) (*vectorstore.SearchResult, error) {
+	filter := searchfilter.And(
+		scopeCondition(ownerID, docID),
+		searchfilter.Equal(metadataPrefix+constant.MilvusFieldBlockType, constant.BlockTypeImage),
+	)
+	return searchWithFilter(ctx, query, filter, topK)
+}
+
+// searchWithFilter 用给定过滤条件做一次向量检索,统一处理向量化与空结果。
+func searchWithFilter(ctx context.Context, query string, filter *searchfilter.UniversalFilterCondition, topK int) (*vectorstore.SearchResult, error) {
 	if trpcStore == nil || trpcEmb == nil {
 		return nil, fmt.Errorf("knowledge: trpc store 未初始化")
 	}
@@ -118,7 +133,7 @@ func SearchTRPC(ctx context.Context, query, ownerID, docID string, topK int) (*v
 		Vector:     vec,
 		Limit:      topK,
 		SearchMode: vectorstore.SearchModeVector,
-		Filter:     &vectorstore.SearchFilter{FilterCondition: scopeCondition(ownerID, docID)},
+		Filter:     &vectorstore.SearchFilter{FilterCondition: filter},
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "no results found") {
