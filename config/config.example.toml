@@ -35,12 +35,28 @@ model = "gpt-4o"                       # 须为多模态模型，可与 chat 同
 max_tokens = 16384
 # reasoning_effort = "low"             # 仅 gpt-5/o 系列推理模型有效
 
-# ── RAG 向量化模型：本地 ollama ──────────────────────────────
+# ── 翻译小模型：精读页逐段翻译，裸调不挂工具不走 RAG ──────────
+[models.translate]
+provider = "ollama"                     # 本地 ollama，openai 兼容端点
+base_url = "http://localhost:11434/v1"
+model = "qwen2.5:1.5b-instruct"         # 通用 instruct 小模型，跟随翻译指令；勿用 coder 版（只会续写）
+max_tokens = 4096
+
+# ── RAG 向量化模型：硅基流动 API（OpenAI 兼容）──────────────
 [embedding]
-provider = "ollama"
-base_url = "http://localhost:11434/v1" # trpc openai 兼容 embedder 走 Ollama 的 /v1 端点
-model = "bge-m3"
-dim = 1024                          # 必须与 Milvus collection 的向量维度一致
+provider = "openai"
+base_url = "https://api.siliconflow.cn/v1" # trpc openai 兼容 embedder 自动拼 /embeddings
+api_key = "sk-xxxx"
+model = "Qwen/Qwen3-Embedding-0.6B"
+dim = 1024                          # Qwen3-Embedding-0.6B 满维 1024，必须与 Milvus collection 维度一致
+
+# ── RAG 重排模型：硅基流动 rerank API ────────────────────────
+# 两阶段检索：向量扩大召回候选，再由 cross-encoder 精排截断。enabled=false 退化纯向量召回。
+[rerank]
+enabled = true
+base_url = "https://api.siliconflow.cn/v1/rerank" # 完整 /rerank 端点（非 /v1）
+api_key = "sk-xxxx"
+model = "Qwen/Qwen3-Reranker-4B"
 
 # ── Milvus 向量库 ────────────────────────────────────────────
 [milvus]
@@ -73,7 +89,9 @@ db = 0
 # ── 消息队列(RabbitMQ)：耗时任务异步化 ───────────────────────
 [mq]
 url = "amqp://gopher:gopher@localhost:5672/"
-parse_queue = "paper.parse" # PDF 解析入库流水线
+parse_queue = "paper.parse"   # PDF 解析入库流水线
+report_queue = "paper.report" # 研读报告预生成扇出队列
+report_concurrency = 6        # 报告消费者并发度,按模型并发配额上调
 
 # ── JWT 鉴权 ─────────────────────────────────────────────────
 [jwt]

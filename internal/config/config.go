@@ -18,6 +18,7 @@ type Config struct {
 	Models    ModelsConfig `toml:"models"`
 	Tools     ToolsConfig  `toml:"tools"`
 	Embedding ModelConfig  `toml:"embedding"`
+	Rerank    RerankConfig `toml:"rerank"`
 	Milvus    MilvusConfig `toml:"milvus"`
 	Parser    ParserConfig `toml:"parser"`
 	MySQL     MySQLConfig  `toml:"mysql"`
@@ -54,6 +55,8 @@ type ModelsConfig struct {
 	Chat ModelConfig `toml:"chat"`
 	// Vlm 是带图推理用的视觉模型:解析期给图片生成描述、问答期把召回图片喂模型,与 Chat 解耦可单独换型。
 	Vlm ModelConfig `toml:"vlm"`
+	// Translate 是精读页逐段翻译用的小模型,裸调不挂工具不走 RAG,与 Chat 解耦可单独换型。
+	Translate ModelConfig `toml:"translate"`
 }
 
 // ToolsConfig 是 ai agent 的工具来源,挂在下游 chat agent 上供 mcp 调用与 skill 加载。
@@ -88,6 +91,15 @@ type ModelConfig struct {
 	ReasoningEffort string `toml:"reasoning_effort"`
 }
 
+// RerankConfig 是 rerank 重排模型的连接参数，走 OpenAI/Infinity 兼容的 /rerank 端点（硅基流动等）。
+// 两阶段 RAG：向量先扩大召回候选，再由 cross-encoder 精排截断。enabled 关闭时退化为纯向量召回。
+type RerankConfig struct {
+	Enabled bool   `toml:"enabled"`
+	BaseURL string `toml:"base_url"` // 完整 /rerank 端点，如 https://api.siliconflow.cn/v1/rerank
+	APIKey  string `toml:"api_key"`
+	Model   string `toml:"model"` // cross-encoder 模型名，如 BAAI/bge-reranker-v2-m3
+}
+
 type MilvusConfig struct {
 	Address  string `toml:"address"`  // host:port，如 localhost:19530
 	Username string `toml:"username"` // 可空
@@ -111,10 +123,12 @@ type RedisConfig struct {
 	DB       int    `toml:"db"`
 }
 
-// MQConfig 消息队列，默认 RabbitMQ，用于 PDF 解析异步化。
+// MQConfig 消息队列，默认 RabbitMQ，用于 PDF 解析与研读报告预生成异步化。
 type MQConfig struct {
-	URL        string `toml:"url"`         // amqp://user:pass@host:port/
-	ParseQueue string `toml:"parse_queue"` // PDF 解析入库流水线
+	URL               string `toml:"url"`                // amqp://user:pass@host:port/
+	ParseQueue        string `toml:"parse_queue"`        // PDF 解析入库流水线
+	ReportQueue       string `toml:"report_queue"`       // 研读报告预生成扇出队列
+	ReportConcurrency int    `toml:"report_concurrency"` // 报告消费者并发度
 }
 
 // MailConfig SMTP 邮件配置，用于发送验证码等邮件。
@@ -172,6 +186,12 @@ func (c *Config) applyDefaults() {
 	}
 	if c.MQ.ParseQueue == "" {
 		c.MQ.ParseQueue = "paper.parse"
+	}
+	if c.MQ.ReportQueue == "" {
+		c.MQ.ReportQueue = "paper.report"
+	}
+	if c.MQ.ReportConcurrency <= 0 {
+		c.MQ.ReportConcurrency = 6
 	}
 	if c.Parser.BaseURL == "" {
 		c.Parser.BaseURL = "https://mineru.net/api/v4"

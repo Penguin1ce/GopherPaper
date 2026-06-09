@@ -54,6 +54,11 @@ func (t ReportType) Valid() bool {
 	}
 }
 
+// AllReportTypes 返回全部研读报告类型，供解析完成后批量预生成扇出。
+func AllReportTypes() []ReportType {
+	return []ReportType{ReportQuickRead, ReportMethod, ReportResult, ReportInnovation, ReportCompare, ReportFuture}
+}
+
 // PaperStatus 是论文从上传到就绪的解析状态机。
 type PaperStatus string
 
@@ -75,7 +80,10 @@ const (
 // 知识库相关。
 const (
 	DefaultKnowledgeCollection = "knowledge_chunks"
-	TopKKnowledge              = 8
+	// TopKKnowledge 最终拼进 context 的正文块数。开启 rerank 时为精排后截断数,关闭时即向量召回数。
+	TopKKnowledge = 8
+	// RecallTopK 开启 rerank 时第一阶段向量召回的候选数,扩大召回保 recall,再由 cross-encoder 精排截到 TopKKnowledge。
+	RecallTopK = 30
 	// MaxChunkRunes 单个知识块正文的字符上限,同标题同页的碎段合并到此为止,超出再切。
 	// bge-m3 支持长文,但块过大召回精度下降,取折中值。
 	MaxChunkRunes = 1000
@@ -84,6 +92,7 @@ const (
 // 带图问答相关。问答时图块走单独一轮检索,不与正文同池竞争。
 const (
 	TopKImages           = 3   // 单轮问答最多带几张召回图,vision token 贵故限张
+	RecallTopKImages     = 20  // 开启 rerank 时图块第一阶段向量召回候选数,过向量阈值后再精排截到 TopKImages
 	ImageScoreThreshold  = 0.5 // 图召回 score 低于此阈值视为无关,不带图(COSINE 相似度)
 	MaxFigureDescribe    = 20  // 解析期单篇最多给几张图调 vlm 生成描述,超出只留 caption
 	FigureDescribeWorker = 4   // 解析期 vlm 图描述的并发上限
@@ -190,6 +199,12 @@ const ExtractPrompt = `你是科研论文结构化信息抽取器。阅读下面
 
 // FigureDescribePrompt 是解析期给论文插图/表格生成内容描述的指令,描述入库供按图内容召回。
 const FigureDescribePrompt = `你是论文图表理解助手。请用中文简要描述这张论文插图或表格展示的内容：图表类型、横纵轴或行列含义、呈现的关键趋势或对比结论。只描述图中可见信息，不要臆测，控制在 80 字以内，输出纯文本不要 Markdown。`
+
+// TranslatePrompt 是精读页逐段翻译的指令,把用户选中的英文学术原文译成中文。
+const TranslatePrompt = `你是科研论文翻译助手。请把用户给出的英文学术原文翻译成准确、通顺的中文：保留专业术语与人名地名的规范译法，必要时术语后用括号附原文，忠实原意不增删不解释，只输出译文本身，不要加任何前后缀或 Markdown。`
+
+// MaxTranslateRunes 限制单次翻译输入长度,防止超长选段打爆小模型上下文。
+const MaxTranslateRunes = 4000
 
 // 研读报告各类型的 system prompt，均带 {context} 论文检索片段占位符。
 const (

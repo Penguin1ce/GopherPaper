@@ -12,12 +12,14 @@ import (
 	"fmt"
 
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
+	trpcreranker "trpc.group/trpc-go/trpc-agent-go/knowledge/reranker"
 
 	chatflow "GopherPaper/internal/ai/chat"
 	"GopherPaper/internal/ai/core"
 	extractflow "GopherPaper/internal/ai/extract"
 	figureflow "GopherPaper/internal/ai/figure"
 	reportflow "GopherPaper/internal/ai/report"
+	translateflow "GopherPaper/internal/ai/translate"
 	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/tenant"
@@ -26,9 +28,9 @@ import (
 
 var ready bool
 
-// Init 只做与用户无关的一次性准备:构建全局检索器。
-func Init(ctx context.Context) error {
-	if err := chatflow.Init(ctx); err != nil {
+// Init 只做与用户无关的一次性准备:构建全局检索器,并注入 rerank 精排器(nil 时退化纯向量召回)。
+func Init(ctx context.Context, rr trpcreranker.Reranker) error {
+	if err := chatflow.Init(ctx, rr); err != nil {
 		return fmt.Errorf("init rag retriever: %w", err)
 	}
 	ready = true
@@ -83,6 +85,16 @@ func DescribeFigures(ctx context.Context, figs []core.Figure) error {
 	}
 	figureflow.DescribeTRPC(ctx, models.Vlm, models.VlmMC, figs)
 	return nil
+}
+
+// Translate 把精读页选中的英文原文译成中文,由前端显式触发,不经分类器、不走 RAG。
+// 模型按用户取该用户的 translate 小模型,ctx 须注入身份。
+func Translate(ctx context.Context, text string) (string, error) {
+	models, err := modelsForUser(tenant.MustStudentID(ctx))
+	if err != nil {
+		return "", err
+	}
+	return translateflow.TranslateTRPC(ctx, models.Translate, models.TranslateMC, text)
 }
 
 // GenerateReport 围绕某篇论文按类型生成研读报告,由前端按钮触发,不经分类器。

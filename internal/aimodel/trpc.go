@@ -10,9 +10,13 @@ import (
 	"sync"
 
 	trpcembedder "trpc.group/trpc-go/trpc-agent-go/knowledge/embedder/openai"
+	trpcreranker "trpc.group/trpc-go/trpc-agent-go/knowledge/reranker"
+	trpcinfinity "trpc.group/trpc-go/trpc-agent-go/knowledge/reranker/infinity"
 	trpcopenai "trpc.group/trpc-go/trpc-agent-go/model/openai"
 
 	"GopherPaper/internal/config"
+	"GopherPaper/internal/zlog"
+	"GopherPaper/pkg/constant"
 )
 
 // cfg 保存全局配置,须在使用 ModelsForUser / NewEmbedder 前由 Init 注入。
@@ -24,10 +28,15 @@ func Init(c *config.Config) {
 }
 
 // NewChatModel 用 trpc 的 openai 兼容 model 建对话/意图模型。
+// 空 key 用占位:ollama 等本地 openai 兼容端点不校验密钥,但 sdk 要求非空。
 func NewChatModel(mc config.ModelConfig) *trpcopenai.Model {
+	apiKey := mc.APIKey
+	if apiKey == "" {
+		apiKey = "ollama"
+	}
 	return trpcopenai.New(mc.Model,
 		trpcopenai.WithBaseURL(mc.BaseURL),
-		trpcopenai.WithAPIKey(mc.APIKey),
+		trpcopenai.WithAPIKey(apiKey),
 	)
 }
 
@@ -46,14 +55,37 @@ func NewEmbedder(ec config.ModelConfig) *trpcembedder.Embedder {
 	)
 }
 
+// NewReranker 用 trpc 的 infinity reranker 接 OpenAI/Infinity 兼容的 /rerank 端点(硅基流动等)。
+// 与用户无关,启动期建一次交给 chat 检索层。enabled 关闭或建失败返回 nil,RAG 退化为纯向量召回。
+// WithTopN 设为候选上界 RecallTopK:等效全量重排返回(候选数 <= 此值),再由调用方按正文/图块各自截断。
+// 必须显式设:组件默认 top_n=-1,而硅基等服务要求 top_n>=1,否则 400 拒绝。
+func NewReranker(rc config.RerankConfig) trpcreranker.Reranker {
+	if !rc.Enabled {
+		return nil
+	}
+	r, err := trpcinfinity.New(
+		trpcinfinity.WithEndpoint(rc.BaseURL),
+		trpcinfinity.WithModel(rc.Model),
+		trpcinfinity.WithAPIKey(rc.APIKey),
+		trpcinfinity.WithTopN(constant.RecallTopK),
+	)
+	if err != nil {
+		zlog.Error("rerank 初始化失败,退化为纯向量召回", "err", err)
+		return nil
+	}
+	return r
+}
+
 // ModelSet 是单用户的 trpc 模型集合和对应生成参数配置。
 type ModelSet struct {
-	Intent   *trpcopenai.Model  // 意图分类小模型
-	Chat     *trpcopenai.Model  // 下游 RAG/抽取/报告主力模型
-	Vlm      *trpcopenai.Model  // 带图推理视觉模型:图描述生成与带图问答
-	IntentMC config.ModelConfig // 意图模型生成参数
-	ChatMC   config.ModelConfig // 对话模型生成参数
-	VlmMC    config.ModelConfig // 视觉模型生成参数
+	Intent      *trpcopenai.Model  // 意图分类小模型
+	Chat        *trpcopenai.Model  // 下游 RAG/抽取/报告主力模型
+	Vlm         *trpcopenai.Model  // 带图推理视觉模型:图描述生成与带图问答
+	Translate   *trpcopenai.Model  // 精读页逐段翻译小模型
+	IntentMC    config.ModelConfig // 意图模型生成参数
+	ChatMC      config.ModelConfig // 对话模型生成参数
+	VlmMC       config.ModelConfig // 视觉模型生成参数
+	TranslateMC config.ModelConfig // 翻译模型生成参数
 }
 
 // modelSets 按 userID 缓存,保留每用户隔离的口子。
@@ -76,12 +108,14 @@ func ModelsForUser(userID string) (*ModelSet, error) {
 	ent := e.(*modelSetEntry)
 	ent.once.Do(func() {
 		ent.models = &ModelSet{
-			Intent:   NewChatModel(cfg.Models.Intent),
-			Chat:     NewChatModel(cfg.Models.Chat),
-			Vlm:      NewChatModel(cfg.Models.Vlm),
-			IntentMC: cfg.Models.Intent,
-			ChatMC:   cfg.Models.Chat,
-			VlmMC:    cfg.Models.Vlm,
+			Intent:      NewChatModel(cfg.Models.Intent),
+			Chat:        NewChatModel(cfg.Models.Chat),
+			Vlm:         NewChatModel(cfg.Models.Vlm),
+			Translate:   NewChatModel(cfg.Models.Translate),
+			IntentMC:    cfg.Models.Intent,
+			ChatMC:      cfg.Models.Chat,
+			VlmMC:       cfg.Models.Vlm,
+			TranslateMC: cfg.Models.Translate,
 		}
 	})
 	return ent.models, nil
