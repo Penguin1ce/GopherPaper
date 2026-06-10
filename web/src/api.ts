@@ -38,6 +38,19 @@ export function figureUrl(docId: string, imgName: string): string {
   )}?token=${encodeURIComponent(token)}`;
 }
 
+// paperFileUrl 拼出取原始 PDF 的地址,带 query token,供精读页 pdf.js 加载。
+export function paperFileUrl(id: string): string {
+  return `${API_BASE}/papers/${encodeURIComponent(id)}/file?token=${encodeURIComponent(token)}`;
+}
+
+// translate 把精读页选中的英文原文送后端小模型翻成中文。
+export function translate(id: string, text: string) {
+  return request<{ translation: string }>(
+    `/papers/${encodeURIComponent(id)}/translate`,
+    { method: "POST", body: JSON.stringify({ text }) },
+  );
+}
+
 export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
@@ -181,9 +194,19 @@ export interface PaperStatusEvent {
   detail?: string;
 }
 
+// ReportReadyEvent 是研读报告后台预生成完成的就绪通知。
+export interface ReportReadyEvent {
+  type: string;
+  paper_id: string;
+  report_type: ReportType;
+}
+
+type WsMessage = PaperStatusEvent | ReportReadyEvent;
+
 export function openStatusSocket(
   jwt: string,
   onEvent: (e: PaperStatusEvent) => void,
+  onReport?: (e: ReportReadyEvent) => void,
 ): WebSocket | null {
   if (!jwt || typeof WebSocket === "undefined") return null;
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -195,14 +218,15 @@ export function openStatusSocket(
     return null;
   }
   socket.addEventListener("message", (event) => {
-    let msg: PaperStatusEvent;
+    let msg: WsMessage;
     try {
-      msg = JSON.parse(event.data);
+      msg = JSON.parse(event.data) as WsMessage;
     } catch {
       return;
     }
-    if (!msg || msg.type !== "paper_status" || !msg.paper_id) return;
-    onEvent(msg);
+    if (!msg || !msg.paper_id) return;
+    if (msg.type === "paper_status") onEvent(msg as PaperStatusEvent);
+    else if (msg.type === "report_ready") onReport?.(msg as ReportReadyEvent);
   });
   return socket;
 }

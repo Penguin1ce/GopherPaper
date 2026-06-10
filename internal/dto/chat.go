@@ -32,6 +32,11 @@ type ReportRequest struct {
 	Type string `json:"type" binding:"required"` // quickread/method/result/innovation/compare/future
 }
 
+// TranslateRequest 是精读页逐段翻译请求体，前端把选中的英文原文送来。
+type TranslateRequest struct {
+	Text string `json:"text" binding:"required"` // 待翻译的英文原文
+}
+
 // Response 是统一响应信封。Code 为 0 表示成功，非 0 时与 HTTP 状态一致；
 // Data 承载业务载荷，错误时省略。
 type Response struct {

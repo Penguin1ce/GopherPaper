@@ -6,11 +6,16 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"GopherPaper/internal/web"
 )
 
 // TestStaticFrontend 校验内嵌的前端构建产物可经路由直出:
 // / 返回页面壳,其引用的 /static/assets/*.js 可达。
 func TestStaticFrontend(t *testing.T) {
+	if !web.HasFrontendBuild() {
+		t.Skip("前端构建产物未生成,跳过静态资源路由校验")
+	}
 	r := Init("test")
 
 	// 首页应含标题与挂载点。

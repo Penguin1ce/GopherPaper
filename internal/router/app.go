@@ -27,6 +27,10 @@ func Init(mode string) *gin.Engine {
 	r.GET("/", func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", web.IndexHTML())
 	})
+	// 精读页是独立入口,新标签页打开,前端按 ?id 渲染 PDF。
+	r.GET("/reader", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", web.ReaderHTML())
+	})
 	r.StaticFS("/static", http.FS(web.Static()))
 
 	// 健康检查，无需鉴权。
@@ -50,6 +54,9 @@ func Init(mode string) *gin.Engine {
 		// 取召回引用的图片，img 标签带不了头，鉴权走 query token。
 		api.GET("/papers/:id/figures/:name", paperhandler.Figure)
 
+		// 取原始 PDF，pdf.js 带不了头，鉴权走 query token。
+		api.GET("/papers/:id/file", paperhandler.File)
+
 		// 受保护接口：JWT 校验后注入租户身份。
 		authed := api.Group("")
 		authed.Use(middleware.JWTAuth())
@@ -60,7 +67,8 @@ func Init(mode string) *gin.Engine {
 			authed.GET("/papers/search", paperhandler.Search)      // 历史文献检索
 			authed.GET("/papers/:id", paperhandler.Detail)         // 论文详情与结构化元信息
 			authed.GET("/papers/:id/status", paperhandler.Status)  // 解析状态兜底查询
-			authed.POST("/papers/:id/report", paperhandler.Report) // 生成研读报告
+			authed.POST("/papers/:id/report", paperhandler.Report)       // 生成研读报告
+			authed.POST("/papers/:id/translate", paperhandler.Translate) // 精读页逐段翻译
 
 			// 会话与多轮论文问答。
 			authed.POST("/sessions", chathandler.CreateSession)            // 新建会话，可绑定论文

@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
+	"GopherPaper/internal/ai"
 	"GopherPaper/internal/auth"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/response"
@@ -141,6 +144,28 @@ func Figure(c *gin.Context) {
 	c.File(path)
 }
 
+// File 返回某篇论文的原始 PDF 文件,供精读页 pdf.js 渲染。
+// 浏览器/pdf.js 带不了 Authorization 头,鉴权走 query token,过同一套 auth.Parse。
+// GET /api/v1/papers/:id/file?token=<jwt>
+func File(c *gin.Context) {
+	claims, err := auth.Parse(c.Query("token"))
+	if err != nil {
+		response.Fail(c, http.StatusUnauthorized, "token 无效")
+		return
+	}
+	path, err := paperservice.PaperFile(c.Request.Context(), claims.StudentID, c.Param("id"))
+	if err != nil {
+		writePaperErr(c, err, "查询失败")
+		return
+	}
+	if _, err := os.Stat(path); err != nil {
+		response.Fail(c, http.StatusNotFound, "文件不存在")
+		return
+	}
+	c.Header("Content-Type", "application/pdf")
+	c.File(path)
+}
+
 // Report 按报告类型生成研读报告,前端按钮触发。
 // POST /api/v1/papers/:id/report
 func Report(c *gin.Context) {
@@ -163,11 +188,48 @@ func Report(c *gin.Context) {
 			writePaperErr(c, err, "生成失败")
 			return
 		}
+		if errors.Is(err, errs.ErrReportGenerating) {
+			// 后台正在预生成,前端稍后重试即可命中缓存。
+			response.Fail(c, http.StatusAccepted, "报告正在生成中，请稍候重试")
+			return
+		}
 		zlog.Error("生成研读报告失败", "paper_id", paperID, "type", req.Type, "err", err)
 		response.Fail(c, http.StatusInternalServerError, "生成失败")
 		return
 	}
 	response.OK(c, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})
+}
+
+// Translate 把精读页选中的英文原文译成中文,前端选区触发,不经分类器、不走 RAG。
+// POST /api/v1/papers/:id/translate
+func Translate(c *gin.Context) {
+	var req dto.TranslateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	text := strings.TrimSpace(req.Text)
+	if text == "" {
+		response.Fail(c, http.StatusBadRequest, "原文为空")
+		return
+	}
+	if utf8.RuneCountInString(text) > constant.MaxTranslateRunes {
+		response.Fail(c, http.StatusBadRequest, "选段过长,请缩短后重试")
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	// 校验论文归属,确保 :id 属于本人(翻译按 owner 选其小模型)。
+	if _, err := paperservice.GetStatus(c.Request.Context(), ownerID, c.Param("id")); err != nil {
+		writePaperErr(c, err, "查询失败")
+		return
+	}
+	translation, err := ai.Translate(c.Request.Context(), text)
+	if err != nil {
+		zlog.Error("翻译失败", "owner", ownerID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "翻译失败")
+		return
+	}
+	response.OK(c, gin.H{"translation": translation})
 }
 
 // writePaperErr 把论文错误映射为对应 HTTP 状态。

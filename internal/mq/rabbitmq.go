@@ -29,12 +29,15 @@ func New(cfg config.MQConfig) (*Client, error) {
 		_ = conn.Close()
 		return nil, fmt.Errorf("mq: 打开 channel 失败: %w", err)
 	}
-	if cfg.ParseQueue != "" {
-		// durable 队列，重启不丢。
-		if _, err := ch.QueueDeclare(cfg.ParseQueue, true, false, false, false, nil); err != nil {
+	// durable 队列，重启不丢。
+	for _, q := range []string{cfg.ParseQueue, cfg.ReportQueue} {
+		if q == "" {
+			continue
+		}
+		if _, err := ch.QueueDeclare(q, true, false, false, false, nil); err != nil {
 			_ = ch.Close()
 			_ = conn.Close()
-			return nil, fmt.Errorf("mq: 声明队列 %s 失败: %w", cfg.ParseQueue, err)
+			return nil, fmt.Errorf("mq: 声明队列 %s 失败: %w", q, err)
 		}
 	}
 	return &Client{conn: conn, ch: ch, cfg: cfg}, nil

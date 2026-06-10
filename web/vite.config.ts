@@ -13,6 +13,12 @@ export default defineConfig({
     emptyOutDir: true,
     assetsDir: "static/assets",
     rollupOptions: {
+      // 多页:主应用 index.html 与独立精读页 reader.html 各一个入口,
+      // pdf.js 等重依赖只进 reader 的 bundle,不拖累主应用。
+      input: {
+        main: "index.html",
+        reader: "reader.html",
+      },
       output: {
         entryFileNames: "static/assets/[name]-[hash].js",
         chunkFileNames: "static/assets/[name]-[hash].js",

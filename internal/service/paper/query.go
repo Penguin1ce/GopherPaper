@@ -40,6 +40,15 @@ func Detail(ctx context.Context, ownerID, paperID string) (*model.Paper, *model.
 	return p, meta, sections, nil
 }
 
+// PaperFile 取论文 PDF 的落盘路径,仅限本人,精读页取原文 PDF 用。
+func PaperFile(ctx context.Context, ownerID, paperID string) (string, error) {
+	p, err := owned(ctx, ownerID, paperID)
+	if err != nil {
+		return "", err
+	}
+	return p.FileURI, nil
+}
+
 // owned 取论文并校验归属,非本人返回 errs.ErrPaperForbidden。
 func owned(ctx context.Context, ownerID, paperID string) (*model.Paper, error) {
 	p, err := paperdao.Get(ctx, paperID)

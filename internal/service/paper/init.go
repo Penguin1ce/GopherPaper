@@ -15,17 +15,24 @@ import (
 
 // 解析链路依赖的 MQ 句柄、队列名与文件存储目录，由 Init 注入。
 var (
-	mqClient   *mq.Client
-	parseQueue string
-	storageDir = "data/papers"
+	mqClient          *mq.Client
+	parseQueue        string
+	reportQueue       string
+	reportConcurrency int
+	storageDir        = "data/papers"
 )
 
-// Init 注入 MQ 句柄与解析队列名，建好存储目录并拉起后台解析消费者。须在 ai.Init 之后调用。
-func Init(ctx context.Context, client *mq.Client, queue string) error {
+// Init 注入 MQ 句柄、解析与报告队列名，建好存储目录并拉起后台解析、报告消费者。须在 ai.Init 之后调用。
+func Init(ctx context.Context, client *mq.Client, parseQ, reportQ string, reportConc int) error {
 	mqClient = client
-	parseQueue = queue
+	parseQueue = parseQ
+	reportQueue = reportQ
+	reportConcurrency = reportConc
 	if err := os.MkdirAll(storageDir, 0o755); err != nil {
 		return fmt.Errorf("service/paper: 创建存储目录失败: %w", err)
 	}
-	return startParseWorker(ctx)
+	if err := startParseWorker(ctx); err != nil {
+		return err
+	}
+	return startReportWorker(ctx)
 }

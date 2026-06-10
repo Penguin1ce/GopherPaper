@@ -15,6 +15,7 @@ import type {
   Message,
   Paper,
   RegisterPayload,
+  ReportType,
   Session,
 } from "./types";
 import { isSettled, paperTitle, sessionsForPaper } from "./utils";
@@ -45,6 +46,8 @@ interface AppContextValue {
   toasts: ToastItem[];
   activePaper: Paper | null;
   activeSession: Session | null;
+  // 各论文已后台预生成就绪的研读报告类型,供报告面板免轮询直接拉缓存
+  reportReady: Record<string, Partial<Record<ReportType, boolean>>>;
   // 动作
   toast: (message: string, type?: "ok" | "error") => void;
   dismissToast: (id: number) => void;
@@ -87,6 +90,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeSessionID, setActiveSessionID] = useState("");
   const [sending, setSending] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [reportReady, setReportReady] = useState<
+    Record<string, Partial<Record<ReportType, boolean>>>
+  >({});
 
   const wsRef = useRef<WebSocket | null>(null);
   const wsRetryRef = useRef<number | null>(null);
@@ -156,6 +162,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMessages([]);
     setActivePaperID("");
     setActiveSessionID("");
+    setReportReady({});
   }, [disconnectWs, persist, stopPolling]);
 
   // 401 统一登出。
@@ -192,11 +199,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [toast],
   );
 
+  // 报告就绪:记入对应论文,报告面板据此免轮询直接拉缓存。
+  const applyReportReady = useCallback(
+    (paperID: string, reportType: ReportType) => {
+      setReportReady((prev) => ({
+        ...prev,
+        [paperID]: { ...prev[paperID], [reportType]: true },
+      }));
+    },
+    [],
+  );
+
   const connectWs = useCallback(
     (jwt: string) => {
       disconnectWs();
-      const socket = api.openStatusSocket(jwt, (e) =>
-        applyStatusEvent(e.paper_id, e.status, e.detail),
+      const socket = api.openStatusSocket(
+        jwt,
+        (e) => applyStatusEvent(e.paper_id, e.status, e.detail),
+        (e) => applyReportReady(e.paper_id, e.report_type),
       );
       if (!socket) return;
       wsRef.current = socket;
@@ -207,7 +227,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
       socket.addEventListener("error", () => socket.close());
     },
-    [applyStatusEvent, disconnectWs],
+    [applyStatusEvent, applyReportReady, disconnectWs],
   );
 
   // ---- 轮询兜底 ----
@@ -477,6 +497,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toasts,
     activePaper,
     activeSession,
+    reportReady,
     toast,
     dismissToast,
     login,

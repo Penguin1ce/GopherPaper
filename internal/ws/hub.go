@@ -24,6 +24,13 @@ type StatusMessage struct {
 	Detail  string `json:"detail,omitempty"`
 }
 
+// ReportMessage 是研读报告后台预生成完成的就绪通知,前端据此免轮询直接拉缓存。
+type ReportMessage struct {
+	Type       string `json:"type"` // 固定 "report_ready"
+	PaperID    string `json:"paper_id"`
+	ReportType string `json:"report_type"`
+}
+
 // Register 把某用户的一条连接登记进来。
 func Register(userID string, c *websocket.Conn) {
 	mu.Lock()
@@ -52,7 +59,16 @@ func Unregister(userID string, c *websocket.Conn) {
 
 // PushStatus 向某用户所有在线连接广播一条解析状态。
 func PushStatus(userID, paperID, status, detail string) {
-	msg := StatusMessage{Type: "paper_status", PaperID: paperID, Status: status, Detail: detail}
+	broadcast(userID, paperID, StatusMessage{Type: "paper_status", PaperID: paperID, Status: status, Detail: detail})
+}
+
+// PushReport 向某用户所有在线连接广播某类研读报告已就绪。
+func PushReport(userID, paperID, reportType string) {
+	broadcast(userID, paperID, ReportMessage{Type: "report_ready", PaperID: paperID, ReportType: reportType})
+}
+
+// broadcast 把消息写给某用户的全部在线连接,快照连接集合后逐条发,避免持锁写。
+func broadcast(userID, paperID string, msg any) {
 	mu.RLock()
 	targets := make([]*websocket.Conn, 0, len(conns[userID]))
 	for c := range conns[userID] {

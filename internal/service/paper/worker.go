@@ -81,6 +81,9 @@ func runPipeline(ctx context.Context, task parseTask) {
 
 	setStatus(ctx, task, constant.PaperReady, "")
 	zlog.Info("论文解析入库完成", "paper_id", task.PaperID, "chunks", len(chunks))
+
+	// 就绪后扇出全部研读报告并发预生成,用户点击即取缓存,不再逐个等待。
+	enqueueReports(ctx, task)
 }
 
 // saveStructured 落库结构化元信息、章节,并回填标题与页数。

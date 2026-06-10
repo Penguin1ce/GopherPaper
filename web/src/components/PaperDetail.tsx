@@ -97,7 +97,20 @@ export function PaperDetail() {
   return (
     <div className="detail-scroll">
       <header className="detail-head">
-        <h2 className="detail-title">{paperTitle(activePaper)}</h2>
+        <div className="detail-head-row">
+          <h2 className="detail-title">{paperTitle(activePaper)}</h2>
+          <button
+            className="reader-open-btn"
+            onClick={() =>
+              window.open(
+                `/reader?id=${encodeURIComponent(activePaperID)}`,
+                "_blank",
+              )
+            }
+          >
+            精读
+          </button>
+        </div>
         <TagList items={meta?.authors} />
       </header>
 

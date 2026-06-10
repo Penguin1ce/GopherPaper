@@ -1,7 +1,7 @@
 # GopherPaper 前端
 
-Vite + React 18 + TypeScript。构建产物直接输出到 `../internal/web/public`,由 Go 经
-`//go:embed public` 内嵌进单二进制,运行时无 CDN、无浏览器内编译。
+Vite + React 18 + TypeScript。构建产物输出到 `../internal/web/public`,由 Go 经
+`//go:embed public` 内嵌进单二进制。该目录里的 hash 产物不入库,构建 Go 前先跑前端构建。
 
 ## 开发
 
@@ -19,14 +19,18 @@ npm run dev          # http://localhost:5173, /api 与 /ws 代理到 :8080 后�
 npm run build        # tsc 类型检查 + vite 打包 -> ../internal/web/public
 ```
 
+`../internal/web/public` 只保留 `.gitkeep` 占位,实际 `index.html`、`reader.html` 与
+`static/assets/*` 都由上面的命令生成。干净 checkout 后若直接跑 Go 服务,页面资源不会存在。
+
 产物布局(与 Go 的路由约定对齐):
 
 | 文件 | Go 出口 |
 | --- | --- |
 | `public/index.html` | `GET /` 直出页面壳 |
+| `public/reader.html` | `GET /reader` 精读页页面壳 |
 | `public/static/assets/*` | `StaticFS("/static")` 服务,带内容哈希 |
 
-改完前端记得重新 `npm run build`,Go 重新编译后内嵌的就是新产物。
+改完前端记得重新 `npm run build`,再重新编译 Go,内嵌的就是新产物。
 
 ## 结构
 
