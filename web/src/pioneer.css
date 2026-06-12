@@ -655,22 +655,19 @@ textarea:focus {
   font-size: 13px;
 }
 
-/* 工具调用状态气泡,dock 在输入框上方,SSE 工具阶段浮现 */
+/* 工具调用状态气泡,占 composer 整行排在输入框上方,SSE 工具阶段浮现 */
 .tool-status {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  left: 18px;
+  grid-column: 1 / -1;
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  max-width: calc(100% - 36px);
+  max-width: 100%;
   padding: 7px 14px 7px 11px;
   background: var(--accent-soft);
   border: 1px solid var(--accent-line);
   border-radius: var(--r-pill);
-  box-shadow: var(--shadow-1);
   animation: tool-status-in 0.18s var(--ease);
-  pointer-events: none;
 }
 
 .tool-status-text {
@@ -778,7 +775,6 @@ textarea:focus {
 }
 
 .p-composer {
-  position: relative; /* 工具状态气泡的定位锚点 */
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
@@ -976,6 +972,35 @@ textarea:focus {
 
 .md .rich-pay-button:active {
   transform: translateY(1px);
+}
+
+/* 微信支付卡片,本地生成二维码 + 移动端拉起链接 */
+.md .rich-pay-card {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 8px 0;
+  padding: 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.md .rich-pay-qr {
+  display: block;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: #fff;
+  line-height: 0;
+}
+
+.md .rich-pay-qr svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 .md .rich-qr-card,

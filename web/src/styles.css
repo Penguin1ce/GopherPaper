@@ -368,7 +368,7 @@ label > span {
 
 .side-pane {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 16px;
   padding: 16px;
 }
@@ -1354,22 +1354,19 @@ label > span {
   color: var(--info);
 }
 
-/* 工具调用状态气泡,dock 在输入框上方,SSE 工具阶段浮现 */
+/* 工具调用状态气泡,占 composer 整行排在输入框上方,SSE 工具阶段浮现 */
 .tool-status {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  left: 18px;
+  grid-column: 1 / -1;
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  max-width: calc(100% - 36px);
+  max-width: 100%;
   padding: 7px 14px 7px 11px;
   background: var(--accent-soft);
   border: 1px solid var(--accent-line);
   border-radius: var(--r-pill);
-  box-shadow: var(--shadow-1);
   animation: tool-status-in 0.18s var(--ease);
-  pointer-events: none;
 }
 
 .tool-status-text {
@@ -1504,7 +1501,6 @@ label > span {
 }
 
 .composer {
-  position: relative; /* 工具状态气泡的定位锚点 */
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;

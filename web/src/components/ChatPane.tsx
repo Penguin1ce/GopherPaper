@@ -94,7 +94,7 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
-// 工具调用状态气泡,dock 在输入框上方,有状态文案时浮现。
+// 工具调用状态气泡,占 composer 整行排在输入框上方,有状态文案时浮现。
 function ToolStatus({ note }: { note: string }) {
   if (!note) return null;
   return (
@@ -163,7 +163,7 @@ export function ChatPane() {
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, sending]);
+  }, [messages, sending, toolNote]);
 
   const submit = () => {
     const q = input.trim();

@@ -2,6 +2,7 @@ import ReactMarkdown, {
   type Components,
   defaultUrlTransform,
 } from "react-markdown";
+import { QRCodeSVG } from "qrcode.react";
 import remarkGfm from "remark-gfm";
 
 import { figureUrl } from "../api";
@@ -96,11 +97,19 @@ export function Markdown({
   const components: Components = {
     a({ href, children }) {
       const url = typeof href === "string" ? href : "";
+      // weixin 深链桌面浏览器点不开,其内容即微信支付码,本地渲染成二维码供手机扫,
+      // 链接本身保留给移动端直接拉起微信。
       if (richLinks && url && isWeixinURL(url)) {
         return (
-          <a className="rich-pay-button" href={url}>
-            {children}
-          </a>
+          <span className="rich-pay-card">
+            <span className="rich-link-kicker">微信扫码支付</span>
+            <span className="rich-pay-qr">
+              <QRCodeSVG value={url} size={180} marginSize={2} />
+            </span>
+            <a className="rich-pay-button" href={url}>
+              {children}
+            </a>
+          </span>
         );
       }
       if (richLinks && url && isQRCodeURL(url)) {
