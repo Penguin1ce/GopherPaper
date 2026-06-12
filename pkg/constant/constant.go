@@ -115,6 +115,15 @@ const (
 	SessionAppName     = "gopherpaper" // trpc Session 的 appName，与 userID/sessionID 共同定位会话事件
 )
 
+// 发消息 SSE 事件名。生成过程经 SSE 推送:工具调用与文本增量实时上屏,done 收尾带完整消息。
+const (
+	StreamEventToolCall   = "tool_call"   // agent 发起一次工具调用,载荷带工具名
+	StreamEventToolResult = "tool_result" // 工具调用返回,载荷带工具名
+	StreamEventDelta      = "delta"       // 应答文本增量
+	StreamEventDone       = "done"        // 生成完成,载荷为完整 SendMessageResponse
+	StreamEventError      = "error"       // 生成中途失败,载荷带错误说明
+)
+
 type KnowledgeScope string
 
 const (

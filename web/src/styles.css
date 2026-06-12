@@ -1354,6 +1354,67 @@ label > span {
   color: var(--info);
 }
 
+/* 工具调用状态气泡,dock 在输入框上方,SSE 工具阶段浮现 */
+.tool-status {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 36px);
+  padding: 7px 14px 7px 11px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-1);
+  animation: tool-status-in 0.18s var(--ease);
+  pointer-events: none;
+}
+
+.tool-status-text {
+  overflow: hidden;
+  color: var(--accent-dark);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tool-spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  border-top-color: transparent;
+  animation: tool-spin 0.8s linear infinite;
+}
+
+@keyframes tool-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes tool-status-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-status {
+    animation: none;
+  }
+}
+
 /* 思考中 */
 .message-bubble.thinking {
   display: flex;
@@ -1443,6 +1504,7 @@ label > span {
 }
 
 .composer {
+  position: relative; /* 工具状态气泡的定位锚点 */
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;

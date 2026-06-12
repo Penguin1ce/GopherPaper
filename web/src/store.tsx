@@ -43,6 +43,8 @@ interface AppContextValue {
   activePaperID: string;
   activeSessionID: string;
   sending: boolean;
+  // 当前轮工具调用状态文案,SSE 进行中显示在输入框上方的状态气泡,空串隐藏
+  toolNote: string;
   toasts: ToastItem[];
   activePaper: Paper | null;
   activeSession: Session | null;
@@ -89,6 +91,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activePaperID, setActivePaperID] = useState("");
   const [activeSessionID, setActiveSessionID] = useState("");
   const [sending, setSending] = useState(false);
+  const [toolNote, setToolNote] = useState("");
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [reportReady, setReportReady] = useState<
     Record<string, Partial<Record<ReportType, boolean>>>
@@ -431,18 +434,62 @@ export function AppProvider({ children }: { children: ReactNode }) {
         };
         setMessages((list) => [...list, userMsg]);
 
-        const data = await api.sendMessage(sessionID, query);
-        if (data?.message) {
-          const assistant: Message = { ...data.message };
-          // 助教消息的真实 ID 落 Session 后才有,即时应答 ID 为空,
-          // 这里补个本地唯一 ID 避免多轮渲染 key 冲突;重开会话时由 listMessages 还原真实 ID。
-          if (!assistant.id) assistant.id = `local-a-${Date.now()}`;
-          if (data.meta) assistant.meta = data.meta;
-          setMessages((list) => [...list, assistant]);
+        // SSE 流式占位:首个文本增量到达时上屏一条 streaming 助教消息,
+        // done 后整体替换为最终消息;工具阶段由输入框上方的状态气泡呈现,不进消息流。
+        const placeholderID = `stream-${Date.now()}`;
+        let shown = false;
+        const patch = (fn: (m: Message) => Message) => {
+          if (!shown) {
+            shown = true;
+            setMessages((list) => [
+              ...list,
+              fn({
+                id: placeholderID,
+                session_id: sessionID,
+                role: "assistant",
+                content: "",
+                created_at: new Date().toISOString(),
+                streaming: true,
+              }),
+            ]);
+            return;
+          }
+          setMessages((list) =>
+            list.map((m) => (m.id === placeholderID ? fn(m) : m)),
+          );
+        };
+        try {
+          const data = await api.sendMessage(sessionID, query, undefined, {
+            onDelta: (text) => {
+              // 正文开始流入,工具阶段结束,收起状态气泡。
+              setToolNote("");
+              patch((m) => ({ ...m, content: m.content + text }));
+            },
+            // 工具状态不进消息气泡,显示在输入框上方的独立状态气泡。
+            onTool: (tool, done) =>
+              setToolNote(done ? `${tool} 已返回,正在继续…` : `正在调用 ${tool} …`),
+          });
+          if (data?.message) {
+            const assistant: Message = { ...data.message };
+            // 助教消息的真实 ID 落 Session 后才有,即时应答 ID 为空,
+            // 这里补个本地唯一 ID 避免多轮渲染 key 冲突;重开会话时由 listMessages 还原真实 ID。
+            if (!assistant.id) assistant.id = `local-a-${Date.now()}`;
+            if (data.meta) assistant.meta = data.meta;
+            setMessages((list) => [
+              ...list.filter((m) => m.id !== placeholderID),
+              assistant,
+            ]);
+          } else {
+            setMessages((list) => list.filter((m) => m.id !== placeholderID));
+          }
+        } catch (e) {
+          setMessages((list) => list.filter((m) => m.id !== placeholderID));
+          throw e;
         }
         await refreshSessions();
       } finally {
         setSending(false);
+        setToolNote("");
       }
     },
     [activePaperID, activeSessionID, createSession, papers, refreshSessions],
@@ -494,6 +541,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     activePaperID,
     activeSessionID,
     sending,
+    toolNote,
     toasts,
     activePaper,
     activeSession,

@@ -77,6 +77,8 @@ export interface Message {
   created_at: string;
   // 助教消息可能带本轮引用出处等结构化信息。
   meta?: Record<string, unknown>;
+  // 前端瞬态字段,仅 SSE 进行中的占位消息使用,不来自后端。
+  streaming?: boolean;
 }
 
 // Reply.Meta["sources"] 透出的出处结构。

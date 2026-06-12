@@ -179,16 +179,94 @@ export function listMessages(sessionID: string) {
   );
 }
 
+// 发消息 SSE 的过程回调:onDelta 收应答文本增量,onTool 收工具调用状态(done=false 发起/true 返回)。
+export interface SendStreamHandlers {
+  onDelta?: (text: string) => void;
+  onTool?: (tool: string, done: boolean) => void;
+}
+
+// 解析一帧 SSE(event + data 行),返回事件名与 JSON 载荷,无 data 返回 null。
+function parseSSEFrame(frame: string): { event: string; payload: unknown } | null {
+  let event = "message";
+  const dataLines: string[] = [];
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+  }
+  if (dataLines.length === 0) return null;
+  try {
+    return { event, payload: JSON.parse(dataLines.join("\n")) };
+  } catch {
+    return null;
+  }
+}
+
 // extraHeaders 透传额外请求头,先锋者页用它带 X-Luckin-Token 等凭据头,服务端不落库。
-export function sendMessage(
+// 后端以 SSE 推送生成过程:tool_call/tool_result/delta 实时回调,done 事件收尾返回完整应答;
+// 开流前的错误仍是普通 JSON 信封,沿用统一错误处理。
+export async function sendMessage(
   sessionID: string,
   query: string,
   extraHeaders?: Record<string, string>,
-) {
-  return request<SendMessageResponse>(
-    `/sessions/${encodeURIComponent(sessionID)}/messages`,
-    { method: "POST", body: JSON.stringify({ query }), headers: extraHeaders },
+  stream?: SendStreamHandlers,
+): Promise<SendMessageResponse> {
+  const res = await fetch(
+    `${API_BASE}/sessions/${encodeURIComponent(sessionID)}/messages`,
+    {
+      method: "POST",
+      headers: authHeaders({
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        ...extraHeaders,
+      }),
+      body: JSON.stringify({ query }),
+    },
   );
+  const ctype = res.headers.get("content-type") || "";
+  if (!res.ok || !ctype.includes("text/event-stream") || !res.body) {
+    return readEnvelope<SendMessageResponse>(res);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let result: SendMessageResponse | null = null;
+  let errMsg = "";
+  const handleFrame = (frame: string) => {
+    const parsed = parseSSEFrame(frame);
+    if (!parsed) return;
+    const payload = parsed.payload as Record<string, unknown>;
+    switch (parsed.event) {
+      case "delta":
+        stream?.onDelta?.(String(payload.content ?? ""));
+        break;
+      case "tool_call":
+        stream?.onTool?.(String(payload.tool ?? ""), false);
+        break;
+      case "tool_result":
+        stream?.onTool?.(String(payload.tool ?? ""), true);
+        break;
+      case "done":
+        result = parsed.payload as SendMessageResponse;
+        break;
+      case "error":
+        errMsg = String(payload.message ?? "处理失败");
+        break;
+    }
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      handleFrame(buf.slice(0, idx));
+      buf = buf.slice(idx + 2);
+    }
+  }
+  if (errMsg) throw new ApiError(errMsg, res.status);
+  if (!result) throw new ApiError("连接中断,请重试", res.status);
+  return result;
 }
 
 // ---- WebSocket 解析进度 ----

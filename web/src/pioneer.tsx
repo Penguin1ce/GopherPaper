@@ -153,6 +153,17 @@ function Bubble({ message }: { message: Message }) {
   );
 }
 
+// 工具调用状态气泡,dock 在输入框上方,有状态文案时浮现。
+function ToolStatus({ note }: { note: string }) {
+  if (!note) return null;
+  return (
+    <div className="tool-status" role="status">
+      <span className="tool-spinner" aria-hidden />
+      <span className="tool-status-text">{note}</span>
+    </div>
+  );
+}
+
 function Thinking() {
   return (
     <article className="p-message assistant">
@@ -192,6 +203,7 @@ function PioneerApp() {
   const [activeID, setActiveID] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [sending, setSending] = useState(false);
+  const [toolNote, setToolNote] = useState("");
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [luckin, setLuckin] = useState<LuckinCred | null>(loadLuckin);
@@ -284,18 +296,51 @@ function PioneerApp() {
         created_at: new Date().toISOString(),
       },
     ]);
+    // SSE 流式占位:首个文本增量到达时上屏一条 streaming 助手消息,
+    // done 后整体替换为最终消息;工具阶段由输入框上方的状态气泡呈现,不进消息流。
+    const placeholderID = `stream-${Date.now()}`;
+    let shown = false;
+    const patch = (fn: (m: Message) => Message) => {
+      if (!shown) {
+        shown = true;
+        setMessages((list) => [
+          ...list,
+          fn({
+            id: placeholderID,
+            session_id: sid,
+            role: "assistant",
+            content: "",
+            created_at: new Date().toISOString(),
+            streaming: true,
+          }),
+        ]);
+        return;
+      }
+      setMessages((list) => list.map((m) => (m.id === placeholderID ? fn(m) : m)));
+    };
     try {
       const headers: Record<string, string> = {};
       if (luckin?.token) headers[LUCKIN_HEADER] = luckin.token;
-      const data = await api.sendMessage(sid, q, headers);
+      const data = await api.sendMessage(sid, q, headers, {
+        onDelta: (text) => {
+          // 正文开始流入,工具阶段结束,收起状态气泡。
+          setToolNote("");
+          patch((m) => ({ ...m, content: m.content + text }));
+        },
+        // 工具状态不进消息气泡,显示在输入框上方的独立状态气泡。
+        onTool: (tool, done) =>
+          setToolNote(done ? `${tool} 已返回,正在继续…` : `正在调用 ${tool} …`),
+      });
       setMessages((list) => [
-        ...list,
+        ...list.filter((m) => m.id !== placeholderID),
         { ...data.message, id: data.message.id || `local-a-${Date.now()}` },
       ]);
     } catch (e) {
+      setMessages((list) => list.filter((m) => m.id !== placeholderID));
       fail(e);
     } finally {
       setSending(false);
+      setToolNote("");
     }
   };
 
@@ -403,7 +448,7 @@ function PioneerApp() {
               {messages.map((m) => (
                 <Bubble key={String(m.id)} message={m} />
               ))}
-              {sending && <Thinking />}
+              {sending && !messages.some((m) => m.streaming) && <Thinking />}
             </>
           )}
         </div>
@@ -417,6 +462,7 @@ function PioneerApp() {
             void send();
           }}
         >
+          <ToolStatus note={toolNote} />
           <textarea
             rows={3}
             value={input}

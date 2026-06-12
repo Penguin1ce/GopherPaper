@@ -16,11 +16,27 @@ type SendMessageRequest struct {
 	Query string `json:"query" binding:"required"`
 }
 
-// SendMessageResponse 返回助教消息与本轮引用出处。
+// SendMessageResponse 返回助教消息与本轮引用出处,SSE 下作为 done 事件载荷。
 type SendMessageResponse struct {
 	Message *model.Message `json:"message"`
 	Meta    map[string]any `json:"meta,omitempty"`
 }
+
+// 发消息 SSE 各事件的载荷。事件名见 constant.StreamEvent*,done 事件复用 SendMessageResponse。
+type (
+	// StreamToolPayload 是 tool_call / tool_result 事件载荷。
+	StreamToolPayload struct {
+		Tool string `json:"tool"`
+	}
+	// StreamDeltaPayload 是 delta 事件载荷。
+	StreamDeltaPayload struct {
+		Content string `json:"content"`
+	}
+	// StreamErrorPayload 是 error 事件载荷。
+	StreamErrorPayload struct {
+		Message string `json:"message"`
+	}
+)
 
 // ChatResponse 是问答的统一响应，研读报告也复用。
 type ChatResponse struct {

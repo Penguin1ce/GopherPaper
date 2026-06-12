@@ -64,7 +64,7 @@ func GenerateWithImages(ctx context.Context, userID, instruction string, history
 	if err != nil {
 		return "", err
 	}
-	return core.CollectEvents(ch)
+	return core.CollectEvents(ctx, ch)
 }
 
 // userMessage 构造当前 user 轮次:无图时退化为纯文本,有图时文本与图片同放 ContentParts。
@@ -94,6 +94,9 @@ func runnerForUser(userID string) (runner.Runner, error) {
 	ent := e.(*runnerEntry)
 	ent.once.Do(func() {
 		gc := core.GenConfig(models.ChatMC)
+		// 流式拉取模型输出,问答链路经 ctx 的 StreamHandler 把增量推给前端;
+		// 无 handler 的链路(抽取/报告)仍由 CollectEvents 聚合,行为不变。
+		gc.Stream = true
 		sets := toolkit.ToolSets()
 		// 网关限制:gpt-5.5 在 chat/completions 下 function tools 与 reasoning_effort
 		// 不能同用(400),配了工具就剥离推理强度走网关默认。

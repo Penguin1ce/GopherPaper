@@ -3,12 +3,16 @@
 package chat
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/ai/toolkit"
 	"GopherPaper/internal/credential"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/response"
@@ -77,7 +81,9 @@ func ListMessages(c *gin.Context) {
 	response.OK(c, msgs)
 }
 
-// SendMessage 在会话内发一轮消息，返回助教应答与引用出处。
+// SendMessage 在会话内发一轮消息,以 SSE 推送生成过程:工具调用与文本增量实时下发,
+// done 事件收尾带完整助教消息与引用出处。开流前的错误(参数/会话校验)仍走普通 JSON 状态码,
+// 开流后的失败降级为 error 事件。
 // POST /api/v1/sessions/:id/messages
 func SendMessage(c *gin.Context) {
 	var req dto.SendMessageRequest
@@ -91,12 +97,46 @@ func SendMessage(c *gin.Context) {
 		ctx = credential.With(ctx, constant.CredentialLuckin, tok)
 	}
 	studentID := tenant.MustStudentID(ctx)
+
+	// SSE 头在首个事件时才写,此前的错误仍能返回普通 JSON 状态码。
+	started := false
+	emit := func(name string, payload any) {
+		if !started {
+			h := c.Writer.Header()
+			h.Set("Content-Type", "text/event-stream; charset=utf-8")
+			h.Set("Cache-Control", "no-cache")
+			h.Set("X-Accel-Buffering", "no") // 反代不缓冲,事件即发即达
+			c.Writer.WriteHeader(http.StatusOK)
+			started = true
+		}
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return
+		}
+		fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", name, b)
+		c.Writer.Flush()
+	}
+	ctx = core.WithStream(ctx, func(ev core.StreamEvent) {
+		switch ev.Kind {
+		case constant.StreamEventDelta:
+			emit(ev.Kind, dto.StreamDeltaPayload{Content: ev.Delta})
+		default:
+			// 原始工具名换前端显示名,未配置回退原始名。
+			emit(ev.Kind, dto.StreamToolPayload{Tool: toolkit.DisplayName(ev.Tool)})
+		}
+	})
+
 	msg, meta, err := chatservice.SendMessage(ctx, studentID, c.Param("id"), req.Query)
 	if err != nil {
-		writeChatErr(c, err, "处理失败")
+		if !started {
+			writeChatErr(c, err, "处理失败")
+			return
+		}
+		zlog.Error("会话流式应答失败", "session_id", c.Param("id"), "err", err)
+		emit(constant.StreamEventError, dto.StreamErrorPayload{Message: "处理失败"})
 		return
 	}
-	response.OK(c, dto.SendMessageResponse{Message: msg, Meta: meta})
+	emit(constant.StreamEventDone, dto.SendMessageResponse{Message: msg, Meta: meta})
 }
 
 // writeChatErr 把会话错误映射为对应 HTTP 状态。

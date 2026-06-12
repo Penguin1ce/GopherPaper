@@ -48,7 +48,7 @@ func Chat(ctx context.Context, userID string, history []trpcmodel.Message, query
 	if err != nil {
 		return "", err
 	}
-	return core.CollectEvents(ch)
+	return core.CollectEvents(ctx, ch)
 }
 
 // runnerForUser 懒建该用户的 runner,模型取自 aimodel,工具与 skill 取 pioneer 分组。
@@ -67,6 +67,8 @@ func runnerForUser(userID string) (runner.Runner, error) {
 		// 不能同用(400),先锋者必带工具,故剥离推理强度走网关默认。
 		gc := core.GenConfig(models.PioneerMC)
 		gc.ReasoningEffort = nil
+		// 流式拉取模型输出,经 ctx 的 StreamHandler 把工具调用与增量推给前端。
+		gc.Stream = true
 		opts := []llmagent.Option{
 			llmagent.WithModel(models.Pioneer),
 			llmagent.WithGenerationConfig(gc),

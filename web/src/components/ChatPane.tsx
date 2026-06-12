@@ -94,6 +94,17 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
+// 工具调用状态气泡,dock 在输入框上方,有状态文案时浮现。
+function ToolStatus({ note }: { note: string }) {
+  if (!note) return null;
+  return (
+    <div className="tool-status" role="status">
+      <span className="tool-spinner" aria-hidden />
+      <span className="tool-status-text">{note}</span>
+    </div>
+  );
+}
+
 // 三点等待动画,助教思考中。
 function Thinking() {
   return (
@@ -141,6 +152,7 @@ export function ChatPane() {
     activeSession,
     activePaper,
     sending,
+    toolNote,
     sendMessage,
     createSession,
   } = useApp();
@@ -235,7 +247,7 @@ export function ChatPane() {
             {messages.map((m) => (
               <MessageBubble key={String(m.id)} message={m} />
             ))}
-            {sending && <Thinking />}
+            {sending && !messages.some((m) => m.streaming) && <Thinking />}
           </>
         )}
       </div>
@@ -247,6 +259,7 @@ export function ChatPane() {
           submit();
         }}
       >
+        <ToolStatus note={toolNote} />
         <textarea
           rows={3}
           value={input}
