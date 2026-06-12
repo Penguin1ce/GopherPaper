@@ -1,4 +1,4 @@
-// Package pioneer 是先锋者 agent:面向用户的多面手助手,与论文问答的 RAG 链路解耦。
+// Package pioneer 是小云雀 agent:面向用户的多面手助手,与论文问答的 RAG 链路解耦。
 // 按 userID 懒建并缓存一个带工具的 llmagent+runner,挂 pioneer 分组的 mcp 工具与 skill。
 // 凭据型工具(如瑞幸点单)的 token 由请求 ctx 携带,经 toolkit 的钩子按调用注入,服务端不落库。
 // 历史按请求注入不持久化,system-of-record 仍是 history 包,runner 配 noop session。
@@ -34,7 +34,7 @@ type runnerEntry struct {
 	rt   runner.Runner
 }
 
-// Chat 经该用户的先锋者 agent 跑一轮并聚合成完整文本。
+// Chat 经该用户的小云雀 agent 跑一轮并聚合成完整文本。
 // history 为多轮上下文(注入不持久化),query 为当前输入。
 func Chat(ctx context.Context, userID string, history []trpcmodel.Message, query string) (string, error) {
 	rt, err := runnerForUser(userID)
@@ -64,7 +64,7 @@ func runnerForUser(userID string) (runner.Runner, error) {
 	ent := e.(*runnerEntry)
 	ent.once.Do(func() {
 		// 兼容兜底:部分 openai 兼容端点在 chat/completions 下 function tools 与
-		// reasoning_effort 不能同用(400),先锋者必带工具,故剥离推理强度走端点默认。
+		// reasoning_effort 不能同用(400),小云雀必带工具,故剥离推理强度走端点默认。
 		gc := core.GenConfig(models.PioneerMC)
 		gc.ReasoningEffort = nil
 		// 流式拉取模型输出,经 ctx 的 StreamHandler 把工具调用与增量推给前端。

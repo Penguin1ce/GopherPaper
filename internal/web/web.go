@@ -37,11 +37,11 @@ func ReaderHTML() []byte {
 	return b
 }
 
-// PioneerHTML 返回先锋者页入口,/pioneer 路由直出。
+// PioneerHTML 返回小云雀页入口,/pioneer 路由直出。
 func PioneerHTML() []byte {
 	b, err := files.ReadFile("public/pioneer.html")
 	if err != nil {
-		return missingHTML("先锋者 · GopherPaper")
+		return missingHTML("小云雀 · GopherPaper")
 	}
 	return b
 }

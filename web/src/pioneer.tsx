@@ -1,4 +1,4 @@
-// 先锋者页:独立入口(/pioneer),多面手 agent 会话(查论文 + 瑞幸点单等工具)。
+// 小云雀页:独立入口(/pioneer),多面手 agent 会话(查论文 + 瑞幸点单等工具)。
 // 不挂主应用 store,登录态从同源 localStorage 共享(与精读页同模式)。
 // 瑞幸 token 仅存浏览器 localStorage,发消息时随 X-Luckin-Token 头透传,服务端不落库。
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
@@ -232,7 +232,7 @@ function PioneerApp() {
     }
   }, []);
 
-  // 启动:拉会话列表,只留先锋者会话,默认打开最近一个。
+  // 启动:拉会话列表,只留小云雀会话,默认打开最近一个。
   useEffect(() => {
     if (!token) return;
     api

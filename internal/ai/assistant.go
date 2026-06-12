@@ -59,7 +59,7 @@ func Chat(ctx context.Context, hist []model.Message, query string) (*core.Reply,
 	return chatflow.ChatTRPC(ctx, models.Intent, models.IntentMC, toHistory(hist), query)
 }
 
-// PioneerChat 是先锋者会话入口:不经意图分类与 RAG,直接走带工具的先锋者 agent。
+// PioneerChat 是小云雀会话入口:不经意图分类与 RAG,直接走带工具的小云雀 agent。
 // ctx 须已注入租户身份;凭据型工具的 token 由请求 ctx 携带,见 credential 包。
 func PioneerChat(ctx context.Context, hist []model.Message, query string) (*core.Reply, error) {
 	content, err := pioneerflow.Chat(ctx, tenant.MustStudentID(ctx), toHistory(hist), query)

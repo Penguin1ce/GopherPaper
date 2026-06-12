@@ -59,7 +59,7 @@ export interface Session {
   id: string;
   student_id: string;
   paper_id?: string;
-  // 空为默认论文助教,"pioneer" 为先锋者会话(独立页 /pioneer)。
+  // 空为默认论文助教,"pioneer" 为小云雀会话(独立页 /pioneer)。
   agent_type?: string;
   title: string;
   created_at: string;

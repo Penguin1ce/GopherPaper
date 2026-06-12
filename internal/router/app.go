@@ -31,7 +31,7 @@ func Init(mode string) *gin.Engine {
 	r.GET("/reader", func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", web.ReaderHTML())
 	})
-	// 先锋者页是独立入口,多面手 agent 会话。
+	// 小云雀页是独立入口,多面手 agent 会话。
 	r.GET("/pioneer", func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", web.PioneerHTML())
 	})

@@ -36,7 +36,7 @@ model = "doubao-seed-2-0-pro-260215"                  # 须为多模态模型，
 max_tokens = 16384
 thinking = "disabled"                                 # 关思考，图描述生成走批量解析期，快为先
 
-# ── 先锋者 agent 模型:多轮工具循环对延迟敏感,整块留空回退 models.chat ──
+# ── 小云雀 agent 模型:多轮工具循环对延迟敏感,整块留空回退 models.chat ──
 [models.pioneer]
 provider = "openai"
 base_url = "https://ark.cn-beijing.volces.com/api/v3"
@@ -53,13 +53,13 @@ model = "qwen2.5:1.5b-instruct"         # 通用 instruct 小模型，跟随翻�
 max_tokens = 4096
 
 # ── ai agent 工具来源:mcp 工具集与 skill 仓库,按 agent 分组 ──
-# agent 字段分组:留空给默认论文助教,"pioneer" 给先锋者。
+# agent 字段分组:留空给默认论文助教,"pioneer" 给小云雀。
 # credential 标记凭据 provider:该工具的 Authorization 不写配置,
 # 由前端保存 token、随消息请求头(如 X-Luckin-Token)透传,服务端按调用注入,不落库。
 [tools]
 skills = []                            # 论文助教的本地 skill 目录
-pioneer_skills = ["skills/pioneer"]    # 先锋者的本地 skill 目录
-baidu_map_ak = ""                      # 百度地图开放平台 AK,非空时给先锋者挂 geocode 地理编码工具
+pioneer_skills = ["skills/pioneer"]    # 小云雀的本地 skill 目录
+baidu_map_ak = ""                      # 百度地图开放平台 AK,非空时给小云雀挂 geocode 地理编码工具
 baidu_map_sk = ""                      # AK 开了 SN 校验时填对应 SK,留空表示 AK 走 IP 白名单校验
 
 # 工具显示名映射:原始工具名 → 前端展示名,SSE 推工具调用状态时换用,未配置回退原始名。

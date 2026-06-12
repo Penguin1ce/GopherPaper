@@ -22,7 +22,7 @@ const (
 	IntentMethod  IntentType = "method"  // 方法/流程/实验设计解读
 )
 
-// IntentPioneer 标识先锋者会话的应答,先锋者会话不经意图分类器。
+// IntentPioneer 标识小云雀会话的应答,小云雀会话不经意图分类器。
 const IntentPioneer IntentType = "pioneer"
 
 // IsChat 判断是否为聊天框可调度的问答子类。
@@ -80,7 +80,7 @@ const (
 	BearerPrefix        = "bearer "
 )
 
-// 先锋者 agent 相关。先锋者是面向用户的多面手 agent,挂独立分组的 mcp 工具与 skill;
+// 小云雀 agent 相关。小云雀是面向用户的多面手 agent,挂独立分组的 mcp 工具与 skill;
 // 凭据型工具的 token 由前端保存、随请求头透传,服务端按调用注入,不落库。
 const (
 	AgentPioneer      = "pioneer"        // 工具分组名,也是会话 AgentType 的取值
@@ -226,7 +226,7 @@ const TranslatePrompt = `你是科研论文翻译助手。请把用户给出的�
 // MaxTranslateRunes 限制单次翻译输入长度,防止超长选段打爆小模型上下文。
 const MaxTranslateRunes = 4000
 
-// PioneerInstruction 是先锋者 agent 的 system prompt。先锋者不走 RAG 链路,
+// PioneerInstruction 是小云雀 agent 的 system prompt。小云雀不走 RAG 链路,
 // 靠挂载的 mcp 工具与 skill 完成查论文、点咖啡等任务。
 const PioneerInstruction = `你是「小云雀」,科研工作者的全能助手:既能围绕学术话题答疑、检索和推荐论文,也能调用已接入的工具与 skill 完成生活类任务(如瑞幸咖啡点单)。
 - 优先使用可用工具完成任务;工具调用过程对用户不可见,不要输出工具名、参数或原始返回,只给出业务结果与下一步引导。

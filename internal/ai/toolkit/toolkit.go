@@ -1,5 +1,5 @@
 // Package toolkit 把配置里的工具来源建成 trpc 的工具集与 skill 仓库,按 agent 分组,
-// 分别挂到论文助教与先锋者 agent 上。某分组全留空则访问器返回 nil,该 agent 退化纯对话。
+// 分别挂到论文助教与小云雀 agent 上。某分组全留空则访问器返回 nil,该 agent 退化纯对话。
 package toolkit
 
 import (
@@ -52,7 +52,7 @@ func Init(c config.ToolsConfig) error {
 			"name", m.Name, "transport", m.Transport,
 			"agent", agentLabel(m.Agent), "credential", m.Credential)
 	}
-	// 百度地理编码工具给先锋者:把用户口述的地点解析成坐标,补齐瑞幸门店查询的必填经纬度。
+	// 百度地理编码工具给小云雀:把用户口述的地点解析成坐标,补齐瑞幸门店查询的必填经纬度。
 	if c.BaiduMapAK != "" {
 		funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newGeocodeTool(c.BaiduMapAK, c.BaiduMapSK))
 		zlog.Info("geocode 地理编码工具已登记", "agent", constant.AgentPioneer, "sn", c.BaiduMapSK != "")

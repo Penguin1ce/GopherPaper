@@ -1,5 +1,5 @@
 // toolkit geocode.go 是百度地理编码 function tool:把中文地址/地标/商圈解析成经纬度,
-// 供先锋者在瑞幸点单等场景把"我在国贸"变成 queryShopList 必填的坐标。
+// 供小云雀在瑞幸点单等场景把"我在国贸"变成 queryShopList 必填的坐标。
 package toolkit
 
 import (

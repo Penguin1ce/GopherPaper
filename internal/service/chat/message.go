@@ -36,7 +36,7 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string) (*mode
 	historyMS := time.Since(step).Milliseconds()
 
 	step = time.Now()
-	// 先锋者会话不经意图分类与 RAG,直接走带工具 agent;其余走论文问答链路。
+	// 小云雀会话不经意图分类与 RAG,直接走带工具 agent;其余走论文问答链路。
 	var reply *core.Reply
 	if sess.AgentType == constant.AgentPioneer {
 		reply, err = ai.PioneerChat(ctx, hist, query)

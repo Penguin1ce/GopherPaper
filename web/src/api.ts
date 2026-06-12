@@ -201,7 +201,7 @@ function parseSSEFrame(frame: string): { event: string; payload: unknown } | nul
   }
 }
 
-// extraHeaders 透传额外请求头,先锋者页用它带 X-Luckin-Token 等凭据头,服务端不落库。
+// extraHeaders 透传额外请求头,小云雀页用它带 X-Luckin-Token 等凭据头,服务端不落库。
 // 后端以 SSE 推送生成过程:tool_call/tool_result/delta 实时回调,done 事件收尾返回完整应答;
 // 开流前的错误仍是普通 JSON 信封,沿用统一错误处理。
 export async function sendMessage(
