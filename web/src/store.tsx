@@ -18,7 +18,7 @@ import type {
   ReportType,
   Session,
 } from "./types";
-import { isSettled, paperTitle, sessionsForPaper } from "./utils";
+import { chatSessions, isSettled, paperTitle, sessionsForPaper } from "./utils";
 
 const AUTH_KEY = "gopherpaper.auth";
 
@@ -282,7 +282,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const refreshSessions = useCallback(async () => {
     const list = await api.listSessions();
-    setSessions(Array.isArray(list) ? list : []);
+    setSessions(chatSessions(Array.isArray(list) ? list : []));
   }, []);
 
   const openSession = useCallback(
@@ -312,7 +312,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         api.listSessions(),
       ]);
       const paperList = Array.isArray(pl) ? pl : [];
-      const sessionList = Array.isArray(sl) ? sl : [];
+      const sessionList = chatSessions(Array.isArray(sl) ? sl : []);
       setPapers(paperList);
       setSessions(sessionList);
       if (paperList.length > 0) {
@@ -455,7 +455,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     Promise.all([api.listPapers(), api.listSessions()])
       .then(([pl, sl]) => {
         const paperList = Array.isArray(pl) ? pl : [];
-        const sessionList = Array.isArray(sl) ? sl : [];
+        const sessionList = chatSessions(Array.isArray(sl) ? sl : []);
         setPapers(paperList);
         setSessions(sessionList);
         if (paperList.length > 0) {

@@ -57,13 +57,26 @@ type ModelsConfig struct {
 	Vlm ModelConfig `toml:"vlm"`
 	// Translate 是精读页逐段翻译用的小模型,裸调不挂工具不走 RAG,与 Chat 解耦可单独换型。
 	Translate ModelConfig `toml:"translate"`
+	// Pioneer 是先锋者 agent 的模型。先锋者是多轮工具循环,对单轮延迟敏感,
+	// 建议配快速 mini 型;整块留空时回退 Chat 模型。
+	Pioneer ModelConfig `toml:"pioneer"`
 }
 
-// ToolsConfig 是 ai agent 的工具来源,挂在下游 chat agent 上供 mcp 调用与 skill 加载。
+// ToolsConfig 是 ai agent 的工具来源,按 agent 分组挂到对应 agent 上供 mcp 调用与 skill 加载。
 // 全部留空时 agent 退化为纯对话,与无工具时行为一致。
 type ToolsConfig struct {
 	MCP    []MCPServerConfig `toml:"mcp"`    // mcp 工具服务,每项一个 toolset
-	Skills []string          `toml:"skills"` // 本地 skill 目录,作为 FSRepository 的根
+	Skills []string          `toml:"skills"` // 默认论文助教的本地 skill 目录,作为 FSRepository 的根
+	// PioneerSkills 是先锋者 agent 的本地 skill 目录,与论文助教的 skill 隔离。
+	PioneerSkills []string `toml:"pioneer_skills"`
+	// BaiduMapAK 百度地图开放平台密钥,非空时给先锋者挂 geocode 地理编码工具,
+	// 把用户口述的地址/地标解析成经纬度,供瑞幸门店查询等需要坐标的工具使用。
+	BaiduMapAK string `toml:"baidu_map_ak"`
+	// BaiduMapSK 百度 AK 开启 SN 校验时的 Secret Key,留空表示 AK 走 IP 白名单校验。
+	BaiduMapSK string `toml:"baidu_map_sk"`
+	// ToolNames 工具显示名映射:原始工具名 → 前端展示名,SSE 推送工具状态时换用,
+	// 未配置的工具回退原始名。
+	ToolNames map[string]string `toml:"tool_names"`
 }
 
 // MCPServerConfig 描述一个 mcp 工具服务的连接方式。
@@ -73,6 +86,13 @@ type MCPServerConfig struct {
 	ServerURL string   `toml:"server_url"` // sse 与 streamable 用
 	Command   string   `toml:"command"`    // stdio 用,可执行文件
 	Args      []string `toml:"args"`       // stdio 用,启动参数
+	// Headers 静态请求头,随每次 mcp HTTP 请求发送。
+	Headers map[string]string `toml:"headers"`
+	// Agent 工具分组,空给默认论文助教,pioneer 给先锋者。
+	Agent string `toml:"agent"`
+	// Credential 凭据 provider 名,如 luckin。非空时该工具集的 Authorization 不写配置,
+	// 由前端随请求头携带 token,服务端经 ctx 在每次工具调用时注入,不落库。
+	Credential string `toml:"credential"`
 }
 
 // ModelConfig 描述单个模型或 embedding 组件的连接参数。

@@ -8,6 +8,78 @@ import { figureUrl } from "../api";
 
 const FIGURE_SCHEME = "figure://";
 
+function decodeHTML(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
+function stripHTML(value: string): string {
+  return decodeHTML(value.replace(/<[^>]*>/g, "")).trim();
+}
+
+function escapeLinkText(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
+}
+
+function escapeLinkTarget(value: string): string {
+  return value.replace(/\(/g, "%28").replace(/\)/g, "%29");
+}
+
+function isAllowedRichURL(value: string): boolean {
+  const url = decodeHTML(value).trim();
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:", "weixin:"].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeRichMarkdown(value: string): string {
+  return value
+    .replace(
+      /<a\s+[^>]*href\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi,
+      (raw, _quote, href: string, label: string) => {
+        if (!isAllowedRichURL(href)) return raw;
+        const text = stripHTML(label) || decodeHTML(href).trim();
+        return `[${escapeLinkText(text)}](${escapeLinkTarget(decodeHTML(href).trim())})`;
+      },
+    )
+    .replace(
+      /<img\s+[^>]*src\s*=\s*(["'])(.*?)\1[^>]*>/gi,
+      (raw, _quote, src: string) => {
+        if (!isAllowedRichURL(src)) return raw;
+        const alt = /alt\s*=\s*(["'])(.*?)\1/i.exec(raw)?.[2] || "图片";
+        return `![${escapeLinkText(stripHTML(alt) || "图片")}](${escapeLinkTarget(
+          decodeHTML(src).trim(),
+        )})`;
+      },
+    );
+}
+
+function isWeixinURL(value: string): boolean {
+  return value.startsWith("weixin://");
+}
+
+function isQRCodeURL(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return /qrcode/i.test(url.pathname) || /qrcode/i.test(url.search);
+  } catch {
+    return false;
+  }
+}
+
+function isImageURL(value: string): boolean {
+  return /\.(png|jpe?g|gif|webp|svg)(?:[?#]|$)/i.test(value) || isQRCodeURL(value);
+}
+
 // Markdown 渲染助教回答与研读报告正文。
 // 默认不解析裸 HTML(react-markdown 行为),RAG 注入的 PDF 内容也无法 XSS。
 // figures 把 figure://文件名 映射到所属论文 docId:模型在正文用 ![](figure://名) 插图,
@@ -15,12 +87,39 @@ const FIGURE_SCHEME = "figure://";
 export function Markdown({
   children,
   figures,
+  richLinks = false,
 }: {
   children: string;
   figures?: Record<string, string>;
+  richLinks?: boolean;
 }) {
   const components: Components = {
     a({ href, children }) {
+      const url = typeof href === "string" ? href : "";
+      if (richLinks && url && isWeixinURL(url)) {
+        return (
+          <a className="rich-pay-button" href={url}>
+            {children}
+          </a>
+        );
+      }
+      if (richLinks && url && isQRCodeURL(url)) {
+        return (
+          <a className="rich-qr-card" href={url} target="_blank" rel="noopener noreferrer">
+            <span className="rich-link-kicker">扫码支付</span>
+            <img className="rich-qr-image" src={url} alt="支付二维码" loading="lazy" />
+            <span className="rich-link-action">打开二维码链接</span>
+          </a>
+        );
+      }
+      if (richLinks && url && isImageURL(url)) {
+        return (
+          <a className="rich-image-card" href={url} target="_blank" rel="noopener noreferrer">
+            <img className="rich-image-preview" src={url} alt="" loading="lazy" />
+            <span className="rich-link-action">打开图片</span>
+          </a>
+        );
+      }
       return (
         <a href={href} target="_blank" rel="noopener noreferrer">
           {children}
@@ -53,10 +152,12 @@ export function Markdown({
         remarkPlugins={[remarkGfm]}
         components={components}
         urlTransform={(url) =>
-          url.startsWith(FIGURE_SCHEME) ? url : defaultUrlTransform(url)
+          url.startsWith(FIGURE_SCHEME) || (richLinks && isAllowedRichURL(url))
+            ? url
+            : defaultUrlTransform(url)
         }
       >
-        {children ?? ""}
+        {richLinks ? normalizeRichMarkdown(children ?? "") : children ?? ""}
       </ReactMarkdown>
     </div>
   );

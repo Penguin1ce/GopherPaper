@@ -157,9 +157,10 @@ export function listSessions() {
   return request<Session[]>("/sessions");
 }
 
-export function createSession(title: string, paperID?: string) {
-  const payload: { title: string; paper_id?: string } = { title };
+export function createSession(title: string, paperID?: string, agentType?: string) {
+  const payload: { title: string; paper_id?: string; agent_type?: string } = { title };
   if (paperID) payload.paper_id = paperID;
+  if (agentType) payload.agent_type = agentType;
   return request<Session>("/sessions", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -178,10 +179,15 @@ export function listMessages(sessionID: string) {
   );
 }
 
-export function sendMessage(sessionID: string, query: string) {
+// extraHeaders 透传额外请求头,先锋者页用它带 X-Luckin-Token 等凭据头,服务端不落库。
+export function sendMessage(
+  sessionID: string,
+  query: string,
+  extraHeaders?: Record<string, string>,
+) {
   return request<SendMessageResponse>(
     `/sessions/${encodeURIComponent(sessionID)}/messages`,
-    { method: "POST", body: JSON.stringify({ query }) },
+    { method: "POST", body: JSON.stringify({ query }), headers: extraHeaders },
   );
 }
 

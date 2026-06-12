@@ -4,9 +4,11 @@ package dto
 import "GopherPaper/internal/model"
 
 // CreateSessionRequest 创建会话，paper_id 与 title 可选。
+// agent_type 可选，空为默认论文助教，pioneer 为先锋者。
 type CreateSessionRequest struct {
-	PaperID string `json:"paper_id"`
-	Title   string `json:"title"`
+	PaperID   string `json:"paper_id"`
+	Title     string `json:"title"`
+	AgentType string `json:"agent_type"`
 }
 
 // SendMessageRequest 会话内发一轮消息。

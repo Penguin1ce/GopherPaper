@@ -6,7 +6,10 @@ import (
 	"io/fs"
 )
 
-//go:embed public
+// all: 前缀让 embed 连点号文件(.gitkeep)一起收,干净 checkout 只有 .gitkeep 时
+// 也能编译通过,运行期再由 missingHTML 提示先构建前端。
+//
+//go:embed all:public
 var files embed.FS
 
 func Public() fs.FS {
@@ -34,13 +37,22 @@ func ReaderHTML() []byte {
 	return b
 }
 
+// PioneerHTML 返回先锋者页入口,/pioneer 路由直出。
+func PioneerHTML() []byte {
+	b, err := files.ReadFile("public/pioneer.html")
+	if err != nil {
+		return missingHTML("先锋者 · GopherPaper")
+	}
+	return b
+}
+
 func HasFrontendBuild() bool {
 	_, err := files.ReadFile("public/index.html")
 	return err == nil
 }
 
 func missingHTML(title string) []byte {
-	return []byte(fmt.Sprintf(`<!doctype html>
+	return fmt.Appendf(nil, `<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
@@ -50,7 +62,7 @@ func missingHTML(title string) []byte {
   <body>
     <div id="root">前端构建产物不存在,请先在 web 目录执行 npm run build,再重新编译 Go 服务。</div>
   </body>
-</html>`, title))
+</html>`, title)
 }
 
 func Static() fs.FS {

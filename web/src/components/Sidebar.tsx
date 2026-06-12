@@ -56,6 +56,12 @@ export function Sidebar() {
         </div>
       </div>
 
+      {/* 先锋者是独立页:多面手 agent,查论文/点咖啡,新标签页打开。 */}
+      <a className="pioneer-entry" href="/pioneer" target="_blank" rel="noreferrer">
+        ⚡ 小云雀
+        <span className="pioneer-entry-sub">查论文 · 点咖啡</span>
+      </a>
+
       <div className="side-section">
         <div className="section-heading">
           <h3>历史会话</h3>

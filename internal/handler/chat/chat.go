@@ -5,14 +5,17 @@ package chat
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"GopherPaper/internal/credential"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/response"
 	chatservice "GopherPaper/internal/service/chat"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
+	"GopherPaper/pkg/constant"
 	"GopherPaper/pkg/errs"
 )
 
@@ -25,8 +28,12 @@ func CreateSession(c *gin.Context) {
 		return
 	}
 	studentID := tenant.MustStudentID(c.Request.Context())
-	s, err := chatservice.CreateSession(c.Request.Context(), studentID, req.PaperID, req.Title)
+	s, err := chatservice.CreateSession(c.Request.Context(), studentID, req.PaperID, req.Title, req.AgentType)
 	if err != nil {
+		if errors.Is(err, errs.ErrAgentTypeInvalid) {
+			response.Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
 		zlog.Error("创建会话失败", "student_id", studentID, "err", err)
 		response.Fail(c, http.StatusInternalServerError, "创建会话失败")
 		return
@@ -78,8 +85,13 @@ func SendMessage(c *gin.Context) {
 		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	studentID := tenant.MustStudentID(c.Request.Context())
-	msg, meta, err := chatservice.SendMessage(c.Request.Context(), studentID, c.Param("id"), req.Query)
+	ctx := c.Request.Context()
+	// 凭据型工具的 token 由前端保存、随请求头透传,只进 ctx 供工具调用注入,不落库不打日志。
+	if tok := strings.TrimSpace(c.GetHeader(constant.HeaderLuckinToken)); tok != "" {
+		ctx = credential.With(ctx, constant.CredentialLuckin, tok)
+	}
+	studentID := tenant.MustStudentID(ctx)
+	msg, meta, err := chatservice.SendMessage(ctx, studentID, c.Param("id"), req.Query)
 	if err != nil {
 		writeChatErr(c, err, "处理失败")
 		return

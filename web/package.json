@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "postbuild": "touch ../internal/web/public/.gitkeep ../internal/web/public/static/.gitkeep ../internal/web/public/static/assets/.gitkeep",
     "preview": "vite preview"
   },
   "dependencies": {

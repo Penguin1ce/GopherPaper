@@ -82,10 +82,12 @@ type ModelSet struct {
 	Chat        *trpcopenai.Model  // 下游 RAG/抽取/报告主力模型
 	Vlm         *trpcopenai.Model  // 带图推理视觉模型:图描述生成与带图问答
 	Translate   *trpcopenai.Model  // 精读页逐段翻译小模型
+	Pioneer     *trpcopenai.Model  // 先锋者工具循环模型,未配置时即 Chat
 	IntentMC    config.ModelConfig // 意图模型生成参数
 	ChatMC      config.ModelConfig // 对话模型生成参数
 	VlmMC       config.ModelConfig // 视觉模型生成参数
 	TranslateMC config.ModelConfig // 翻译模型生成参数
+	PioneerMC   config.ModelConfig // 先锋者模型生成参数
 }
 
 // modelSets 按 userID 缓存,保留每用户隔离的口子。
@@ -116,6 +118,14 @@ func ModelsForUser(userID string) (*ModelSet, error) {
 			ChatMC:      cfg.Models.Chat,
 			VlmMC:       cfg.Models.Vlm,
 			TranslateMC: cfg.Models.Translate,
+		}
+		// 先锋者模型未配置时回退 Chat,复用同一实例。
+		if cfg.Models.Pioneer.Model != "" {
+			ent.models.Pioneer = NewChatModel(cfg.Models.Pioneer)
+			ent.models.PioneerMC = cfg.Models.Pioneer
+		} else {
+			ent.models.Pioneer = ent.models.Chat
+			ent.models.PioneerMC = cfg.Models.Chat
 		}
 	})
 	return ent.models, nil

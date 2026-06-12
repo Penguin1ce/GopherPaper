@@ -58,6 +58,13 @@ function Reader() {
   const [cards, setCards] = useState<Card[]>([]);
   const nextCardId = useRef(1);
 
+  function closeReader() {
+    window.close();
+    window.setTimeout(() => {
+      if (!window.closed) location.href = "/";
+    }, 120);
+  }
+
   // 初始化:无 token 跳回登录,无 id 报错,否则拉标题。
   useEffect(() => {
     const token = loadToken();
@@ -83,7 +90,7 @@ function Reader() {
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width ?? 0;
-      if (w > 0) setPageWidth(Math.min(960, Math.max(360, w - 48)));
+      if (w > 0) setPageWidth(Math.min(960, Math.max(280, w - 48)));
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -139,49 +146,107 @@ function Reader() {
       );
   }
 
+  function removeCard(id: number) {
+    setCards((prev) => prev.filter((c) => c.id !== id));
+  }
+
   return (
     <div className="reader-shell">
       <header className="reader-bar">
-        <button className="reader-back" onClick={() => window.close()}>
-          关闭
-        </button>
-        <span className="reader-title">{title || "精读"}</span>
+        <div className="reader-brand">
+          <span className="reader-logo" aria-hidden>
+            R
+          </span>
+          <div className="reader-title-wrap">
+            <p className="eyebrow">GopherPaper Reader</p>
+            <h1 className="reader-title">{title || "论文精读"}</h1>
+          </div>
+        </div>
+        <div className="reader-actions">
+          <span className="reader-page-pill">
+            {numPages > 0 ? `${numPages} 页` : "PDF 精读"}
+          </span>
+          <button type="button" className="reader-back" onClick={closeReader}>
+            关闭
+          </button>
+        </div>
       </header>
       <div className="reader-body">
-        <main className="reader-doc" ref={docRef} onMouseUp={onMouseUp}>
-          {error ? (
-            <div className="reader-error">{error}</div>
-          ) : ready ? (
-            <Document
-              file={pdfUrl}
-              loading={<div className="reader-hint">加载 PDF…</div>}
-              error={<div className="reader-error">PDF 加载失败</div>}
-              onLoadSuccess={(d) => setNumPages(d.numPages)}
-              onLoadError={(e) => setError(e.message)}
-            >
-              {Array.from({ length: numPages }, (_, i) => (
-                <Page
-                  key={i}
-                  pageNumber={i + 1}
-                  width={pageWidth}
-                  className="reader-page"
-                  renderTextLayer
-                  renderAnnotationLayer
-                />
-              ))}
-            </Document>
-          ) : null}
-        </main>
+        <section className="reader-doc-pane">
+          <div className="reader-panel-head">
+            <div>
+              <span className="reader-panel-title">PDF 原文</span>
+              <p>选中左侧英文段落，浮出按钮后即可翻译。</p>
+            </div>
+            <span className={`reader-status ${ready && !error ? "ready" : ""}`}>
+              {error ? "加载异常" : ready ? "文本层已启用" : "准备中"}
+            </span>
+          </div>
+          <main className="reader-doc" ref={docRef} onMouseUp={onMouseUp}>
+            {error ? (
+              <div className="reader-error">{error}</div>
+            ) : ready ? (
+              <Document
+                file={pdfUrl}
+                loading={<div className="reader-hint">加载 PDF…</div>}
+                error={<div className="reader-error">PDF 加载失败</div>}
+                onLoadSuccess={(d) => setNumPages(d.numPages)}
+                onLoadError={(e) => setError(e.message)}
+              >
+                {Array.from({ length: numPages }, (_, i) => (
+                  <Page
+                    key={i}
+                    pageNumber={i + 1}
+                    width={pageWidth}
+                    className="reader-page"
+                    renderTextLayer
+                    renderAnnotationLayer
+                  />
+                ))}
+              </Document>
+            ) : null}
+          </main>
+        </section>
         <aside className="reader-trans">
-          <div className="reader-trans-head">翻译</div>
+          <div className="reader-trans-head">
+            <div>
+              <span className="reader-panel-title">摘录翻译</span>
+              <p>{cards.length > 0 ? `${cards.length} 条摘录` : "等待选区"}</p>
+            </div>
+            {cards.length > 0 && (
+              <button
+                type="button"
+                className="reader-clear"
+                onClick={() => setCards([])}
+              >
+                清空
+              </button>
+            )}
+          </div>
           {cards.length === 0 ? (
             <div className="reader-trans-empty">
-              选中左侧英文原文，点击浮出的「翻译」即可生成中文。
+              <h2>还没有翻译摘录</h2>
+              <p>选中左侧英文原文，点击浮出的「翻译」即可生成中文。</p>
             </div>
           ) : (
             <div className="reader-cards">
-              {cards.map((c) => (
-                <div key={c.id} className="reader-card">
+              {cards.map((c, i) => (
+                <article
+                  key={c.id}
+                  className={`reader-card${c.loading ? " loading" : ""}${c.error ? " error" : ""}`}
+                  aria-busy={c.loading}
+                >
+                  <header className="reader-card-head">
+                    <span>摘录 {cards.length - i}</span>
+                    <button
+                      type="button"
+                      className="reader-card-remove"
+                      onClick={() => removeCard(c.id)}
+                      title="删除摘录"
+                    >
+                      ×
+                    </button>
+                  </header>
                   <div className="reader-card-src">{c.original}</div>
                   <div className="reader-card-dst">
                     {c.loading
@@ -190,7 +255,7 @@ function Reader() {
                         ? `失败：${c.error}`
                         : c.translation}
                   </div>
-                </div>
+                </article>
               ))}
             </div>
           )}

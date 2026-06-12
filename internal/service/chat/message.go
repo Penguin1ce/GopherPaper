@@ -36,7 +36,13 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string) (*mode
 	historyMS := time.Since(step).Milliseconds()
 
 	step = time.Now()
-	reply, err := ai.Chat(ctx, hist, query)
+	// 先锋者会话不经意图分类与 RAG,直接走带工具 agent;其余走论文问答链路。
+	var reply *core.Reply
+	if sess.AgentType == constant.AgentPioneer {
+		reply, err = ai.PioneerChat(ctx, hist, query)
+	} else {
+		reply, err = ai.Chat(ctx, hist, query)
+	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("service: 助教应答失败: %w", err)
 	}

@@ -10,19 +10,17 @@ package agentrt
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"trpc.group/trpc-go/trpc-agent-go/agent"
 	"trpc.group/trpc-go/trpc-agent-go/agent/llmagent"
-	"trpc.group/trpc-go/trpc-agent-go/event"
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
 	"trpc.group/trpc-go/trpc-agent-go/runner"
 	sessnoop "trpc.group/trpc-go/trpc-agent-go/session/noop"
 
+	"GopherPaper/internal/ai/core"
 	"GopherPaper/internal/ai/toolkit"
 	"GopherPaper/internal/aimodel"
-	"GopherPaper/internal/config"
 )
 
 const (
@@ -66,7 +64,7 @@ func GenerateWithImages(ctx context.Context, userID, instruction string, history
 	if err != nil {
 		return "", err
 	}
-	return collect(ch)
+	return core.CollectEvents(ch)
 }
 
 // userMessage 构造当前 user 轮次:无图时退化为纯文本,有图时文本与图片同放 ContentParts。
@@ -95,11 +93,18 @@ func runnerForUser(userID string) (runner.Runner, error) {
 	e, _ := runners.LoadOrStore(userID, &runnerEntry{})
 	ent := e.(*runnerEntry)
 	ent.once.Do(func() {
+		gc := core.GenConfig(models.ChatMC)
+		sets := toolkit.ToolSets()
+		// 网关限制:gpt-5.5 在 chat/completions 下 function tools 与 reasoning_effort
+		// 不能同用(400),配了工具就剥离推理强度走网关默认。
+		if len(sets) > 0 {
+			gc.ReasoningEffort = nil
+		}
 		opts := []llmagent.Option{
 			llmagent.WithModel(models.Chat),
-			llmagent.WithGenerationConfig(genConfig(models.ChatMC)),
+			llmagent.WithGenerationConfig(gc),
 		}
-		if sets := toolkit.ToolSets(); len(sets) > 0 {
+		if len(sets) > 0 {
 			opts = append(opts, llmagent.WithToolSets(sets))
 		}
 		if repo := toolkit.SkillRepo(); repo != nil {
@@ -111,35 +116,3 @@ func runnerForUser(userID string) (runner.Runner, error) {
 	return ent.rt, ent.err
 }
 
-// genConfig 把 ModelConfig 的生成参数映射到 trpc 的 GenerationConfig。
-func genConfig(mc config.ModelConfig) trpcmodel.GenerationConfig {
-	var gc trpcmodel.GenerationConfig
-	if mc.MaxTokens > 0 {
-		gc.MaxTokens = &mc.MaxTokens
-	}
-	if mc.ReasoningEffort != "" {
-		gc.ReasoningEffort = &mc.ReasoningEffort
-	}
-	return gc
-}
-
-// collect 聚合事件流为完整答案,跳过工具结果与 runner 收尾事件,避免混入或重复计数。
-func collect(ch <-chan *event.Event) (string, error) {
-	var sb strings.Builder
-	for ev := range ch {
-		if ev.Error != nil {
-			return "", fmt.Errorf("agentrt: %s", ev.Error.Message)
-		}
-		if ev.Object == trpcmodel.ObjectTypeToolResponse || ev.IsRunnerCompletion() {
-			continue
-		}
-		for _, c := range ev.Choices {
-			sb.WriteString(c.Message.Content)
-		}
-	}
-	out := strings.TrimSpace(sb.String())
-	if out == "" {
-		return "", fmt.Errorf("agentrt: 模型返回空内容")
-	}
-	return out, nil
-}

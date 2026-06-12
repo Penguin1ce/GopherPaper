@@ -15,6 +15,7 @@ var (
 
 	ErrSessionNotFound  = errors.New("chat: 会话不存在")
 	ErrSessionForbidden = errors.New("chat: 无权访问该会话")
+	ErrAgentTypeInvalid = errors.New("chat: 不支持的会话 agent 类型")
 
 	ErrPaperNotFound  = errors.New("paper: 论文不存在")
 	ErrPaperForbidden = errors.New("paper: 无权访问该论文")

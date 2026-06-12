@@ -13,6 +13,8 @@ type Session struct {
 	ID        string         `gorm:"size:36;primaryKey" json:"id"`
 	StudentID string         `gorm:"size:64;index;not null" json:"student_id"`
 	PaperID   string         `gorm:"size:36;index" json:"paper_id,omitempty"`
+	// AgentType 标记会话由哪个 agent 应答,空为默认论文助教,pioneer 为先锋者。
+	AgentType string         `gorm:"size:16;index" json:"agent_type,omitempty"`
 	Title     string         `gorm:"size:128" json:"title"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

@@ -6,12 +6,17 @@ import (
 	chatdao "GopherPaper/internal/dao/chat"
 	"GopherPaper/internal/history"
 	"GopherPaper/internal/model"
+	"GopherPaper/pkg/constant"
 	"GopherPaper/pkg/errs"
 )
 
 // CreateSession 为用户新建一段会话，paperID 可空表示跨库问答。
-func CreateSession(ctx context.Context, studentID, paperID, title string) (*model.Session, error) {
-	s := &model.Session{StudentID: studentID, PaperID: paperID, Title: title}
+// agentType 空为默认论文助教，pioneer 为先锋者会话。
+func CreateSession(ctx context.Context, studentID, paperID, title, agentType string) (*model.Session, error) {
+	if agentType != "" && agentType != constant.AgentPioneer {
+		return nil, errs.ErrAgentTypeInvalid
+	}
+	s := &model.Session{StudentID: studentID, PaperID: paperID, AgentType: agentType, Title: title}
 	if err := chatdao.CreateSession(ctx, s); err != nil {
 		return nil, err
 	}

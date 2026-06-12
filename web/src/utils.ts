@@ -19,6 +19,11 @@ function sessionTime(s: Session): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
+// 主应用只展示论文助教会话,先锋者会话归独立页 /pioneer 管。
+export function chatSessions(sessions: Session[]): Session[] {
+  return sessions.filter((s) => s.agent_type !== "pioneer");
+}
+
 // 某篇论文的会话,按最近活动倒序(最新在前)。paperID 为空时原样返回全部。
 export function sessionsForPaper(
   sessions: Session[],

@@ -18,6 +18,7 @@ export default defineConfig({
       input: {
         main: "index.html",
         reader: "reader.html",
+        pioneer: "pioneer.html",
       },
       output: {
         entryFileNames: "static/assets/[name]-[hash].js",

@@ -19,6 +19,7 @@ require (
 	trpc.group/trpc-go/trpc-agent-go v1.10.0
 	trpc.group/trpc-go/trpc-agent-go/knowledge/vectorstore/milvus v1.10.0
 	trpc.group/trpc-go/trpc-agent-go/session/mysql v1.10.0
+	trpc.group/trpc-go/trpc-mcp-go v0.0.10
 )
 
 require (
@@ -170,5 +171,4 @@ require (
 	trpc.group/trpc-go/trpc-a2a-go v0.2.5 // indirect
 	trpc.group/trpc-go/trpc-agent-go/storage/milvus v0.0.0-20251216100013-73147c973dde // indirect
 	trpc.group/trpc-go/trpc-agent-go/storage/mysql v0.5.0 // indirect
-	trpc.group/trpc-go/trpc-mcp-go v0.0.10 // indirect
 )

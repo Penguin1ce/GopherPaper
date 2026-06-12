@@ -1913,3 +1913,31 @@ label > span {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── 先锋者独立页入口(侧栏) ── */
+
+.pioneer-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: 0.15s var(--ease);
+}
+
+.pioneer-entry:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-1);
+}
+
+.pioneer-entry-sub {
+  font-weight: 400;
+  font-size: 11.5px;
+  color: var(--muted);
+}
