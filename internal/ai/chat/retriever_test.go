@@ -13,7 +13,7 @@ import (
 	"GopherPaper/pkg/constant"
 )
 
-// TestRetrieveForPaperBridge 验证 UpsertChunksTRPC 写入后可经 RetrieveForPaper 检索。
+// TestRetrieveForPaperBridge 验证 UpsertChunks 写入后可经 RetrieveForPaper 检索。
 // References 应能从召回文档还原出处。需 Milvus 与 Ollama。
 func TestRetrieveForPaperBridge(t *testing.T) {
 	cfg, err := config.Load("../../../config/config.toml")
@@ -28,16 +28,16 @@ func TestRetrieveForPaperBridge(t *testing.T) {
 
 	const coll = "knowledge_chat_bridge_test"
 	dropBridgeCollection(ctx, cfg.Milvus, coll)
-	if err := knowledge.InitTRPCStore(ctx, cfg.Milvus, coll, emb, cfg.Embedding.Dim); err != nil {
-		t.Fatalf("InitTRPCStore: %v", err)
+	if err := knowledge.Init(ctx, cfg.Milvus, coll, emb, cfg.Embedding.Dim); err != nil {
+		t.Fatalf("Init: %v", err)
 	}
 	defer dropBridgeCollection(ctx, cfg.Milvus, coll)
 
-	if _, err := knowledge.UpsertChunksTRPC(ctx, []knowledge.Chunk{
+	if _, err := knowledge.UpsertChunks(ctx, []knowledge.Chunk{
 		{Scope: constant.KnowledgeScopePublic, Content: "注意力机制是一种重要的深度学习建模方法", SourceFile: "pub.pdf", PageNo: 1},
 		{Scope: constant.KnowledgeScopePrivate, OwnerID: "userX", DocID: "docX", Content: "本文提出图神经网络方法用于论文引用预测", SourceFile: "x.pdf", PageNo: 2},
 	}); err != nil {
-		t.Fatalf("UpsertChunksTRPC: %v", err)
+		t.Fatalf("UpsertChunks: %v", err)
 	}
 
 	var docs []*Doc

@@ -18,6 +18,7 @@ import (
 	"GopherPaper/internal/ai/core"
 	"GopherPaper/internal/ai/toolkit"
 	"GopherPaper/internal/aimodel"
+	"GopherPaper/internal/tenant"
 	"GopherPaper/pkg/constant"
 )
 
@@ -35,8 +36,9 @@ type runnerEntry struct {
 }
 
 // Chat 经该用户的小云雀 agent 跑一轮并聚合成完整文本。
-// history 为多轮上下文(注入不持久化),query 为当前输入。
-func Chat(ctx context.Context, userID string, history []trpcmodel.Message, query string) (string, error) {
+// history 为多轮上下文(注入不持久化),query 为当前输入,用户身份从 ctx 的 tenant 取。
+func Chat(ctx context.Context, history []trpcmodel.Message, query string) (string, error) {
+	userID := tenant.MustStudentID(ctx)
 	rt, err := runnerForUser(userID)
 	if err != nil {
 		return "", err

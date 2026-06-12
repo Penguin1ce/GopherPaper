@@ -1,92 +1,70 @@
 package chat
 
 import (
-	"encoding/json"
+	"context"
+	"strings"
 	"testing"
+	"time"
 
+	"GopherPaper/internal/aimodel"
+	"GopherPaper/internal/config"
+	"GopherPaper/internal/tenant"
 	"GopherPaper/pkg/constant"
 )
 
-// TestReferenceFromDocument 从检索文档的 metadata 还原出处。
-func TestReferenceFromDocument(t *testing.T) {
-	doc := &Doc{
-		ID: "chunk-1",
-		MetaData: map[string]any{
-			constant.MilvusFieldKnowledgeScope: "private",
-			constant.MilvusFieldStudentID:      "s_1",
-			constant.MilvusFieldDocID:          "doc-9",
-			constant.MilvusFieldSourceFile:     "ch01.pdf",
-			constant.MilvusFieldSourceURI:      "oss://bucket/ch01.pdf",
-			constant.MilvusFieldPageNo:         int64(3),
-			constant.MilvusFieldChunkIndex:     int64(2),
-		},
-		Score: 0.87,
-	}
-
-	ref := ReferenceFromDocument(doc)
-	if ref.ID != "chunk-1" || ref.Scope != constant.KnowledgeScopePrivate {
-		t.Fatalf("ID/Scope 提取错误: %+v", ref)
-	}
-	if ref.StudentID != "s_1" || ref.DocID != "doc-9" {
-		t.Fatalf("StudentID/DocID 提取错误: %+v", ref)
-	}
-	if ref.SourceFile != "ch01.pdf" || ref.SourceURI != "oss://bucket/ch01.pdf" {
-		t.Fatalf("出处文件提取错误: %+v", ref)
-	}
-	if ref.PageNo != 3 || ref.ChunkIndex != 2 {
-		t.Fatalf("页码/片段号提取错误: %+v", ref)
-	}
-	if ref.Score != 0.87 {
-		t.Fatalf("Score 提取错误: %+v", ref)
-	}
-}
-
-// TestReferenceJSONContract 校验前后端引用出处字段契约。
-func TestReferenceJSONContract(t *testing.T) {
-	ref := Reference{
-		ID:    "chunk-1",
-		Scope: constant.KnowledgeScopePublic,
-	}
-	b, err := json.Marshal(ref)
+func loadChatTestModels(t *testing.T) (*config.Config, bool) {
+	t.Helper()
+	cfg, err := config.Load("../../../config/config.toml")
 	if err != nil {
-		t.Fatalf("Reference 序列化失败: %v", err)
+		t.Skipf("跳过:未找到可用 config.toml: %v", err)
 	}
-	var body map[string]any
-	if err := json.Unmarshal(b, &body); err != nil {
-		t.Fatalf("Reference 反序列化失败: %v", err)
+	if cfg.Models.Intent.APIKey == "" || cfg.Models.Chat.APIKey == "" {
+		t.Skip("跳过:模型未配置网关或密钥")
 	}
-	if body["knowledge_scope"] != string(constant.KnowledgeScopePublic) {
-		t.Fatalf("knowledge_scope 字段错误: %s", string(b))
+	return cfg, true
+}
+
+// TestClassifyIntent 验证意图分类链路把各类 query 路由到期望子类。
+func TestClassifyIntent(t *testing.T) {
+	cfg, _ := loadChatTestModels(t)
+	aimodel.Init(cfg) // 意图模型按 ctx 的 tenant 自取,须先注入配置
+
+	cases := map[string]constant.IntentType{
+		"这篇论文在 DBLP 数据集上的准确率是多少？": constant.IntentFact,
+		"帮我概括一下这篇论文讲了什么":          constant.IntentSummary,
+		"它用了什么模型结构和实验设计？":         constant.IntentMethod,
 	}
-	if _, ok := body["scope"]; ok {
-		t.Fatalf("不应输出旧字段 scope: %s", string(b))
+
+	for q, want := range cases {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx = tenant.With(ctx, tenant.Tenant{StudentID: "test-user"})
+		got := ClassifyIntent(ctx, q)
+		cancel()
+		if got != want {
+			t.Errorf("意图分类不符: %q 期望 %q 实得 %q", q, want, got)
+		}
 	}
 }
 
-// TestFormatReference 出处按文件、页码、片段、scope 拼成可读串。
-func TestFormatReference(t *testing.T) {
-	ref := Reference{
-		SourceFile: "ch01.pdf",
-		PageNo:     3,
-		Scope:      constant.KnowledgeScopePublic,
-	}
-	got := formatReference(ref)
-	want := "ch01.pdf，第 3 页，public"
-	if got != want {
-		t.Fatalf("出处格式不符\n want %q\n got  %q", want, got)
-	}
-}
+// TestChat 验证 chat 切片端到端:分类 + RAG 生成 + 意图标记。
+// 检索器未 Init 时降级为无片段(像 report 切片),仍能生成,故不依赖 Milvus。
+func TestChat(t *testing.T) {
+	cfg, _ := loadChatTestModels(t)
+	aimodel.Init(cfg) // 模型经 ctx 的 tenant 按用户取,须先注入配置
 
-// TestFormatReference_FallbackToID 无任何出处字段时回退到 ID。
-func TestFormatReference_FallbackToID(t *testing.T) {
-	if got := formatReference(Reference{ID: "only-id"}); got != "only-id" {
-		t.Fatalf("应回退到 ID, got %q", got)
-	}
-}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	ctx = tenant.With(ctx, tenant.Tenant{StudentID: "test-user"})
 
-// TestFormatDocs_Empty 无召回时给模型一个明确的占位。
-func TestFormatDocs_Empty(t *testing.T) {
-	if got := FormatDocs(nil); got != "无相关资料" {
-		t.Fatalf("空召回占位错误: %q", got)
+	reply, err := Chat(ctx, nil, "请简要介绍这篇论文的研究方法")
+	if err != nil {
+		t.Fatalf("Chat 失败: %v", err)
 	}
+	if strings.TrimSpace(reply.Content) == "" {
+		t.Fatal("回答内容为空")
+	}
+	if reply.Intent != constant.IntentFact && reply.Intent != constant.IntentSummary && reply.Intent != constant.IntentMethod {
+		t.Fatalf("回答意图非法: %q", reply.Intent)
+	}
+	t.Logf("trpc chat 切片跑通: intent=%q 内容长度=%d", reply.Intent, len(reply.Content))
 }

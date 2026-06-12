@@ -12,17 +12,24 @@ import (
 	trpcopenai "trpc.group/trpc-go/trpc-agent-go/model/openai"
 
 	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/config"
+	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 )
 
-// DescribeTRPC 给有图片字节的 Figure 逐张调 vlm 生成内容描述,原地填 Desc。
+// Describe 给有图片字节的 Figure 逐张调该用户的 vlm 生成内容描述,原地填 Desc。
 // 一张一张发(每图一段独立描述对应入库),并发受限;每篇最多描述 MaxFigureDescribe 张,
-// 单图失败只记日志不填 Desc,不阻断整篇入库。
-func DescribeTRPC(ctx context.Context, vlm *trpcopenai.Model, mc config.ModelConfig, figs []core.Figure) {
+// 单图失败只记日志不填 Desc,不阻断整篇入库。ctx 须注入论文 owner。
+func Describe(ctx context.Context, figs []core.Figure) error {
+	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
+	if err != nil {
+		return err
+	}
+	vlm, mc := models.Vlm, models.VlmMC
 	if vlm == nil {
-		return
+		return nil
 	}
 	sem := make(chan struct{}, constant.FigureDescribeWorker)
 	var wg sync.WaitGroup
@@ -49,6 +56,7 @@ func DescribeTRPC(ctx context.Context, vlm *trpcopenai.Model, mc config.ModelCon
 		}(&figs[i])
 	}
 	wg.Wait()
+	return nil
 }
 
 // describeOne 给单张图构造带图 user 轮次裸调 vlm,system 带描述指令。

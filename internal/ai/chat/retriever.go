@@ -16,9 +16,9 @@ import (
 // reranker 是与用户无关的 cross-encoder 精排器,由 main 启动期建好经 Init 注入;nil 时退化为纯向量召回。
 var reranker trpcreranker.Reranker
 
-// Init 校验 trpc 知识库已就绪(InitTRPCStore 须在 main 启动期先调),并注入 rerank 精排器。
+// Init 校验 trpc 知识库已就绪(knowledge.Init 须在 main 启动期先调),并注入 rerank 精排器。
 func Init(_ context.Context, rr trpcreranker.Reranker) error {
-	if !knowledge.TRPCReady() {
+	if !knowledge.Ready() {
 		return fmt.Errorf("chat: trpc 知识库未初始化")
 	}
 	reranker = rr
@@ -83,7 +83,7 @@ func RetrieveImagesForPaper(ctx context.Context, query, ownerID, docID string) (
 	if reranker != nil {
 		candidateK = constant.RecallTopKImages
 	}
-	res, err := knowledge.SearchImagesTRPC(ctx, query, ownerID, strings.TrimSpace(docID), candidateK)
+	res, err := knowledge.SearchImages(ctx, query, ownerID, strings.TrimSpace(docID), candidateK)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func search(ctx context.Context, query, ownerID, docID string) ([]*Doc, error) {
 	if reranker != nil {
 		candidateK = constant.RecallTopK
 	}
-	res, err := knowledge.SearchTRPC(ctx, query, ownerID, docID, candidateK)
+	res, err := knowledge.Search(ctx, query, ownerID, docID, candidateK)
 	if err != nil {
 		return nil, err
 	}

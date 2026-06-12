@@ -1,4 +1,4 @@
-// report_trpc.go 是 report 链路:检索 + chat 模型按报告类型生成研读报告。
+// Package report 是 report 链路:检索 + chat 模型按报告类型生成研读报告。
 // 检索与 model 解耦，复用 chat 检索器，按报告类型选 prompt。
 package report
 
@@ -9,28 +9,31 @@ import (
 	"GopherPaper/internal/ai/agentrt"
 	"GopherPaper/internal/ai/chat"
 	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/tenant"
 	"GopherPaper/pkg/constant"
 )
 
-// GenerateReportTRPC 围绕某篇论文按类型生成研读报告,经带工具 chat agent 生成。
-func GenerateReportTRPC(ctx context.Context, in *core.ReportInput) (*core.Reply, error) {
+// Generate 围绕某篇论文按类型生成研读报告,经带工具 chat agent 生成。
+// 论文 owner 从 ctx 的 tenant 取,检索按其可见库过滤。
+func Generate(ctx context.Context, in *core.ReportInput) (*core.Reply, error) {
+	owner := tenant.MustStudentID(ctx)
 	query := in.Query
 	if strings.TrimSpace(query) == "" {
 		query = string(in.ReportType)
 	}
-	docs, err := chat.RetrieveForPaper(ctx, query, in.OwnerID, in.PaperID)
+	docs, err := chat.RetrieveForPaper(ctx, query, owner, in.PaperID)
 	if err != nil {
 		docs = nil
 	}
 	// compare 类型再补一轮跨库检索,召回同类文献做对比。
 	if in.ReportType == constant.ReportCompare {
-		if more, err := chat.RetrieveVisible(ctx, query, in.OwnerID); err == nil {
+		if more, err := chat.RetrieveVisible(ctx, query, owner); err == nil {
 			docs = append(docs, more...)
 		}
 	}
 
 	sysPrompt := strings.ReplaceAll(constant.ReportPromptFor(in.ReportType), "{context}", chat.FormatDocs(docs))
-	content, err := agentrt.Generate(ctx, in.OwnerID, sysPrompt, nil, "请基于以上论文片段生成报告。")
+	content, err := agentrt.Generate(ctx, sysPrompt, nil, "请基于以上论文片段生成报告。")
 	if err != nil {
 		return nil, err
 	}

@@ -21,8 +21,8 @@ func loadTestConfig(t *testing.T) *config.Config {
 	return cfg
 }
 
-// TestTRPCChatModelConnectivity 验证 trpc openai 兼容 model 能连网关并产出非空回答。
-func TestTRPCChatModelConnectivity(t *testing.T) {
+// TestChatModelConnectivity 验证 trpc openai 兼容 model 能连网关并产出非空回答。
+func TestChatModelConnectivity(t *testing.T) {
 	cfg := loadTestConfig(t)
 	mc := cfg.Models.Chat
 	if mc.APIKey == "" || mc.BaseURL == "" {
@@ -55,8 +55,8 @@ func TestTRPCChatModelConnectivity(t *testing.T) {
 	t.Logf("trpc chat 模型连通,返回: %s", strings.TrimSpace(sb.String()))
 }
 
-// TestTRPCEmbedderConnectivity 验证 bge-m3 经 Ollama OpenAI 兼容端点能向量化且维度对齐。
-func TestTRPCEmbedderConnectivity(t *testing.T) {
+// TestEmbedderConnectivity 验证 bge-m3 经 Ollama OpenAI 兼容端点能向量化且维度对齐。
+func TestEmbedderConnectivity(t *testing.T) {
 	cfg := loadTestConfig(t)
 	ec := cfg.Embedding
 	if ec.BaseURL == "" {

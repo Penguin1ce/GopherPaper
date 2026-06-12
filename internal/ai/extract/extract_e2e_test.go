@@ -12,9 +12,9 @@ import (
 	"GopherPaper/internal/tenant"
 )
 
-// TestExtractTRPC 验证 extract 链路端到端输出结构化信息。
+// TestExtract 验证 extract 链路端到端输出结构化信息。
 // 跑真实网关，缺配置则 skip。
-func TestExtractTRPC(t *testing.T) {
+func TestExtract(t *testing.T) {
 	cfg, err := config.Load("../../../config/config.toml")
 	if err != nil {
 		t.Skipf("跳过:未找到可用 config.toml: %v", err)
@@ -37,9 +37,9 @@ func TestExtractTRPC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	ctx = tenant.With(ctx, tenant.Tenant{StudentID: "test-user"})
-	got, err := ExtractTRPC(ctx, doc)
+	got, err := Extract(ctx, doc)
 	if err != nil {
-		t.Fatalf("ExtractTRPC 失败: %v", err)
+		t.Fatalf("Extract 失败: %v", err)
 	}
 	if strings.TrimSpace(got.Title) == "" && strings.TrimSpace(got.Abstract) == "" {
 		t.Fatalf("抽取结果为空: %+v", got)

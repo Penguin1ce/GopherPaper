@@ -73,7 +73,7 @@ func runPipeline(ctx context.Context, task parseTask) {
 	}
 	chunks := buildChunks(task, doc)
 	chunks = append(chunks, buildFigureChunks(task, doc)...)
-	if _, err := knowledge.UpsertChunksTRPC(ctx, chunks); err != nil {
+	if _, err := knowledge.UpsertChunks(ctx, chunks); err != nil {
 		fail(ctx, task, "写入向量库失败", err)
 		return
 	}

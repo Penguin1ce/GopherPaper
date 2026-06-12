@@ -88,10 +88,10 @@ func run(cfgPath string) error {
 	}
 
 	// 4. 多租户知识库
-	if err := knowledge.InitTRPCStore(ctx, cfg.Milvus, cfg.Milvus.Collection, aimodel.NewEmbedder(cfg.Embedding), cfg.Embedding.Dim); err != nil {
+	if err := knowledge.Init(ctx, cfg.Milvus, cfg.Milvus.Collection, aimodel.NewEmbedder(cfg.Embedding), cfg.Embedding.Dim); err != nil {
 		return err
 	}
-	defer knowledge.CloseTRPC()
+	defer knowledge.Close()
 	zlog.Info("Milvus 知识库已就绪")
 
 	// 5. PDF 解析：MinerU 在线 API 客户端

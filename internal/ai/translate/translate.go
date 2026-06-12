@@ -8,20 +8,25 @@ import (
 	"strings"
 
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
-	trpcopenai "trpc.group/trpc-go/trpc-agent-go/model/openai"
 
 	"GopherPaper/internal/ai/core"
-	"GopherPaper/internal/config"
+	"GopherPaper/internal/aimodel"
+	"GopherPaper/internal/tenant"
 	"GopherPaper/pkg/constant"
 )
 
-// TranslateTRPC 把英文原文 text 翻成中文。system 带翻译指令,user 给原文,裸调聚合成文本。
-// text 为空或超长由上层先行校验,这里只做最终保护。
-func TranslateTRPC(ctx context.Context, m *trpcopenai.Model, mc config.ModelConfig, text string) (string, error) {
+// Translate 把英文原文 text 翻成中文。system 带翻译指令,user 给原文,裸调该用户的
+// translate 小模型聚合成文本。text 为空或超长由上层先行校验,这里只做最终保护。
+func Translate(ctx context.Context, text string) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", fmt.Errorf("translate: 原文为空")
 	}
+	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
+	if err != nil {
+		return "", err
+	}
+	m, mc := models.Translate, models.TranslateMC
 	if m == nil {
 		return "", fmt.Errorf("translate: 模型未配置")
 	}

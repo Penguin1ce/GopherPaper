@@ -63,10 +63,9 @@ type PaperStructured struct {
 	FutureWork        []string `json:"future_work"`
 }
 
-// ReportInput 是研读报告输入：围绕某篇论文按类型生成。
+// ReportInput 是研读报告输入：围绕某篇论文按类型生成。论文 owner 从 ctx 的 tenant 取。
 type ReportInput struct {
 	PaperID    string              `json:"paper_id"`
-	OwnerID    string              `json:"owner_id"`
 	ReportType constant.ReportType `json:"report_type"`
 	Query      string              `json:"query"` // 检索用查询，默认用论文标题或类型关键词
 }

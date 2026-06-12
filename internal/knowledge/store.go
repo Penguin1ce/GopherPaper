@@ -1,5 +1,5 @@
 // Package knowledge 管理多租户知识库的写入与 chunk 规整。
-// 向量库连接、collection 管理、写入与检索经 trpc vectorstore(见 trpcstore.go),
+// 向量库连接、collection 管理、写入与检索经 trpc vectorstore(见 milvus.go),
 // 本文件只留与底层 SDK 无关的 Chunk 模型与规整逻辑。
 package knowledge
 

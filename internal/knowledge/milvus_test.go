@@ -14,9 +14,9 @@ import (
 	"GopherPaper/pkg/constant"
 )
 
-// TestTRPCStoreEndToEnd 在真实 Milvus 上验证 collection 初始化、写入和多租户检索过滤。
+// TestStoreEndToEnd 在真实 Milvus 上验证 collection 初始化、写入和多租户检索过滤。
 // 同时校准 searchfilter 字段前缀。缺 Milvus 或 Ollama 则 skip。
-func TestTRPCStoreEndToEnd(t *testing.T) {
+func TestStoreEndToEnd(t *testing.T) {
 	cfg, err := config.Load("../../config/config.toml")
 	if err != nil {
 		t.Skipf("跳过:未找到 config.toml: %v", err)
@@ -31,14 +31,14 @@ func TestTRPCStoreEndToEnd(t *testing.T) {
 
 	const collection = "knowledge_trpc_e2e"
 	dropTestCollection(ctx, cfg.Milvus, collection)
-	if err := InitTRPCStore(ctx, cfg.Milvus, collection, emb, ec.Dim); err != nil {
-		t.Fatalf("InitTRPCStore 失败(可能 Milvus 版本不支持 BM25): %v", err)
+	if err := Init(ctx, cfg.Milvus, collection, emb, ec.Dim); err != nil {
+		t.Fatalf("Init 失败(可能 Milvus 版本不支持 BM25): %v", err)
 	}
 	defer dropTestCollection(ctx, cfg.Milvus, collection)
 
 	mustAdd := func(scope constant.KnowledgeScope, owner, doc, content string) {
-		if err := AddChunkTRPC(ctx, Chunk{Scope: scope, OwnerID: owner, DocID: doc, Content: content, SourceFile: "t.pdf"}); err != nil {
-			t.Fatalf("AddChunkTRPC(%s/%s): %v", scope, owner, err)
+		if err := AddChunk(ctx, Chunk{Scope: scope, OwnerID: owner, DocID: doc, Content: content, SourceFile: "t.pdf"}); err != nil {
+			t.Fatalf("AddChunk(%s/%s): %v", scope, owner, err)
 		}
 	}
 	mustAdd(constant.KnowledgeScopePublic, "", "pubdoc", "深度学习中的注意力机制是一种重要的建模方法")
@@ -48,9 +48,9 @@ func TestTRPCStoreEndToEnd(t *testing.T) {
 	// 写入后数据可见有延迟,重试等到 public+A 两条都可见(B 应被过滤,故 userA 最多 2 条)。
 	var res *vectorstore.SearchResult
 	for range 20 {
-		r, e := SearchTRPC(ctx, "论文的研究方法", "userA", "", 10)
+		r, e := Search(ctx, "论文的研究方法", "userA", "", 10)
 		if e != nil {
-			t.Fatalf("SearchTRPC 失败: %v", e)
+			t.Fatalf("Search 失败: %v", e)
 		}
 		res = r
 		if len(r.Results) >= 2 {
@@ -59,7 +59,7 @@ func TestTRPCStoreEndToEnd(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 	if res == nil || len(res.Results) == 0 {
-		t.Fatal("SearchTRPC 未召回任何片段(写入可见性或过滤异常)")
+		t.Fatal("Search 未召回任何片段(写入可见性或过滤异常)")
 	}
 
 	sawPublic, sawA := false, false

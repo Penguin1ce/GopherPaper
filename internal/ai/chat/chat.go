@@ -1,12 +1,13 @@
-// chat_trpc.go 是 chat 链路:intent 模型分类 + chat 模型参数化 RAG,显式两段编排。
+// chat.go 是 chat 链路:intent 模型分类 + chat 模型参数化 RAG,显式两段编排。
 //
 // 三个问答子类(fact/summary/method)本就共用同一参数化 RAG agent(仅 prompt 不同),
 // 故不做自主路由,而是显式两段:
 //
-//	1 ClassifyIntentTRPC: intent 小模型把自由文本分到问答子类
-//	2 ChatRAGTRPC:        chat 模型按子类选 prompt 做 RAG，并调用 retriever
+//	1 ClassifyIntent: intent 小模型把自由文本分到问答子类
+//	2 ChatRAG:        chat 模型按子类选 prompt 做 RAG,并调用 retriever
 //
 // 二者解耦、两模型分用,忠实 CLAUDE.md「小模型意图识别 + 下游 RAG」的设计。
+// 模型由各段按 ctx 的 tenant 自取,调用方不传模型与身份。
 package chat
 
 import (
@@ -18,26 +19,30 @@ import (
 	"strings"
 
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
-	trpcopenai "trpc.group/trpc-go/trpc-agent-go/model/openai"
 
 	"GopherPaper/internal/ai/agentrt"
 	"GopherPaper/internal/ai/core"
-	"GopherPaper/internal/config"
+	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 )
 
-// ChatTRPC 是 chat 切片入口:intent 小模型分类 + 带工具 chat agent 做 RAG。
+// Chat 是 chat 切片入口:intent 小模型分类 + 带工具 chat agent 做 RAG。
 // history 为本会话多轮上下文(来自 trpc Session),按时间升序、不含当前 query;
 // 意图分类只看当前 query,history 仅注入 RAG 生成。
-func ChatTRPC(ctx context.Context, intentModel *trpcopenai.Model, intentMC config.ModelConfig, history []trpcmodel.Message, query string) (*core.Reply, error) {
-	intent := ClassifyIntentTRPC(ctx, intentModel, intentMC, query)
-	return ChatRAGTRPC(ctx, query, intent, history)
+func Chat(ctx context.Context, history []trpcmodel.Message, query string) (*core.Reply, error) {
+	intent := ClassifyIntent(ctx, query)
+	return ChatRAG(ctx, query, intent, history)
 }
 
-// ClassifyIntentTRPC 用 intent 小模型把自由文本分到问答子类,无法判断兜底 summary。
-func ClassifyIntentTRPC(ctx context.Context, intentModel *trpcopenai.Model, mc config.ModelConfig, query string) constant.IntentType {
+// ClassifyIntent 用该用户的 intent 小模型把自由文本分到问答子类,无法判断兜底 summary。
+func ClassifyIntent(ctx context.Context, query string) constant.IntentType {
+	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
+	if err != nil {
+		zlog.Error("意图分类取模型失败,兜底 summary", "err", err)
+		return constant.IntentSummary
+	}
 	// IntentPrompt 的花括号是双写转义的模板写法,此处不走模板,还原成普通 JSON 示例。
 	prompt := strings.NewReplacer("{{", "{", "}}", "}").Replace(constant.IntentPrompt)
 	req := &trpcmodel.Request{
@@ -46,10 +51,10 @@ func ClassifyIntentTRPC(ctx context.Context, intentModel *trpcopenai.Model, mc c
 			trpcmodel.NewUserMessage(query),
 		},
 	}
-	if mc.MaxTokens > 0 {
-		req.MaxTokens = &mc.MaxTokens
+	if models.IntentMC.MaxTokens > 0 {
+		req.MaxTokens = &models.IntentMC.MaxTokens
 	}
-	content, err := core.GenerateText(ctx, intentModel, req)
+	content, err := core.GenerateText(ctx, models.Intent, req)
 	if err != nil {
 		zlog.Error("意图分类失败,兜底 summary", "err", err)
 		return constant.IntentSummary
@@ -57,10 +62,10 @@ func ClassifyIntentTRPC(ctx context.Context, intentModel *trpcopenai.Model, mc c
 	return parseIntent(content)
 }
 
-// ChatRAGTRPC 按意图做参数化 RAG:检索片段拼进 system prompt,经带工具 chat agent 生成并收集出处进 Meta。
+// ChatRAG 按意图做参数化 RAG:检索片段拼进 system prompt,经带工具 chat agent 生成并收集出处进 Meta。
 // history 为多轮上下文,经 agent 注入,夹在 system prompt 与当前 query 之间。
 // 图块走单独一轮检索(不与正文同池),命中的图片随 query 一起发给多模态 chat 模型推理。
-func ChatRAGTRPC(ctx context.Context, query string, intent constant.IntentType, history []trpcmodel.Message) (*core.Reply, error) {
+func ChatRAG(ctx context.Context, query string, intent constant.IntentType, history []trpcmodel.Message) (*core.Reply, error) {
 	owner := tenant.MustStudentID(ctx)
 	paperID := core.PaperIDFrom(ctx)
 	docs, err := RetrieveForPaper(ctx, query, owner, paperID)
@@ -85,7 +90,7 @@ func ChatRAGTRPC(ctx context.Context, query string, intent constant.IntentType, 
 
 	sysPrompt := strings.ReplaceAll(constant.RAGPromptFor(intent), "{context}", FormatDocs(ctxDocs))
 	sysPrompt += figureInstruction(imgDocs)
-	content, err := agentrt.GenerateWithImages(ctx, owner, sysPrompt, history, query, images)
+	content, err := agentrt.GenerateWithImages(ctx, sysPrompt, history, query, images)
 	if err != nil {
 		return nil, err
 	}

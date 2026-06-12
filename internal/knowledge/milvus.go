@@ -1,4 +1,4 @@
-// trpcstore.go 封装 trpc Milvus vectorstore 与 trpc embedder。
+// milvus.go 封装 trpc Milvus vectorstore 与 trpc embedder。
 // trpc vectorstore 使用固定 schema，项目标量字段统一写入 metadata JSON。
 // 多租户过滤经 searchfilter 表达，BM25 全文检索需 Milvus 2.5 及以上版本。
 package knowledge
@@ -26,8 +26,8 @@ var (
 	trpcDim   int
 )
 
-// InitTRPCStore 用 trpc vectorstore 与 embedder 初始化知识库 collection。
-func InitTRPCStore(ctx context.Context, mc config.MilvusConfig, collection string, emb trpcembedder.Embedder, dim int) error {
+// Init 用 trpc vectorstore 与 embedder 初始化知识库 collection。
+func Init(ctx context.Context, mc config.MilvusConfig, collection string, emb trpcembedder.Embedder, dim int) error {
 	if emb == nil {
 		return fmt.Errorf("knowledge: trpc embedder 不能为空")
 	}
@@ -51,8 +51,8 @@ func InitTRPCStore(ctx context.Context, mc config.MilvusConfig, collection strin
 	return nil
 }
 
-// AddChunkTRPC 把一个 chunk 规整后写入 trpc vectorstore。
-func AddChunkTRPC(ctx context.Context, chunk Chunk) error {
+// AddChunk 把一个 chunk 规整后写入 trpc vectorstore。
+func AddChunk(ctx context.Context, chunk Chunk) error {
 	if err := normalizeChunk(&chunk); err != nil {
 		return err
 	}
@@ -79,19 +79,19 @@ func addChunk(ctx context.Context, chunk Chunk) error {
 	return nil
 }
 
-// TRPCReady 报告 trpc 知识库是否已初始化。
-func TRPCReady() bool { return trpcStore != nil && trpcEmb != nil }
+// Ready 报告 trpc 知识库是否已初始化。
+func Ready() bool { return trpcStore != nil && trpcEmb != nil }
 
-// CloseTRPC 关闭 trpc vectorstore 的 Milvus 连接,在服务关停时调用。
-func CloseTRPC() error {
+// Close 关闭 trpc vectorstore 的 Milvus 连接,在服务关停时调用。
+func Close() error {
 	if trpcStore == nil {
 		return nil
 	}
 	return trpcStore.Close()
 }
 
-// UpsertChunksTRPC 批量写入 chunk(逐条 Add,只规整一次),返回写入的 id。
-func UpsertChunksTRPC(ctx context.Context, chunks []Chunk) ([]string, error) {
+// UpsertChunks 批量写入 chunk(逐条 Add,只规整一次),返回写入的 id。
+func UpsertChunks(ctx context.Context, chunks []Chunk) ([]string, error) {
 	ids := make([]string, 0, len(chunks))
 	for i := range chunks {
 		if err := normalizeChunk(&chunks[i]); err != nil {
@@ -105,14 +105,14 @@ func UpsertChunksTRPC(ctx context.Context, chunks []Chunk) ([]string, error) {
 	return ids, nil
 }
 
-// SearchTRPC 按多租户可见性向量检索:科研基础库全员可见,私有库仅本人可见;docID 非空时限定到该论文。
-func SearchTRPC(ctx context.Context, query, ownerID, docID string, topK int) (*vectorstore.SearchResult, error) {
+// Search 按多租户可见性向量检索:科研基础库全员可见,私有库仅本人可见;docID 非空时限定到该论文。
+func Search(ctx context.Context, query, ownerID, docID string, topK int) (*vectorstore.SearchResult, error) {
 	return searchWithFilter(ctx, query, scopeCondition(ownerID, docID), topK)
 }
 
-// SearchImagesTRPC 只检索图块(block_type==image),用于问答时单独一轮带图召回,
-// 不与正文同池竞争。可见性过滤同 SearchTRPC。
-func SearchImagesTRPC(ctx context.Context, query, ownerID, docID string, topK int) (*vectorstore.SearchResult, error) {
+// SearchImages 只检索图块(block_type==image),用于问答时单独一轮带图召回,
+// 不与正文同池竞争。可见性过滤同 Search。
+func SearchImages(ctx context.Context, query, ownerID, docID string, topK int) (*vectorstore.SearchResult, error) {
 	filter := searchfilter.And(
 		scopeCondition(ownerID, docID),
 		searchfilter.Equal(metadataPrefix+constant.MilvusFieldBlockType, constant.BlockTypeImage),
