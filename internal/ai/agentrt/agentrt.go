@@ -98,8 +98,8 @@ func runnerForUser(userID string) (runner.Runner, error) {
 		// 无 handler 的链路(抽取/报告)仍由 CollectEvents 聚合,行为不变。
 		gc.Stream = true
 		sets := toolkit.ToolSets()
-		// 网关限制:gpt-5.5 在 chat/completions 下 function tools 与 reasoning_effort
-		// 不能同用(400),配了工具就剥离推理强度走网关默认。
+		// 兼容兜底:部分 openai 兼容端点在 chat/completions 下 function tools 与
+		// reasoning_effort 不能同用(400),配了工具就剥离推理强度走端点默认。
 		if len(sets) > 0 {
 			gc.ReasoningEffort = nil
 		}

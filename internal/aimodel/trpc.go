@@ -29,15 +29,22 @@ func Init(c *config.Config) {
 
 // NewChatModel 用 trpc 的 openai 兼容 model 建对话/意图模型。
 // 空 key 用占位:ollama 等本地 openai 兼容端点不校验密钥,但 sdk 要求非空。
+// thinking 开关经模型级 extra fields 随每次请求注入,火山方舟格式 thinking.type。
 func NewChatModel(mc config.ModelConfig) *trpcopenai.Model {
 	apiKey := mc.APIKey
 	if apiKey == "" {
 		apiKey = "ollama"
 	}
-	return trpcopenai.New(mc.Model,
+	opts := []trpcopenai.Option{
 		trpcopenai.WithBaseURL(mc.BaseURL),
 		trpcopenai.WithAPIKey(apiKey),
-	)
+	}
+	if mc.Thinking != "" {
+		opts = append(opts, trpcopenai.WithExtraFields(map[string]any{
+			"thinking": map[string]any{"type": mc.Thinking},
+		}))
+	}
+	return trpcopenai.New(mc.Model, opts...)
 }
 
 // NewEmbedder 用 trpc 的 openai 兼容 embedder 建向量化器。

@@ -9,40 +9,41 @@ mode = "debug" # debug / release
 level = "info"         # debug / info / warn / error
 file = "log/app.log"   # 留空输出到 stdout；填路径则写文件（自动建目录、追加写）
 
-# ── Host 意图路由小模型：走 API，与下游解耦可单独换小模型 ──────
+# ── Host 意图路由小模型：火山方舟直连，与下游解耦可单独换小模型 ──
 [models.intent]
-provider = "openai"
-base_url = "https://api.openai.com/v1"
-api_key = "sk-xxxx"
-model = "gpt-4o-mini"
-max_tokens = 4096                      # 输出上限，推理模型须配足(reasoning token 也算)，0/省略走默认
+provider = "openai"                                   # openai 兼容端点
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+api_key = "your-ark-api-key"
+model = "doubao-seed-2-0-mini-260215"                 # 小杯，分类任务够用且延迟低
+max_tokens = 4096                                     # 输出上限，推理模型须配足(reasoning token 也算)，0/省略走默认
+thinking = "disabled"                                 # 关思考，分类要快、不需要推理
 
-# ── 下游问答 / 抽取 / 报告 agent 的主力大模型：走 API ─────────
+# ── 下游问答 / 抽取 / 报告 agent 的主力大模型：火山方舟直连 ────
 [models.chat]
-provider = "openai"                    # openai 兼容网关
-base_url = "https://api.openai.com/v1"
-api_key = "sk-xxxx"
-model = "gpt-4o-mini"
-max_tokens = 16384                     # openai 分支映射到 max_completion_tokens(含 reasoning)，推理模型须配足避免 JSON 截断
-# reasoning_effort = "low"             # 仅 gpt-5/o 系列推理模型有效，结构化输出建议 low，省额度防 reasoning 吃光输出
+provider = "openai"                                   # openai 兼容端点
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+api_key = "your-ark-api-key"
+model = "doubao-seed-2-0-pro-260215"
+max_tokens = 16384                                    # 含 reasoning token，推理模型须配足避免 JSON 截断
+thinking = "disabled"                                 # 关思考，问答首 token 快、抽取/报告省额度；要质量可改 enabled
 
 # ── 带图推理视觉模型：解析期给图片生成描述、问答期把召回图片喂模型 ──
 [models.vlm]
-provider = "openai"                    # openai 兼容网关
-base_url = "https://api.openai.com/v1"
-api_key = "sk-xxxx"
-model = "gpt-4o"                       # 须为多模态模型，可与 chat 同款
+provider = "openai"                                   # openai 兼容端点
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+api_key = "your-ark-api-key"
+model = "doubao-seed-2-0-pro-260215"                  # 须为多模态模型，可与 chat 同款
 max_tokens = 16384
-# reasoning_effort = "low"             # 仅 gpt-5/o 系列推理模型有效
+thinking = "disabled"                                 # 关思考，图描述生成走批量解析期，快为先
 
-# ── 先锋者 agent 模型:多轮工具循环对延迟敏感,建议快速 mini 型 ──
-# 整块留空时回退 models.chat。带工具场景 reasoning_effort 会被剥离,无需配置。
+# ── 先锋者 agent 模型:多轮工具循环对延迟敏感,整块留空回退 models.chat ──
 [models.pioneer]
 provider = "openai"
-base_url = "https://api.openai.com/v1"
-api_key = "sk-xxxx"
-model = "gpt-4o-mini"
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+api_key = "your-ark-api-key"
+model = "doubao-seed-2-0-pro-260215"
 max_tokens = 8192
+thinking = "disabled"                                 # 关思考，多轮工具循环每轮都省一段推理延迟
 
 # ── 翻译小模型：精读页逐段翻译，裸调不挂工具不走 RAG ──────────
 [models.translate]
@@ -62,8 +63,17 @@ baidu_map_ak = ""                      # 百度地图开放平台 AK,非空时�
 baidu_map_sk = ""                      # AK 开了 SN 校验时填对应 SK,留空表示 AK 走 IP 白名单校验
 
 # 工具显示名映射:原始工具名 → 前端展示名,SSE 推工具调用状态时换用,未配置回退原始名。
+# mcp 工具名带 toolset 名前缀,key 要写完整名,如 my-coffee_queryShopList。
 [tools.tool_names]
 geocode = "地点定位"
+my-coffee_queryShopList = "查询瑞幸门店"
+my-coffee_searchProductForMcp = "搜索瑞幸商品"
+my-coffee_queryProductDetailInfo = "查看商品定制项"
+my-coffee_switchProduct = "切换商品规格"
+my-coffee_previewOrder = "预览订单"
+my-coffee_createOrder = "提交订单"
+my-coffee_queryOrderDetailInfo = "查询订单状态"
+my-coffee_cancelOrder = "取消订单"
 
 # 瑞幸点单 MCP,token 由用户在瑞幸开放平台 https://open.lkcoffee.com/mcp 创建后在前端绑定。
 [[tools.mcp]]

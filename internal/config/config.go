@@ -109,6 +109,8 @@ type ModelConfig struct {
 	MaxTokens int `toml:"max_tokens"`
 	// ReasoningEffort 推理强度 low/medium/high，仅 openai 推理模型有效，留空走默认 medium。
 	ReasoningEffort string `toml:"reasoning_effort"`
+	// Thinking 思考开关 enabled/disabled，火山方舟 doubao 等支持 thinking.type 的端点有效，留空走服务端默认。
+	Thinking string `toml:"thinking"`
 }
 
 // RerankConfig 是 rerank 重排模型的连接参数，走 OpenAI/Infinity 兼容的 /rerank 端点（硅基流动等）。

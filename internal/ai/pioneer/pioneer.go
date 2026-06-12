@@ -63,8 +63,8 @@ func runnerForUser(userID string) (runner.Runner, error) {
 	e, _ := runners.LoadOrStore(userID, &runnerEntry{})
 	ent := e.(*runnerEntry)
 	ent.once.Do(func() {
-		// 网关限制:gpt-5.5 系在 chat/completions 下 function tools 与 reasoning_effort
-		// 不能同用(400),先锋者必带工具,故剥离推理强度走网关默认。
+		// 兼容兜底:部分 openai 兼容端点在 chat/completions 下 function tools 与
+		// reasoning_effort 不能同用(400),先锋者必带工具,故剥离推理强度走端点默认。
 		gc := core.GenConfig(models.PioneerMC)
 		gc.ReasoningEffort = nil
 		// 流式拉取模型输出,经 ctx 的 StreamHandler 把工具调用与增量推给前端。
