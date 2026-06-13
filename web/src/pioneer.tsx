@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 
 import * as api from "./api";
 import { Markdown } from "./components/Markdown";
-import type { Message, Session } from "./types";
+import type { Message, PlanStep, Session } from "./types";
 import { formatTime, sessionTitle } from "./utils";
 import "./pioneer.css";
 
@@ -134,6 +134,83 @@ function LuckinCard({
   );
 }
 
+// plan 阶段中文标签,未知 phase 原样回显。
+const PLAN_PHASE_LABEL: Record<string, string> = {
+  planning: "规划",
+  replanning: "重新规划",
+  action: "执行",
+  reasoning: "思考",
+};
+
+// PlanRail 是小云雀右侧的独立「执行计划」分区:把 plan-execute 的规划/执行/思考各步渲染成
+// 垂直时间线,流式期间实时展开、动作步高亮,无任务时给引导空态。数据取自当前轮消息的 plan 段。
+const PlanRail = memo(function PlanRail({
+  steps,
+  live,
+  pending,
+}: {
+  steps: PlanStep[];
+  live: boolean;
+  pending: boolean;
+}) {
+  return (
+    <aside className="pioneer-plan" aria-label="执行计划">
+      <header className="plan-head">
+        <span
+          className="plan-head-dot"
+          data-live={live || pending || undefined}
+          aria-hidden
+        />
+        <div className="plan-head-text">
+          <p className="eyebrow">PLAN · EXECUTE</p>
+          <h2>执行计划</h2>
+        </div>
+        {(live || pending) && <span className="plan-live-tag">进行中</span>}
+      </header>
+      <div className="plan-body">
+        {steps.length === 0 ? (
+          <div className="plan-empty">
+            <span className="plan-empty-mark" aria-hidden>
+              ◇
+            </span>
+            {pending ? (
+              <>
+                <p className="plan-empty-title">小云雀正在思考…</p>
+                <p className="plan-empty-sub">
+                  若本轮需要分步执行,规划会在这里展开;简单问题会直接作答。
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="plan-empty-title">先规划,再分步执行</p>
+                <p className="plan-empty-sub">
+                  发起任务后,小云雀的规划与每一步动作会在这里实时展开。
+                </p>
+              </>
+            )}
+          </div>
+        ) : (
+          <ol className="plan-timeline">
+            {steps.map((s, i) => (
+              <li key={i} className={`plan-node ${s.phase}`}>
+                <span className="plan-node-rail" aria-hidden>
+                  <span className="plan-node-dot" />
+                </span>
+                <div className="plan-node-body">
+                  <span className="plan-node-phase">
+                    {PLAN_PHASE_LABEL[s.phase] || s.phase}
+                  </span>
+                  <p className="plan-node-text">{s.text}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    </aside>
+  );
+});
+
 // 流式期间 messages 每帧重建,未变动的历史消息仍是同一对象引用,
 // memo 默认浅比较即可让历史气泡跳过重渲染,只剩流式那条随增量刷新。
 const Bubble = memo(function Bubble({ message }: { message: Message }) {
@@ -166,7 +243,7 @@ function ToolStatus({ note }: { note: string }) {
   );
 }
 
-function Thinking() {
+function Thinking({ label }: { label?: string }) {
   return (
     <article className="p-message assistant">
       <div className="p-bubble thinking">
@@ -175,7 +252,7 @@ function Thinking() {
           <i />
           <i />
         </span>
-        <span>小云雀正在处理工具与上下文…</span>
+        <span>{label || "小云雀正在处理工具与上下文…"}</span>
       </div>
     </article>
   );
@@ -206,6 +283,8 @@ function PioneerApp() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sending, setSending] = useState(false);
   const [toolNote, setToolNote] = useState("");
+  // 当前轮的执行计划(右栏数据源),与消息流解耦:规划阶段不建空气泡,只喂右栏。
+  const [streamPlan, setStreamPlan] = useState<PlanStep[]>([]);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [luckin, setLuckin] = useState<LuckinCred | null>(loadLuckin);
@@ -249,17 +328,14 @@ function PioneerApp() {
       .catch(fail);
   }, [token, openSession]);
 
-  const newSession = async (): Promise<Session | null> => {
-    try {
-      const s = await api.createSession("云雀会话", undefined, AGENT_TYPE);
-      setSessions((list) => [s, ...list]);
-      setActiveID(s.id);
-      setMessages([]);
-      return s;
-    } catch (e) {
-      fail(e);
-      return null;
-    }
+  // 新会话只做本地草稿重置,不立刻建库;真正的会话在首次发送时用第一句提问作标题创建,
+  // 这样标题天然有意义,也不会留下一堆空的「云雀会话」。
+  const startNewSession = () => {
+    setActiveID("");
+    setMessages([]);
+    setStreamPlan([]);
+    setError("");
+    setInput("");
   };
 
   const removeSession = async (id: string) => {
@@ -281,9 +357,17 @@ function PioneerApp() {
     setError("");
     let sid = activeID;
     if (!sid) {
-      const s = await newSession();
-      if (!s) return;
-      sid = s.id;
+      // 首次发送才建会话,用第一句提问作标题(截断),过长省略。
+      const title = q.length > 24 ? `${q.slice(0, 24)}…` : q;
+      try {
+        const s = await api.createSession(title, undefined, AGENT_TYPE);
+        setSessions((list) => [s, ...list]);
+        setActiveID(s.id);
+        sid = s.id;
+      } catch (e) {
+        fail(e);
+        return;
+      }
     }
     setInput("");
     setSending(true);
@@ -332,10 +416,22 @@ function PioneerApp() {
       setToolNote("");
       patch((m) => ({ ...m, content: m.content + chunk }));
     };
+    // 执行计划段累积:plan 事件按 phase 归并成有序 PlanStep,按帧 flush 到独立的 streamPlan state,
+    // 喂右侧执行计划栏;规划阶段不建气泡(此时聊天区由 Thinking 指示),正文气泡仅在 done 时上屏。
+    const planSteps: PlanStep[] = [];
+    let planRafID: number | null = null;
+    const flushPlan = () => {
+      planRafID = null;
+      setStreamPlan(planSteps.map((s) => ({ ...s })));
+    };
     const cancelFlush = () => {
       if (rafID !== null) {
         cancelAnimationFrame(rafID);
         rafID = null;
+      }
+      if (planRafID !== null) {
+        cancelAnimationFrame(planRafID);
+        planRafID = null;
       }
     };
     try {
@@ -346,18 +442,30 @@ function PioneerApp() {
           pending += text;
           if (rafID === null) rafID = requestAnimationFrame(flush);
         },
+        onPlan: (phase, content) => {
+          const last = planSteps[planSteps.length - 1];
+          if (last && last.phase === phase) last.text += content;
+          else planSteps.push({ phase, text: content });
+          if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
+        },
         // 工具状态不进消息气泡,显示在输入框上方的独立状态气泡。
         onTool: (tool, done) =>
           setToolNote(done ? `${tool} 已返回,正在继续…` : `正在调用 ${tool} …`),
       });
-      // 收尾:取消待处理的帧回调,最终消息直接整体替换占位。
+      // 收尾:取消待处理的帧回调,最终答案上屏(本轮计划随消息内存保留供右栏回看),清空流式计划。
       cancelFlush();
+      setStreamPlan([]);
       setMessages((list) => [
         ...list.filter((m) => m.id !== placeholderID),
-        { ...data.message, id: data.message.id || `local-a-${Date.now()}` },
+        {
+          ...data.message,
+          id: data.message.id || `local-a-${Date.now()}`,
+          plan: planSteps.length > 0 ? planSteps : undefined,
+        },
       ]);
     } catch (e) {
       cancelFlush();
+      setStreamPlan([]);
       setMessages((list) => list.filter((m) => m.id !== placeholderID));
       fail(e);
     } finally {
@@ -381,6 +489,14 @@ function PioneerApp() {
   }
 
   const activeSession = sessions.find((s) => s.id === activeID);
+  // 右栏始终反映「最近一轮」:进行中看 streamPlan(实时),收尾后看最后一条助手消息的 plan。
+  // 某轮模型直接作答没规划则回到空态 —— 不再粘住上一轮的旧计划(doubao 守标签不稳定,逐轮可能有有没有)。
+  const lastAssistant = [...messages]
+    .reverse()
+    .find((m) => m.role === "assistant");
+  const railSteps = sending ? streamPlan : (lastAssistant?.plan ?? []);
+  const railLive = sending && streamPlan.length > 0;
+  const railPending = sending && streamPlan.length === 0;
 
   return (
     <div className="pioneer-shell">
@@ -400,7 +516,7 @@ function PioneerApp() {
             </div>
           </div>
         </header>
-        <button type="button" className="pioneer-btn primary wide" onClick={() => void newSession()}>
+        <button type="button" className="pioneer-btn primary wide" onClick={startNewSession}>
           + 新会话
         </button>
         <nav className="pioneer-sessions" aria-label="云雀会话">
@@ -452,7 +568,7 @@ function PioneerApp() {
           <button
             type="button"
             className="pioneer-btn secondary compact"
-            onClick={() => void newSession()}
+            onClick={startNewSession}
           >
             + 新建会话
           </button>
@@ -470,7 +586,15 @@ function PioneerApp() {
               {messages.map((m) => (
                 <Bubble key={String(m.id)} message={m} />
               ))}
-              {sending && !messages.some((m) => m.streaming) && <Thinking />}
+              {sending && !messages.some((m) => m.streaming) && (
+                <Thinking
+                  label={
+                    streamPlan.length > 0
+                      ? "小云雀正在按计划执行…右侧可看进度"
+                      : undefined
+                  }
+                />
+              )}
             </>
           )}
         </div>
@@ -503,6 +627,8 @@ function PioneerApp() {
           </button>
         </form>
       </main>
+
+      <PlanRail steps={railSteps} live={railLive} pending={railPending} />
     </div>
   );
 }

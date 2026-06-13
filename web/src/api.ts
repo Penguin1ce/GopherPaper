@@ -179,10 +179,12 @@ export function listMessages(sessionID: string) {
   );
 }
 
-// 发消息 SSE 的过程回调:onDelta 收应答文本增量,onTool 收工具调用状态(done=false 发起/true 返回)。
+// 发消息 SSE 的过程回调:onDelta 收应答文本增量,onTool 收工具调用状态(done=false 发起/true 返回),
+// onPlan 收先锋者规划/动作阶段文本增量(phase 为 planning/replanning/action/reasoning)。
 export interface SendStreamHandlers {
   onDelta?: (text: string) => void;
   onTool?: (tool: string, done: boolean) => void;
+  onPlan?: (phase: string, content: string) => void;
 }
 
 // 解析一帧 SSE(event + data 行),返回事件名与 JSON 载荷,无 data 返回 null。
@@ -239,6 +241,9 @@ export async function sendMessage(
     switch (parsed.event) {
       case "delta":
         stream?.onDelta?.(String(payload.content ?? ""));
+        break;
+      case "plan":
+        stream?.onPlan?.(String(payload.phase ?? ""), String(payload.content ?? ""));
         break;
       case "tool_call":
         stream?.onTool?.(String(payload.tool ?? ""), false);

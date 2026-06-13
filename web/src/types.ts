@@ -79,6 +79,14 @@ export interface Message {
   meta?: Record<string, unknown>;
   // 前端瞬态字段,仅 SSE 进行中的占位消息使用,不来自后端。
   streaming?: boolean;
+  // 先锋者执行计划段,仅本轮内存保留(不入库、刷新即失),用于气泡内折叠回看。
+  plan?: PlanStep[];
+}
+
+// PlanStep 是先锋者 plan-execute 的一个阶段段落,phase 区分规划/动作/思考。
+export interface PlanStep {
+  phase: string;
+  text: string;
 }
 
 // Reply.Meta["sources"] 透出的出处结构。

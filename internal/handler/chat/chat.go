@@ -120,6 +120,8 @@ func SendMessage(c *gin.Context) {
 		switch ev.Kind {
 		case constant.StreamEventDelta:
 			emit(ev.Kind, dto.StreamDeltaPayload{Content: ev.Delta})
+		case constant.StreamEventPlan:
+			emit(ev.Kind, dto.StreamPlanPayload{Phase: ev.Phase, Content: ev.Delta})
 		default:
 			// 原始工具名换前端显示名,未配置回退原始名。
 			emit(ev.Kind, dto.StreamToolPayload{Tool: toolkit.DisplayName(ev.Tool)})

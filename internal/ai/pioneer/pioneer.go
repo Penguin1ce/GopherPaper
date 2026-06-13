@@ -12,6 +12,7 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/agent"
 	"trpc.group/trpc-go/trpc-agent-go/agent/llmagent"
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
+	"trpc.group/trpc-go/trpc-agent-go/planner/react"
 	"trpc.group/trpc-go/trpc-agent-go/runner"
 	sessnoop "trpc.group/trpc-go/trpc-agent-go/session/noop"
 
@@ -50,7 +51,8 @@ func Chat(ctx context.Context, history []trpcmodel.Message, query string) (strin
 	if err != nil {
 		return "", err
 	}
-	return core.CollectEvents(ctx, ch)
+	// 挂了 React planner,模型输出带规划/动作标签,用标签感知收集器分流 plan 与正文。
+	return collectPlanEvents(ctx, ch)
 }
 
 // runnerForUser 懒建该用户的 runner,模型取自 aimodel,工具与 skill 取 pioneer 分组。
@@ -74,6 +76,9 @@ func runnerForUser(userID string) (runner.Runner, error) {
 		opts := []llmagent.Option{
 			llmagent.WithModel(models.Pioneer),
 			llmagent.WithGenerationConfig(gc),
+			// React planner:先规划再分步执行工具,输出按 PLANNING/ACTION/REASONING/
+			// FINAL_ANSWER 标签分段,由 collectPlanEvents 分流给前端计划面板与正文。
+			llmagent.WithPlanner(react.New()),
 			// 工具列表在每轮运行时用请求 ctx 重建:凭据型工具集靠 ctx 里的 token
 			// 才能过远端鉴权,构建期的 context.Background 拉不到(401)。
 			llmagent.WithRefreshToolSetsOnRun(true),

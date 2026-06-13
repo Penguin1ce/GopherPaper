@@ -252,14 +252,15 @@ textarea:focus {
 
 .pioneer-shell {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr) 340px;
   gap: 14px;
   height: 100vh;
   padding: 14px;
 }
 
 .pioneer-side,
-.pioneer-main {
+.pioneer-main,
+.pioneer-plan {
   min-width: 0;
   min-height: 0;
   background: var(--surface);
@@ -653,6 +654,205 @@ textarea:focus {
   gap: 10px;
   color: var(--muted);
   font-size: 13px;
+}
+
+/* ── 右侧执行计划分区:plan-execute 的规划/执行/思考垂直时间线 ── */
+.pioneer-plan {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.plan-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.plan-head-dot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: var(--r-pill);
+  background: var(--line-strong);
+  box-shadow: 0 0 0 4px var(--surface-strong);
+}
+
+.plan-head-dot[data-live] {
+  background: var(--accent-bright);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  animation: plan-pulse 1.5s ease-in-out infinite;
+}
+
+.plan-head-text .eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+}
+
+.plan-head-text h2 {
+  margin: 1px 0 0;
+  font-size: 15px;
+  font-weight: 680;
+  color: var(--text);
+}
+
+.plan-live-tag {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-dark);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-pill);
+}
+
+.plan-body {
+  overflow-y: auto;
+  padding: 16px 18px 20px;
+}
+
+/* 空态:无任务时的引导 */
+.plan-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  padding: 20px 10px;
+}
+
+.plan-empty-mark {
+  font-size: 30px;
+  line-height: 1;
+  color: var(--accent-line);
+  margin-bottom: 6px;
+}
+
+.plan-empty-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+.plan-empty-sub {
+  max-width: 22em;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--faint);
+}
+
+/* 时间线 */
+.plan-timeline {
+  margin: 0;
+  padding: 2px 0 0;
+  list-style: none;
+}
+
+.plan-node {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.plan-node-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+/* 连接线:贯穿整条时间线,首尾用渐隐收口 */
+.plan-node-rail::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent-line);
+}
+
+.plan-node:first-child .plan-node-rail::before {
+  top: 7px;
+}
+
+.plan-node:last-child .plan-node-rail::before {
+  bottom: calc(100% - 13px);
+}
+
+.plan-node-dot {
+  position: relative;
+  z-index: 1;
+  margin-top: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 2px solid var(--accent-line);
+}
+
+/* 动作步高亮:实心强调,凸显「正在执行」的关键节点 */
+.plan-node.action .plan-node-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.plan-node-body {
+  padding-bottom: 16px;
+  min-width: 0;
+}
+
+.plan-node:last-child .plan-node-body {
+  padding-bottom: 2px;
+}
+
+.plan-node-phase {
+  display: inline-block;
+  margin-bottom: 5px;
+  padding: 1.5px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: var(--r-pill);
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.plan-node.action .plan-node-phase {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.plan-node.reasoning .plan-node-phase {
+  background: var(--info-soft);
+  border-color: #cfdcf0;
+  color: var(--info);
+}
+
+.plan-node-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--text-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-wrap: pretty;
+}
+
+@keyframes plan-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* 工具调用状态气泡,占 composer 整行排在输入框上方,SSE 工具阶段浮现 */
@@ -1060,6 +1260,14 @@ textarea:focus {
   font-weight: 650;
 }
 
+/* 中等宽度:收窄三栏,计划栏仍在右侧但更紧凑 */
+@media (max-width: 1180px) {
+  .pioneer-shell {
+    grid-template-columns: 260px minmax(0, 1fr) 280px;
+  }
+}
+
+/* 窄屏:三栏纵向堆叠,计划分区落到底部,限高可滚动 */
 @media (max-width: 900px) {
   .pioneer-shell {
     grid-template-columns: 1fr;
@@ -1079,6 +1287,15 @@ textarea:focus {
 
   .pioneer-main {
     min-height: 620px;
+  }
+
+  .pioneer-plan {
+    grid-template-rows: auto auto;
+    max-height: 380px;
+  }
+
+  .plan-empty {
+    min-height: 200px;
   }
 }
 

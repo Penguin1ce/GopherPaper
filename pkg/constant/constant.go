@@ -120,6 +120,7 @@ const (
 	StreamEventToolCall   = "tool_call"   // agent 发起一次工具调用,载荷带工具名
 	StreamEventToolResult = "tool_result" // 工具调用返回,载荷带工具名
 	StreamEventDelta      = "delta"       // 应答文本增量
+	StreamEventPlan       = "plan"        // 先锋者规划/动作阶段文本,载荷带 phase 与增量
 	StreamEventDone       = "done"        // 生成完成,载荷为完整 SendMessageResponse
 	StreamEventError      = "error"       // 生成中途失败,载荷带错误说明
 )

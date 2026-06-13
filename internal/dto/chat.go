@@ -32,6 +32,11 @@ type (
 	StreamDeltaPayload struct {
 		Content string `json:"content"`
 	}
+	// StreamPlanPayload 是 plan 事件载荷,phase 标规划阶段,content 为该阶段文本增量。
+	StreamPlanPayload struct {
+		Phase   string `json:"phase"`
+		Content string `json:"content"`
+	}
 	// StreamErrorPayload 是 error 事件载荷。
 	StreamErrorPayload struct {
 		Message string `json:"message"`
