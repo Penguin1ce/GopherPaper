@@ -48,8 +48,9 @@ func Chat(ctx context.Context, hist []model.Message, query string) (*core.Reply,
 
 // PioneerChat 是小云雀会话入口:不经意图分类与 RAG,直接走带工具的小云雀 agent。
 // ctx 须已注入租户身份;凭据型工具的 token 由请求 ctx 携带,见 credential 包。
-func PioneerChat(ctx context.Context, hist []model.Message, query string) (*core.Reply, error) {
-	content, err := pioneerflow.Chat(ctx, toHistory(hist), query)
+// 多轮上下文由 pioneer 的 inmemory session 按 sessionID 自动承载(含工具轨迹),不再手工注入历史。
+func PioneerChat(ctx context.Context, sessionID, query string) (*core.Reply, error) {
+	content, err := pioneerflow.Chat(ctx, sessionID, query)
 	if err != nil {
 		return nil, err
 	}

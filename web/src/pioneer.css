@@ -802,7 +802,7 @@ textarea:focus {
 }
 
 .plan-node-body {
-  padding-bottom: 16px;
+  padding-bottom: 12px;
   min-width: 0;
 }
 
@@ -812,7 +812,7 @@ textarea:focus {
 
 .plan-node-phase {
   display: inline-block;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
   padding: 1.5px 9px;
   font-size: 11px;
   font-weight: 600;

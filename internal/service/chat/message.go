@@ -39,7 +39,8 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string) (*mode
 	// 小云雀会话不经意图分类与 RAG,直接走带工具 agent;其余走论文问答链路。
 	var reply *core.Reply
 	if sess.AgentType == constant.AgentPioneer {
-		reply, err = ai.PioneerChat(ctx, hist, query)
+		// 小云雀跨轮记忆由 runner 的 session 承载,传 sessionID 即可,无需注入文本历史。
+		reply, err = ai.PioneerChat(ctx, sessionID, query)
 	} else {
 		reply, err = ai.Chat(ctx, hist, query)
 	}

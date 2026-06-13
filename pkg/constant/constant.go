@@ -113,6 +113,9 @@ const (
 const (
 	MaxContextMessages = 20            // 喂给模型的历史消息最大条数，超出只取最近的
 	SessionAppName     = "gopherpaper" // trpc Session 的 appName，与 userID/sessionID 共同定位会话事件
+	// PioneerMaxHistoryRuns 是小云雀工作记忆喂模型的最大消息条数。含工具调用/返回,故比纯文本窗口大,
+	// 既保留近几轮工具轨迹供复用,又防 ReAct 轨迹无限堆积撑爆上下文。
+	PioneerMaxHistoryRuns = 40
 )
 
 // 发消息 SSE 事件名。生成过程经 SSE 推送:工具调用与文本增量实时上屏,done 收尾带完整消息。

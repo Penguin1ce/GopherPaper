@@ -200,7 +200,8 @@ const PlanRail = memo(function PlanRail({
                   <span className="plan-node-phase">
                     {PLAN_PHASE_LABEL[s.phase] || s.phase}
                   </span>
-                  <p className="plan-node-text">{s.text}</p>
+                  {/* 模型常给前导/尾随换行,trim 掉避免 chip 下方空一行;内部换行保留编号列表。 */}
+                  <p className="plan-node-text">{s.text.trim()}</p>
                 </div>
               </li>
             ))}
