@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import { figureUrl } from "../api";
 import { useApp } from "../store";
@@ -69,7 +69,13 @@ function Sources({ refs }: { refs: Reference[] }) {
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+// 流式期间 messages 数组每帧重建,但未变动的历史消息仍是同一对象引用,
+// 故 memo 的默认浅比较即可让历史气泡跳过重渲染,只剩流式那条随增量刷新。
+const MessageBubble = memo(function MessageBubble({
+  message,
+}: {
+  message: Message;
+}) {
   const isAssistant = message.role === "assistant";
   const refs = isAssistant ? extractSources(message.meta) : [];
   const figures = isAssistant ? buildFigureMap(refs) : undefined;
@@ -92,7 +98,7 @@ function MessageBubble({ message }: { message: Message }) {
       </div>
     </article>
   );
-}
+});
 
 // 工具调用状态气泡,占 composer 整行排在输入框上方,有状态文案时浮现。
 function ToolStatus({ note }: { note: string }) {

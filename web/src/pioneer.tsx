@@ -1,7 +1,7 @@
 // 小云雀页:独立入口(/pioneer),多面手 agent 会话(查论文 + 瑞幸点单等工具)。
 // 不挂主应用 store,登录态从同源 localStorage 共享(与精读页同模式)。
 // 瑞幸 token 仅存浏览器 localStorage,发消息时随 X-Luckin-Token 头透传,服务端不落库。
-import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
+import { StrictMode, memo, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import * as api from "./api";
@@ -134,7 +134,9 @@ function LuckinCard({
   );
 }
 
-function Bubble({ message }: { message: Message }) {
+// 流式期间 messages 每帧重建,未变动的历史消息仍是同一对象引用,
+// memo 默认浅比较即可让历史气泡跳过重渲染,只剩流式那条随增量刷新。
+const Bubble = memo(function Bubble({ message }: { message: Message }) {
   const isAssistant = message.role === "assistant";
   return (
     <article className={`p-message ${isAssistant ? "assistant" : "user"}`}>
@@ -151,7 +153,7 @@ function Bubble({ message }: { message: Message }) {
       </div>
     </article>
   );
-}
+});
 
 // 工具调用状态气泡,占 composer 整行排在输入框上方,有状态文案时浮现。
 function ToolStatus({ note }: { note: string }) {
@@ -318,24 +320,44 @@ function PioneerApp() {
       }
       setMessages((list) => list.map((m) => (m.id === placeholderID ? fn(m) : m)));
     };
+    // 增量按帧合并:逐 token 来的 delta 先攒进 pending,每帧最多 flush 一次,
+    // 把重渲染频率从「每 token」降到「每帧」,长答案尾部不再掉帧。
+    let pending = "";
+    let rafID: number | null = null;
+    const flush = () => {
+      rafID = null;
+      if (!pending) return;
+      const chunk = pending;
+      pending = "";
+      setToolNote("");
+      patch((m) => ({ ...m, content: m.content + chunk }));
+    };
+    const cancelFlush = () => {
+      if (rafID !== null) {
+        cancelAnimationFrame(rafID);
+        rafID = null;
+      }
+    };
     try {
       const headers: Record<string, string> = {};
       if (luckin?.token) headers[LUCKIN_HEADER] = luckin.token;
       const data = await api.sendMessage(sid, q, headers, {
         onDelta: (text) => {
-          // 正文开始流入,工具阶段结束,收起状态气泡。
-          setToolNote("");
-          patch((m) => ({ ...m, content: m.content + text }));
+          pending += text;
+          if (rafID === null) rafID = requestAnimationFrame(flush);
         },
         // 工具状态不进消息气泡,显示在输入框上方的独立状态气泡。
         onTool: (tool, done) =>
           setToolNote(done ? `${tool} 已返回,正在继续…` : `正在调用 ${tool} …`),
       });
+      // 收尾:取消待处理的帧回调,最终消息直接整体替换占位。
+      cancelFlush();
       setMessages((list) => [
         ...list.filter((m) => m.id !== placeholderID),
         { ...data.message, id: data.message.id || `local-a-${Date.now()}` },
       ]);
     } catch (e) {
+      cancelFlush();
       setMessages((list) => list.filter((m) => m.id !== placeholderID));
       fail(e);
     } finally {

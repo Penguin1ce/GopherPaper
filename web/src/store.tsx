@@ -458,17 +458,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
             list.map((m) => (m.id === placeholderID ? fn(m) : m)),
           );
         };
+        // 增量按帧合并:逐 token 来的 delta 先攒进 pending,每帧最多 flush 一次,
+        // 把重渲染频率从「每 token」降到「每帧」,长答案尾部不再掉帧。
+        let pending = "";
+        let rafID: number | null = null;
+        const flush = () => {
+          rafID = null;
+          if (!pending) return;
+          const chunk = pending;
+          pending = "";
+          setToolNote("");
+          patch((m) => ({ ...m, content: m.content + chunk }));
+        };
+        const cancelFlush = () => {
+          if (rafID !== null) {
+            cancelAnimationFrame(rafID);
+            rafID = null;
+          }
+        };
         try {
           const data = await api.sendMessage(sessionID, query, undefined, {
             onDelta: (text) => {
-              // 正文开始流入,工具阶段结束,收起状态气泡。
-              setToolNote("");
-              patch((m) => ({ ...m, content: m.content + text }));
+              pending += text;
+              if (rafID === null) rafID = requestAnimationFrame(flush);
             },
             // 工具状态不进消息气泡,显示在输入框上方的独立状态气泡。
             onTool: (tool, done) =>
               setToolNote(done ? `${tool} 已返回,正在继续…` : `正在调用 ${tool} …`),
           });
+          // 收尾:取消待处理的帧回调,最终消息直接整体替换占位。
+          cancelFlush();
           if (data?.message) {
             const assistant: Message = { ...data.message };
             // 助教消息的真实 ID 落 Session 后才有,即时应答 ID 为空,
@@ -483,6 +502,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setMessages((list) => list.filter((m) => m.id !== placeholderID));
           }
         } catch (e) {
+          cancelFlush();
           setMessages((list) => list.filter((m) => m.id !== placeholderID));
           throw e;
         }
