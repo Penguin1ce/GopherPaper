@@ -22,6 +22,7 @@ import (
 
 	"GopherPaper/internal/ai/agentrt"
 	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/ai/retrieval"
 	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
@@ -68,13 +69,13 @@ func ClassifyIntent(ctx context.Context, query string) constant.IntentType {
 func ChatRAG(ctx context.Context, query string, intent constant.IntentType, history []trpcmodel.Message) (*core.Reply, error) {
 	owner := tenant.MustStudentID(ctx)
 	paperID := core.PaperIDFrom(ctx)
-	docs, err := RetrieveForPaper(ctx, query, owner, paperID)
+	docs, err := retrieval.RetrieveForPaper(ctx, query, owner, paperID)
 	if err != nil {
 		zlog.Error("RAG 检索失败", "owner", owner, "paper_id", paperID, "err", err)
 		docs = nil
 	}
-	docs = dropImageDocs(docs) // 正文上下文不含图块,图块由下方单独一轮专管
-	imgDocs, err := RetrieveImagesForPaper(ctx, query, owner, paperID)
+	docs = retrieval.DropImageDocs(docs) // 正文上下文不含图块,图块由下方单独一轮专管
+	imgDocs, err := retrieval.RetrieveImagesForPaper(ctx, query, owner, paperID)
 	if err != nil {
 		zlog.Error("图块检索失败", "owner", owner, "paper_id", paperID, "err", err)
 		imgDocs = nil
@@ -84,11 +85,11 @@ func ChatRAG(ctx context.Context, query string, intent constant.IntentType, hist
 	}
 
 	// 正文片段与命中图的说明一起拼进 context,图片本体单独 base64 发给模型;出处含正文与图。
-	ctxDocs := append(append([]*Doc{}, docs...), imgDocs...)
-	sources := References(ctxDocs)
+	ctxDocs := append(append([]*retrieval.Doc{}, docs...), imgDocs...)
+	sources := retrieval.References(ctxDocs)
 	images := loadImages(imgDocs)
 
-	sysPrompt := strings.ReplaceAll(constant.RAGPromptFor(intent), "{context}", FormatDocs(ctxDocs))
+	sysPrompt := strings.ReplaceAll(constant.RAGPromptFor(intent), "{context}", retrieval.FormatDocs(ctxDocs))
 	sysPrompt += figureInstruction(imgDocs)
 	content, err := agentrt.GenerateWithImages(ctx, sysPrompt, history, query, images)
 	if err != nil {
@@ -103,14 +104,14 @@ func ChatRAG(ctx context.Context, query string, intent constant.IntentType, hist
 
 // figureInstruction 在有召回图时追加插图指示:让模型用 figure://文件名 占位把图插进正文对应位置,
 // 文件名只能取自下方清单(即图块图片名),前端再把占位解析成带 token 的取图 URL。
-func figureInstruction(imgDocs []*Doc) string {
+func figureInstruction(imgDocs []*retrieval.Doc) string {
 	if len(imgDocs) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("\n\n下面是与问题相关、已随消息提供给你的图片。若某张图能直观支撑回答,请用 Markdown 图片语法 ![简短说明](figure://文件名) 把它插入到正文对应位置;文件名只能用下面列出的,不要编造,不需要时不必插图:\n")
 	for _, d := range imgDocs {
-		name := filepath.Base(metaString(d, constant.MilvusFieldImgURI))
+		name := filepath.Base(retrieval.MetaString(d, constant.MilvusFieldImgURI))
 		if name == "" {
 			continue
 		}
@@ -130,10 +131,10 @@ func summarize(s string, n int) string {
 }
 
 // loadImages 把命中图块的本地图片读成带图问答的 Image,单张读失败只记日志跳过(其 caption 仍在 context)。
-func loadImages(imgDocs []*Doc) []agentrt.Image {
+func loadImages(imgDocs []*retrieval.Doc) []agentrt.Image {
 	images := make([]agentrt.Image, 0, len(imgDocs))
 	for _, d := range imgDocs {
-		uri := metaString(d, constant.MilvusFieldImgURI)
+		uri := retrieval.MetaString(d, constant.MilvusFieldImgURI)
 		if uri == "" {
 			continue
 		}

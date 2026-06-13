@@ -1,4 +1,4 @@
-package chat
+package retrieval
 
 import (
 	"encoding/json"
@@ -70,7 +70,7 @@ func TestFormatReference(t *testing.T) {
 		PageNo:     3,
 		Scope:      constant.KnowledgeScopePublic,
 	}
-	got := formatReference(ref)
+	got := FormatReference(ref)
 	want := "ch01.pdf，第 3 页，public"
 	if got != want {
 		t.Fatalf("出处格式不符\n want %q\n got  %q", want, got)
@@ -79,7 +79,7 @@ func TestFormatReference(t *testing.T) {
 
 // TestFormatReference_FallbackToID 无任何出处字段时回退到 ID。
 func TestFormatReference_FallbackToID(t *testing.T) {
-	if got := formatReference(Reference{ID: "only-id"}); got != "only-id" {
+	if got := FormatReference(Reference{ID: "only-id"}); got != "only-id" {
 		t.Fatalf("应回退到 ID, got %q", got)
 	}
 }

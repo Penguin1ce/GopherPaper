@@ -1,5 +1,5 @@
 // Package report 是 report 链路:检索 + chat 模型按报告类型生成研读报告。
-// 检索与 model 解耦，复用 chat 检索器，按报告类型选 prompt。
+// 检索与 model 解耦，复用 retrieval 检索层，按报告类型选 prompt。
 package report
 
 import (
@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"GopherPaper/internal/ai/agentrt"
-	"GopherPaper/internal/ai/chat"
 	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/ai/retrieval"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/pkg/constant"
 )
@@ -21,18 +21,18 @@ func Generate(ctx context.Context, in *core.ReportInput) (*core.Reply, error) {
 	if strings.TrimSpace(query) == "" {
 		query = string(in.ReportType)
 	}
-	docs, err := chat.RetrieveForPaper(ctx, query, owner, in.PaperID)
+	docs, err := retrieval.RetrieveForPaper(ctx, query, owner, in.PaperID)
 	if err != nil {
 		docs = nil
 	}
 	// compare 类型再补一轮跨库检索,召回同类文献做对比。
 	if in.ReportType == constant.ReportCompare {
-		if more, err := chat.RetrieveVisible(ctx, query, owner); err == nil {
+		if more, err := retrieval.RetrieveVisible(ctx, query, owner); err == nil {
 			docs = append(docs, more...)
 		}
 	}
 
-	sysPrompt := strings.ReplaceAll(constant.ReportPromptFor(in.ReportType), "{context}", chat.FormatDocs(docs))
+	sysPrompt := strings.ReplaceAll(constant.ReportPromptFor(in.ReportType), "{context}", retrieval.FormatDocs(docs))
 	content, err := agentrt.Generate(ctx, sysPrompt, nil, "请基于以上论文片段生成报告。")
 	if err != nil {
 		return nil, err

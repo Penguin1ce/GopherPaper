@@ -1,4 +1,4 @@
-package chat
+package retrieval
 
 import (
 	"fmt"
@@ -46,17 +46,17 @@ func ReferenceFromDocument(doc *Doc) Reference {
 	}
 	ref := Reference{
 		ID:         doc.ID,
-		Scope:      constant.KnowledgeScope(metaString(doc, constant.MilvusFieldKnowledgeScope)),
-		StudentID:  metaString(doc, constant.MilvusFieldStudentID),
-		DocID:      metaString(doc, constant.MilvusFieldDocID),
-		SourceFile: metaString(doc, constant.MilvusFieldSourceFile),
-		SourceURI:  metaString(doc, constant.MilvusFieldSourceURI),
+		Scope:      constant.KnowledgeScope(MetaString(doc, constant.MilvusFieldKnowledgeScope)),
+		StudentID:  MetaString(doc, constant.MilvusFieldStudentID),
+		DocID:      MetaString(doc, constant.MilvusFieldDocID),
+		SourceFile: MetaString(doc, constant.MilvusFieldSourceFile),
+		SourceURI:  MetaString(doc, constant.MilvusFieldSourceURI),
 		PageNo:     metaInt64(doc, constant.MilvusFieldPageNo),
 		ChunkIndex: metaInt64(doc, constant.MilvusFieldChunkIndex),
-		BlockType:  metaString(doc, constant.MilvusFieldBlockType),
+		BlockType:  MetaString(doc, constant.MilvusFieldBlockType),
 		Score:      doc.Score,
 	}
-	if uri := metaString(doc, constant.MilvusFieldImgURI); uri != "" {
+	if uri := MetaString(doc, constant.MilvusFieldImgURI); uri != "" {
 		ref.ImgName = filepath.Base(uri)
 	}
 	return ref
@@ -71,13 +71,13 @@ func FormatDocs(docs []*Doc) string {
 	var b strings.Builder
 	for i, d := range docs {
 		ref := ReferenceFromDocument(d)
-		fmt.Fprintf(&b, "[%d] 出处: %s\n%s\n", i+1, formatReference(ref), d.Content)
+		fmt.Fprintf(&b, "[%d] 出处: %s\n%s\n", i+1, FormatReference(ref), d.Content)
 	}
 	return b.String()
 }
 
-// formatReference 把出处按文件、页码、片段、scope 拼成可读串,全空回退到 ID。
-func formatReference(ref Reference) string {
+// FormatReference 把出处按文件、页码、片段、scope 拼成可读串,全空回退到 ID。
+func FormatReference(ref Reference) string {
 	parts := []string{}
 	if ref.SourceFile != "" {
 		parts = append(parts, ref.SourceFile)
@@ -100,7 +100,7 @@ func formatReference(ref Reference) string {
 	return strings.Join(parts, "，")
 }
 
-func metaString(doc *Doc, key string) string {
+func MetaString(doc *Doc, key string) string {
 	if doc == nil || doc.MetaData == nil {
 		return ""
 	}

@@ -1,4 +1,7 @@
-package chat
+// Package retrieval 是 RAG 的检索与出处召回层:连 Milvus 召回、两阶段 rerank 精排、
+// 出处格式化。独立成叶子包(只依赖 knowledge,不碰 agentrt/toolkit),
+// 供 ai/chat、ai/report 的生成链路与 toolkit 的论文检索工具共用,避免依赖环。
+package retrieval
 
 import (
 	"context"
@@ -19,7 +22,7 @@ var reranker trpcreranker.Reranker
 // Init 校验 trpc 知识库已就绪(knowledge.Init 须在 main 启动期先调),并注入 rerank 精排器。
 func Init(_ context.Context, rr trpcreranker.Reranker) error {
 	if !knowledge.Ready() {
-		return fmt.Errorf("chat: trpc 知识库未初始化")
+		return fmt.Errorf("retrieval: trpc 知识库未初始化")
 	}
 	reranker = rr
 	return nil
@@ -105,7 +108,7 @@ func RetrieveImagesForPaper(ctx context.Context, query, ownerID, docID string) (
 		// 调试:输出图块召回的文本/分数/是否过阈值,排查带图问答召回情况(需 log.level=debug)。
 		zlog.Debug("图块召回",
 			"query", query,
-			"img_uri", metaString(d, constant.MilvusFieldImgURI),
+			"img_uri", MetaString(d, constant.MilvusFieldImgURI),
 			"score", r.Score,
 			"threshold", constant.ImageScoreThreshold,
 			"kept", kept,
@@ -119,12 +122,12 @@ func RetrieveImagesForPaper(ctx context.Context, query, ownerID, docID string) (
 	return rerankDocs(ctx, query, docs, constant.TopKImages), nil
 }
 
-// dropImageDocs 从召回结果里剔除图块,使正文上下文不含图说明(图块由 RetrieveImagesForPaper 专管),
+// DropImageDocs 从召回结果里剔除图块,使正文上下文不含图说明(图块由 RetrieveImagesForPaper 专管),
 // 避免图块同时出现在两路造成重复。public 库块无 block_type 字段,不受影响。
-func dropImageDocs(docs []*Doc) []*Doc {
+func DropImageDocs(docs []*Doc) []*Doc {
 	out := docs[:0]
 	for _, d := range docs {
-		if metaString(d, constant.MilvusFieldBlockType) == constant.BlockTypeImage {
+		if MetaString(d, constant.MilvusFieldBlockType) == constant.BlockTypeImage {
 			continue
 		}
 		out = append(out, d)

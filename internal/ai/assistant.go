@@ -20,6 +20,7 @@ import (
 	figureflow "GopherPaper/internal/ai/figure"
 	pioneerflow "GopherPaper/internal/ai/pioneer"
 	reportflow "GopherPaper/internal/ai/report"
+	"GopherPaper/internal/ai/retrieval"
 	translateflow "GopherPaper/internal/ai/translate"
 	"GopherPaper/internal/model"
 	"GopherPaper/pkg/constant"
@@ -29,7 +30,7 @@ var ready bool
 
 // Init 只做与用户无关的一次性准备:构建全局检索器,并注入 rerank 精排器(nil 时退化纯向量召回)。
 func Init(ctx context.Context, rr trpcreranker.Reranker) error {
-	if err := chatflow.Init(ctx, rr); err != nil {
+	if err := retrieval.Init(ctx, rr); err != nil {
 		return fmt.Errorf("init rag retriever: %w", err)
 	}
 	ready = true
