@@ -74,6 +74,9 @@ type ToolsConfig struct {
 	BaiduMapAK string `toml:"baidu_map_ak"`
 	// BaiduMapSK 百度 AK 开启 SN 校验时的 Secret Key,留空表示 AK 走 IP 白名单校验。
 	BaiduMapSK string `toml:"baidu_map_sk"`
+	// TavilyAPIKey Tavily 联网搜索密钥,非空时给小云雀挂 web_search 工具,
+	// 让多面手能查实时信息,补足模型知识截止后的空白。
+	TavilyAPIKey string `toml:"tavily_api_key"`
 	// ToolNames 工具显示名映射:原始工具名 → 前端展示名,SSE 推送工具状态时换用,
 	// 未配置的工具回退原始名。
 	ToolNames map[string]string `toml:"tool_names"`

@@ -57,6 +57,17 @@ func Init(c config.ToolsConfig) error {
 		funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newGeocodeTool(c.BaiduMapAK, c.BaiduMapSK))
 		zlog.Info("geocode 地理编码工具已登记", "agent", constant.AgentPioneer, "sn", c.BaiduMapSK != "")
 	}
+	// 系统时间工具给小云雀:无外部依赖,无条件登记。
+	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newNowTool())
+	// 论文知识库工具给小云雀:列论文(走 paperdao)+ 检索(走 retrieval 检索层),
+	// 运行期才触达 DB/Milvus,故无条件登记(此时尚未 Init,但工具只在用户请求时被调用)。
+	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer],
+		newListPapersTool(), newPaperSearchTool())
+	// Tavily 联网搜索给小云雀:补足模型知识截止后的实时信息。
+	if c.TavilyAPIKey != "" {
+		funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newTavilyTool(c.TavilyAPIKey))
+		zlog.Info("tavily 联网搜索工具已登记", "agent", constant.AgentPioneer)
+	}
 	if err := initSkills(c.Skills, ""); err != nil {
 		return err
 	}
