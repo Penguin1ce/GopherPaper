@@ -17,6 +17,7 @@ import (
 )
 
 // Upload 校验并落盘 PDF,建论文记录并投递解析任务,返回论文记录。
+// HTTP 上传与小云雀的 download_paper 工具共用此入口,均落盘建记录并进解析流水线。
 func Upload(ctx context.Context, ownerID, fileName string, data []byte) (*model.Paper, error) {
 	if !strings.EqualFold(filepath.Ext(fileName), ".pdf") {
 		return nil, errs.ErrInvalidFile

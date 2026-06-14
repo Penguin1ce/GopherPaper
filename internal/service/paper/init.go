@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"os"
 
+	"GopherPaper/internal/ai/toolkit"
 	"GopherPaper/internal/mq"
+	"GopherPaper/internal/tenant"
 )
 
 // 解析链路依赖的 MQ 句柄、队列名与文件存储目录，由 Init 注入。
@@ -31,6 +33,15 @@ func Init(ctx context.Context, client *mq.Client, parseQ, reportQ string, report
 	if err := os.MkdirAll(storageDir, 0o755); err != nil {
 		return fmt.Errorf("service/paper: 创建存储目录失败: %w", err)
 	}
+	// 反向注入论文入库实现给 toolkit 的 download_paper 工具:下载在 toolkit,落盘建记录并投解析队列在本包。
+	// 复用 Upload 走完整流水线,破 toolkit↔paperservice 依赖环;owner 从 ctx 的 tenant 取,即论文归属。
+	toolkit.RegisterPaperIngest(func(ctx context.Context, fileName string, data []byte) (toolkit.IngestedPaper, error) {
+		p, err := Upload(ctx, tenant.MustStudentID(ctx), fileName, data)
+		if err != nil {
+			return toolkit.IngestedPaper{}, err
+		}
+		return toolkit.IngestedPaper{PaperID: p.ID, Title: p.Title, Status: string(p.Status)}, nil
+	})
 	if err := startParseWorker(ctx); err != nil {
 		return err
 	}

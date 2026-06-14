@@ -63,6 +63,9 @@ func Init(c config.ToolsConfig) error {
 	// 运行期才触达 DB/Milvus,故无条件登记(此时尚未 Init,但工具只在用户请求时被调用)。
 	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer],
 		newListPapersTool(), newPaperSearchTool())
+	// 论文下载工具给小云雀:把联网找到的论文 PDF 直链下载并导入用户工作台(uploaded,不解析)。
+	// 实现由 paperservice.Init 反向注入,破依赖环;此处无条件登记,运行期才触达下载实现。
+	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newDownloadPaperTool())
 	// Tavily 联网搜索给小云雀:补足模型知识截止后的实时信息。
 	if c.TavilyAPIKey != "" {
 		funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newTavilyTool(c.TavilyAPIKey))
