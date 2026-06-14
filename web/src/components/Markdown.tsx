@@ -136,6 +136,18 @@ export function Markdown({
       );
     },
     img({ src, alt }) {
+      // 微信支付返回的兜底二维码以裸图给出,这里套上与 weixin 深链同款支付卡片,
+      // 两个二维码视觉一致、同样左对齐,不再一个成卡片一个裸图悬在中间。
+      if (richLinks && typeof src === "string" && isQRCodeURL(src)) {
+        return (
+          <span className="rich-pay-card">
+            <span className="rich-link-kicker">扫码支付</span>
+            <span className="rich-pay-qr">
+              <img src={src} alt={alt || "支付二维码"} loading="lazy" />
+            </span>
+          </span>
+        );
+      }
       if (typeof src === "string" && src.startsWith(FIGURE_SCHEME)) {
         const name = decodeURIComponent(src.slice(FIGURE_SCHEME.length));
         const docId = figures?.[name];
