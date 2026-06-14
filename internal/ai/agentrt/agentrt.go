@@ -121,3 +121,9 @@ func runnerForUser(userID string) (runner.Runner, error) {
 	})
 	return ent.rt, ent.err
 }
+
+// EvictUser 清除该用户缓存的 runner,登出时调用。下次访问 runnerForUser 重建。
+// runner 持有的 toolkit 工具集是包级共享引用,不随条目删除关闭;noop session 无持久态。
+func EvictUser(userID string) {
+	runners.Delete(userID)
+}

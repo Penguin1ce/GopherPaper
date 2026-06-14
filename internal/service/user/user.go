@@ -97,6 +97,21 @@ func Login(ctx context.Context, studentID, password string) (string, *model.User
 	return token, &user, nil
 }
 
+// Logout 清除该用户的登录态:按 studentID 查邮箱删除 Redis 中的 token。
+// 用户不存在或 token 已不在视为已登出,不报错。常驻的 agent/模型缓存由 handler 另行清理。
+func Logout(ctx context.Context, studentID string) error {
+	var user model.User
+	err := dao.DB.WithContext(ctx).Select("email").Where("student_id = ?", studentID).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("service: 查询用户失败: %w", err)
+	}
+	_, _ = dao.Del(ctx, tokenKey(user.Email))
+	return nil
+}
+
 // genCode 生成 6 位数字验证码。
 func genCode() string {
 	const digits = "0123456789"

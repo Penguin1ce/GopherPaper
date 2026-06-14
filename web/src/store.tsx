@@ -156,7 +156,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const logout = useCallback(() => {
+  // notifyServer 为真时先通知后端清登录态与常驻缓存(趁 token 未清,fire-and-forget 不阻塞);
+  // 401 被动登出时 token 已失效,传 false 跳过这次注定失败的请求。
+  const logout = useCallback((notifyServer = true) => {
+    if (notifyServer) void api.logout();
     stopPolling();
     disconnectWs();
     persist(null, "");
@@ -168,9 +171,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setReportReady({});
   }, [disconnectWs, persist, stopPolling]);
 
-  // 401 统一登出。
+  // 401 统一登出,被动登出不再回调后端(token 已失效)。
   useEffect(() => {
-    api.setUnauthorizedHandler(() => logout());
+    api.setUnauthorizedHandler(() => logout(false));
   }, [logout]);
 
   // ---- WS 推送进度 ----

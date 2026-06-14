@@ -99,6 +99,21 @@ export function login(studentID: string, password: string) {
   });
 }
 
+// logout best-effort 通知后端清登录态与该用户常驻的 agent/模型缓存。
+// 故意不走 request/readEnvelope:失败静默(本地登出才是关键),也避免 401 触发
+// 全局未授权处理形成「登出又登出」的循环。须在 setToken("") 清 token 前调用,才能带上 Authorization。
+export async function logout(): Promise<void> {
+  if (!token) return;
+  try {
+    await fetch(`${API_BASE}/user/logout`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+    });
+  } catch {
+    // 忽略网络错误,本地登出照常进行
+  }
+}
+
 export function register(payload: RegisterPayload) {
   return request<null>("/user/register", {
     method: "POST",

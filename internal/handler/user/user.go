@@ -8,9 +8,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"GopherPaper/internal/ai"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/response"
 	userservice "GopherPaper/internal/service/user"
+	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/errs"
 )
@@ -79,4 +81,22 @@ func Login(c *gin.Context) {
 		Name:      user.Name,
 		Email:     user.Email,
 	})
+}
+
+// Logout 注销当前登录:清除服务端登录态并释放该用户常驻的 agent runner 与模型缓存。
+// 身份取自 JWT 注入的租户上下文,故须经鉴权中间件。
+// POST /api/v1/user/logout
+func Logout(c *gin.Context) {
+	studentID := tenant.MustStudentID(c.Request.Context())
+	if studentID == "" {
+		response.Fail(c, http.StatusUnauthorized, "未登录")
+		return
+	}
+	if err := userservice.Logout(c.Request.Context(), studentID); err != nil {
+		zlog.Error("登出失败", "student_id", studentID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "登出失败")
+		return
+	}
+	ai.EvictUser(studentID)
+	response.OKMsg(c, "已登出", nil)
 }

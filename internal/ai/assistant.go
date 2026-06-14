@@ -14,6 +14,7 @@ import (
 	trpcreranker "trpc.group/trpc-go/trpc-agent-go/knowledge/reranker"
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
 
+	"GopherPaper/internal/ai/agentrt"
 	chatflow "GopherPaper/internal/ai/chat"
 	"GopherPaper/internal/ai/core"
 	extractflow "GopherPaper/internal/ai/extract"
@@ -22,6 +23,7 @@ import (
 	reportflow "GopherPaper/internal/ai/report"
 	"GopherPaper/internal/ai/retrieval"
 	translateflow "GopherPaper/internal/ai/translate"
+	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/config"
 	"GopherPaper/internal/model"
 	"GopherPaper/pkg/constant"
@@ -49,6 +51,17 @@ func Chat(ctx context.Context, hist []model.Message, query string) (*core.Reply,
 		return nil, fmt.Errorf("ai: 编排器未初始化")
 	}
 	return chatflow.Chat(ctx, toHistory(hist), query)
+}
+
+// EvictUser 释放该用户常驻的 agent runner 与模型缓存,登出时调用。
+// 各缓存按 userID 懒建,清除后下次访问自动重建;不影响 Redis 工作记忆与 MySQL 历史。
+func EvictUser(userID string) {
+	if userID == "" {
+		return
+	}
+	pioneerflow.EvictUser(userID)
+	agentrt.EvictUser(userID)
+	aimodel.EvictUser(userID)
 }
 
 // PioneerChat 是小云雀会话入口:不经意图分类与 RAG,直接走带工具的小云雀 agent。

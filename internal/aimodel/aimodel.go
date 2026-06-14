@@ -137,3 +137,10 @@ func ModelsForUser(userID string) (*ModelSet, error) {
 	})
 	return ent.models, nil
 }
+
+// EvictUser 清除该用户缓存的模型集合,登出时调用释放常驻内存。
+// 模型只是 http client 句柄无需显式关闭,删 map 条目即由 GC 回收;
+// 下次该用户访问 ModelsForUser 会按需重建。
+func EvictUser(userID string) {
+	modelSets.Delete(userID)
+}

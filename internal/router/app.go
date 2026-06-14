@@ -65,6 +65,9 @@ func Init(mode string) *gin.Engine {
 		authed := api.Group("")
 		authed.Use(middleware.JWTAuth())
 		{
+			// 登出：清登录态与该用户常驻的 agent/模型缓存。
+			authed.POST("/user/logout", user.Logout) // 注销当前登录
+
 			// 论文上传与管理。
 			authed.POST("/papers", paperhandler.Upload)            // 上传 PDF，触发异步解析
 			authed.GET("/papers", paperhandler.List)               // 列出我的论文

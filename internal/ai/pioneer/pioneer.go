@@ -134,3 +134,10 @@ func runnerForUser(userID string) (runner.Runner, error) {
 	})
 	return ent.rt, nil
 }
+
+// EvictUser 清除该用户缓存的小云雀 runner,登出时调用释放常驻内存。
+// 工具连接由 toolkit 按 token 独立回收、工作记忆在共享 Redis session(按 sessionID 隔离、
+// 按 TTL 回收),均不随 runner 走;下次访问 runnerForUser 重建。
+func EvictUser(userID string) {
+	runners.Delete(userID)
+}
