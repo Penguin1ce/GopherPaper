@@ -1,27 +1,30 @@
 // Package pioneer 是小云雀 agent:面向用户的多面手助手,与论文问答的 RAG 链路解耦。
 // 按 userID 懒建并缓存一个带工具的 llmagent+runner,挂 pioneer 分组的 mcp 工具与 skill。
 // 凭据型工具(如瑞幸点单)的 token 由请求 ctx 携带,经 toolkit 的钩子按调用注入,服务端不落库。
-// 跨轮记忆走 runner 的真实 inmemory session(按 userID+sessionID 隔离),承载完整 ReAct 轨迹
+// 跨轮记忆走 runner 的真实 Redis session(按 userID+sessionID 隔离),承载完整 ReAct 轨迹
 // (含工具调用与返回),上轮工具结果下轮可复用,减少重复调用;用 MaxHistoryRuns 限上下文增长。
-// 历史展示的 system-of-record 仍是 history 包(只存干净文本),与这份工作记忆分工不同。
+// 工作记忆存 Redis 故跨进程重启不丢,闲置按 TTL 自动回收,不压业务 MySQL;键前缀与展示历史分库。
+// 历史展示的 system-of-record 仍是 history 包(MySQL,只存干净文本),与这份工作记忆分工不同。
 package pioneer
 
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sync"
-	"time"
 
 	"trpc.group/trpc-go/trpc-agent-go/agent"
 	"trpc.group/trpc-go/trpc-agent-go/agent/llmagent"
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
 	"trpc.group/trpc-go/trpc-agent-go/planner/react"
 	"trpc.group/trpc-go/trpc-agent-go/runner"
-	"trpc.group/trpc-go/trpc-agent-go/session/inmemory"
+	trpcsession "trpc.group/trpc-go/trpc-agent-go/session"
+	redissession "trpc.group/trpc-go/trpc-agent-go/session/redis"
 
 	"GopherPaper/internal/ai/core"
 	"GopherPaper/internal/ai/toolkit"
 	"GopherPaper/internal/aimodel"
+	"GopherPaper/internal/config"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/pkg/constant"
 )
@@ -31,10 +34,33 @@ const appName = "gopherpaper"
 // runners 按 userID 缓存 runner,与 aimodel 的模型缓存一一对应。
 var runners sync.Map // userID -> *runnerEntry
 
-// sessMem 是小云雀的会话工作记忆:进程内 inmemory session,按 (userID, sessionID) 隔离,
-// 承载完整 ReAct 轨迹供跨轮复用。配 2 小时空闲 TTL + 自动清理防内存堆积;
-// 进程重启或超时即丢(属优化非正确性,需持久化可后续换 mysql session)。
-var sessMem = inmemory.NewSessionService(inmemory.WithSessionTTL(2 * time.Hour))
+// sessStore 是小云雀的会话工作记忆:Redis session,按 (userID, sessionID) 隔离,
+// 承载完整 ReAct 轨迹供跨轮复用。由 Init 建好,键前缀与展示历史分库、空闲按 TTL 回收;
+// 存 Redis 故跨进程重启不丢(工作记忆属优化,真要清理直接删 Redis 键即可)。
+var sessStore trpcsession.Service
+
+// Init 用 Redis 配置建小云雀工作记忆的 session 服务。须在配置加载后调用,先于首轮 Chat。
+func Init(cfg config.RedisConfig) error {
+	s, err := redissession.NewService(
+		redissession.WithRedisClientURL(redisURL(cfg)),
+		redissession.WithKeyPrefix(constant.PioneerSessionKeyPrefix),
+		redissession.WithSessionTTL(constant.PioneerSessionTTL),
+	)
+	if err != nil {
+		return fmt.Errorf("pioneer: 初始化 Redis session 失败: %w", err)
+	}
+	sessStore = s
+	return nil
+}
+
+// redisURL 把 RedisConfig 拼成 redis://[:password@]addr/db,供 session 服务建独立连接池。
+func redisURL(cfg config.RedisConfig) string {
+	u := url.URL{Scheme: "redis", Host: cfg.Addr, Path: fmt.Sprintf("/%d", cfg.DB)}
+	if cfg.Password != "" {
+		u.User = url.UserPassword("", cfg.Password)
+	}
+	return u.String()
+}
 
 type runnerEntry struct {
 	once sync.Once
@@ -42,9 +68,12 @@ type runnerEntry struct {
 }
 
 // Chat 经该用户的小云雀 agent 跑一轮并聚合成完整文本。
-// 多轮上下文由 runner 的 inmemory session 按 sessionID 自动承载(含工具轨迹),无需手工注入历史。
+// 多轮上下文由 runner 的 Redis session 按 sessionID 自动承载(含工具轨迹),无需手工注入历史。
 // query 为当前输入,用户身份从 ctx 的 tenant 取。
 func Chat(ctx context.Context, sessionID, query string) (string, error) {
+	if sessStore == nil {
+		return "", fmt.Errorf("pioneer: session 未初始化")
+	}
 	userID := tenant.MustStudentID(ctx)
 	rt, err := runnerForUser(userID)
 	if err != nil {
@@ -101,7 +130,7 @@ func runnerForUser(userID string) (runner.Runner, error) {
 			opts = append(opts, llmagent.WithSkills(repo))
 		}
 		ent.rt = runner.NewRunner(appName, llmagent.New(constant.AgentPioneer, opts...),
-			runner.WithSessionService(sessMem))
+			runner.WithSessionService(sessStore))
 	})
 	return ent.rt, nil
 }

@@ -22,16 +22,21 @@ import (
 	reportflow "GopherPaper/internal/ai/report"
 	"GopherPaper/internal/ai/retrieval"
 	translateflow "GopherPaper/internal/ai/translate"
+	"GopherPaper/internal/config"
 	"GopherPaper/internal/model"
 	"GopherPaper/pkg/constant"
 )
 
 var ready bool
 
-// Init 只做与用户无关的一次性准备:构建全局检索器,并注入 rerank 精排器(nil 时退化纯向量召回)。
-func Init(ctx context.Context, rr trpcreranker.Reranker) error {
+// Init 做与用户无关的一次性准备:构建全局检索器并注入 rerank 精排器(nil 时退化纯向量召回),
+// 同时用 Redis 配置建小云雀的会话工作记忆存储。
+func Init(ctx context.Context, rr trpcreranker.Reranker, redisCfg config.RedisConfig) error {
 	if err := retrieval.Init(ctx, rr); err != nil {
 		return fmt.Errorf("init rag retriever: %w", err)
+	}
+	if err := pioneerflow.Init(redisCfg); err != nil {
+		return fmt.Errorf("init pioneer session: %w", err)
 	}
 	ready = true
 	return nil
@@ -48,7 +53,7 @@ func Chat(ctx context.Context, hist []model.Message, query string) (*core.Reply,
 
 // PioneerChat 是小云雀会话入口:不经意图分类与 RAG,直接走带工具的小云雀 agent。
 // ctx 须已注入租户身份;凭据型工具的 token 由请求 ctx 携带,见 credential 包。
-// 多轮上下文由 pioneer 的 inmemory session 按 sessionID 自动承载(含工具轨迹),不再手工注入历史。
+// 多轮上下文由 pioneer 的 Redis session 按 sessionID 自动承载(含工具轨迹),不再手工注入历史。
 func PioneerChat(ctx context.Context, sessionID, query string) (*core.Reply, error) {
 	content, err := pioneerflow.Chat(ctx, sessionID, query)
 	if err != nil {

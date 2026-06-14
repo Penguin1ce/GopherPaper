@@ -98,8 +98,8 @@ func run(cfgPath string) error {
 	parser.Init(cfg.Parser)
 	zlog.Info("PDF 解析器已就绪")
 
-	// 6. 编排器：只准备全局检索器并注入 rerank 精排器,模型由 aimodel 按用户缓存
-	if err := ai.Init(ctx, aimodel.NewReranker(cfg.Rerank)); err != nil {
+	// 6. 编排器：准备全局检索器并注入 rerank 精排器,建小云雀 Redis 工作记忆,模型由 aimodel 按用户缓存
+	if err := ai.Init(ctx, aimodel.NewReranker(cfg.Rerank), cfg.Redis); err != nil {
 		return err
 	}
 	zlog.Info("编排器已就绪")

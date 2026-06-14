@@ -19,6 +19,7 @@ require (
 	trpc.group/trpc-go/trpc-agent-go v1.10.0
 	trpc.group/trpc-go/trpc-agent-go/knowledge/vectorstore/milvus v1.10.0
 	trpc.group/trpc-go/trpc-agent-go/session/mysql v1.10.0
+	trpc.group/trpc-go/trpc-agent-go/session/redis v1.10.0
 	trpc.group/trpc-go/trpc-mcp-go v0.0.10
 )
 
@@ -138,11 +139,15 @@ require (
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.59.0 // indirect
 	go.opentelemetry.io/otel v1.35.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric v0.42.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v0.42.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v0.42.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.29.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.29.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.29.0 // indirect
 	go.opentelemetry.io/otel/metric v1.35.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.35.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.35.0 // indirect
 	go.opentelemetry.io/otel/trace v1.35.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.3.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
@@ -171,4 +176,5 @@ require (
 	trpc.group/trpc-go/trpc-a2a-go v0.2.5 // indirect
 	trpc.group/trpc-go/trpc-agent-go/storage/milvus v0.0.0-20251216100013-73147c973dde // indirect
 	trpc.group/trpc-go/trpc-agent-go/storage/mysql v0.5.0 // indirect
+	trpc.group/trpc-go/trpc-agent-go/storage/redis v0.0.3 // indirect
 )

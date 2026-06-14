@@ -121,6 +121,13 @@ const (
 	PioneerMaxHistoryRuns = 40
 )
 
+// PioneerSessionKeyPrefix 是小云雀工作记忆在 Redis 里的键前缀,与展示历史(MySQL)分库,互不污染。
+const PioneerSessionKeyPrefix = "gp-sess"
+
+// PioneerSessionTTL 是小云雀工作记忆(Redis session)的空闲过期时间。
+// 跨进程重启不丢(存 Redis 非内存),闲置 7 天后自动回收;展示历史另在 MySQL 永久留存。
+const PioneerSessionTTL = 7 * 24 * time.Hour
+
 // 发消息 SSE 事件名。生成过程经 SSE 推送:工具调用与文本增量实时上屏,done 收尾带完整消息。
 const (
 	StreamEventToolCall   = "tool_call"   // agent 发起一次工具调用,载荷带工具名
