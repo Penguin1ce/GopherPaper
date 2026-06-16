@@ -1,3 +1,4 @@
+import { type ReactNode, useRef, useState } from "react";
 import ReactMarkdown, {
   type Components,
   defaultUrlTransform,
@@ -8,6 +9,57 @@ import remarkGfm from "remark-gfm";
 import { figureUrl } from "../api";
 
 const FIGURE_SCHEME = "figure://";
+
+// copyText 优先用异步剪贴板,非安全上下文(非 https/localhost)回退临时 textarea + execCommand。
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // 落到下面的兜底
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+// CodeBlock 给代码块(如 BibTeX 引用)套上右上角复制按钮,文本取 pre 的 textContent,
+// 复制成功短暂回显「已复制」。inline code 不走这里,仍是裸 code 标签。
+function CodeBlock({ children }: { children?: ReactNode }) {
+  const ref = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+  const onCopy = async () => {
+    const ok = await copyText(ref.current?.textContent ?? "");
+    if (!ok) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+  return (
+    <div className="md-codeblock">
+      <button
+        type="button"
+        className={`md-copy ${copied ? "done" : ""}`}
+        onClick={onCopy}
+        aria-label="复制代码"
+      >
+        {copied ? "已复制" : "复制"}
+      </button>
+      <pre ref={ref}>{children}</pre>
+    </div>
+  );
+}
 
 function decodeHTML(value: string): string {
   return value
@@ -95,6 +147,9 @@ export function Markdown({
   richLinks?: boolean;
 }) {
   const components: Components = {
+    pre({ children }) {
+      return <CodeBlock>{children}</CodeBlock>;
+    },
     a({ href, children }) {
       const url = typeof href === "string" ? href : "";
       // weixin 深链桌面浏览器点不开,其内容即微信支付码,本地渲染成二维码供手机扫,

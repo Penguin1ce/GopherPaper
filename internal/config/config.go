@@ -77,6 +77,9 @@ type ToolsConfig struct {
 	// TavilyAPIKey Tavily 联网搜索密钥,非空时给小云雀挂 web_search 工具,
 	// 让多面手能查实时信息,补足模型知识截止后的空白。
 	TavilyAPIKey string `toml:"tavily_api_key"`
+	// SemanticScholarAPIKey Semantic Scholar 检索密钥,可选:留空走公共额度(限流紧),
+	// 配置后 search_semantic_scholar 走专属额度更稳。search_arxiv 无需 key,无条件挂载。
+	SemanticScholarAPIKey string `toml:"semantic_scholar_api_key"`
 	// ToolNames 工具显示名映射:原始工具名 → 前端展示名,SSE 推送工具状态时换用,
 	// 未配置的工具回退原始名。
 	ToolNames map[string]string `toml:"tool_names"`

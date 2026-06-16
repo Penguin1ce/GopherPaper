@@ -1,8 +1,10 @@
-// toolkit download_paper.go 是小云雀的论文下载工具:把用户在 arxiv 上找到的论文 PDF 直链下载并导入工作台,
+// toolkit download_paper.go 是小云雀的论文下载工具:把用户在学术站找到的论文 PDF 直链下载并导入工作台,
 // 随即自动进解析流水线(MinerU 解析→抽取→入库),用户稍后在工作台查看进度与研读。
 //
-// 安全限制:只允许下载 arxiv.org 域名的 PDF(host 白名单 + 重定向逐跳校验),既贴合论文场景,
-// 也把"服务端按任意 URL 发请求"的 SSRF 面收敛到单一可信域。
+// 安全限制:只允许下载白名单内正规学术开放获取站点的 PDF(host 白名单 + 重定向逐跳校验),
+// 既贴合论文场景,也把"服务端按任意 URL 发请求"的 SSRF 面收敛到一批可信域(配合 search_arxiv /
+// search_semantic_scholar 给出的来源)。白名单每加一个域都要重新评估;若日后改为开放任意域,
+// 必须改补「解析 host→IP 拒绝私有/环回/链路本地段」的 IP 层防护。
 //
 // 下载逻辑(HTTP 拉取、域名校验、PDF 校验、文件名推断)属工具职责,全在本包;落盘建记录并投解析队列
 // 要碰 dao/model/mq,由 service/paper 经 RegisterPaperIngest 注入(service/paper→ai→agentrt→toolkit
@@ -26,7 +28,7 @@ import (
 )
 
 // downloadClient 下载论文 PDF 的 HTTP 客户端,留足超时容纳几十 MB 的大文件。
-// 重定向逐跳校验:arxiv 的 /pdf/ 链接常 301 到带 .pdf 的同域地址,需放行同域跳转,
+// 重定向逐跳校验:学术站的 /pdf/ 链接常 301 到带 .pdf 的地址(或开放库的 CDN),
 // 但任何跳出白名单域的重定向一律拒绝,防被 30x 跳到内网绕过对初始 URL 的校验。
 var downloadClient = &http.Client{
 	Timeout: 90 * time.Second,
@@ -41,10 +43,33 @@ var downloadClient = &http.Client{
 	},
 }
 
-// hostAllowed 是论文下载的域名白名单。当前安全限制:只允许下载 arxiv 论文。
+// allowedPaperHosts 是论文下载的域名白名单:一批正规学术开放获取站点的注册域。
+// 命中规则为精确匹配或子域后缀匹配(host==d 或 host 以 "."+d 结尾),
+// 故 proceedings.mlr.press 命中 mlr.press、pdfs.semanticscholar.org 命中 semanticscholar.org。
+// 这些站均以开放获取直链 PDF 为主,贴合论文场景且把 SSRF 面收敛到可信域。
+var allowedPaperHosts = []string{
+	"arxiv.org",          // arXiv 预印本
+	"biorxiv.org",        // bioRxiv 生物学预印本
+	"medrxiv.org",        // medRxiv 医学预印本
+	"openreview.net",     // OpenReview 审稿平台
+	"aclanthology.org",   // ACL Anthology 计算语言学
+	"ncbi.nlm.nih.gov",   // PubMed Central 开放全文
+	"mlr.press",          // PMLR 机器学习会议录
+	"nips.cc",            // NeurIPS 早期会议录(papers.nips.cc)
+	"neurips.cc",         // NeurIPS 会议录(proceedings.neurips.cc)
+	"semanticscholar.org", // Semantic Scholar 开放 PDF 镜像
+	"thecvf.com",         // CVF 开放获取(CVPR/ICCV 等)
+}
+
+// hostAllowed 判断下载域名是否在学术站白名单内:精确或子域后缀匹配。
 func hostAllowed(host string) bool {
 	host = strings.ToLower(host)
-	return host == "arxiv.org" || strings.HasSuffix(host, ".arxiv.org")
+	for _, d := range allowedPaperHosts {
+		if host == d || strings.HasSuffix(host, "."+d) {
+			return true
+		}
+	}
+	return false
 }
 
 // IngestedPaper 是下载导入的结果,字段为基本类型以免 toolkit 反向耦合 service 的 model。
@@ -64,7 +89,7 @@ func RegisterPaperIngest(fn func(ctx context.Context, fileName string, data []by
 }
 
 type downloadPaperInput struct {
-	URL   string `json:"url" jsonschema:"description=arxiv 论文的 PDF 直链(如 https://arxiv.org/pdf/2503.03480),只支持 arxiv.org,不能是摘要页(/abs/)或其他站点,required"`
+	URL   string `json:"url" jsonschema:"description=论文的 PDF 直链(如 https://arxiv.org/pdf/2503.03480),须是 PDF 直链不能是摘要页;支持 arxiv/bioRxiv/medRxiv/OpenReview/ACL Anthology/PMC/PMLR/NeurIPS/CVF/Semantic Scholar 等正规学术开放站,其他站点会被拒绝,required"`
 	Title string `json:"title,omitempty" jsonschema:"description=论文标题,留空则用链接推断的文件名"`
 }
 
@@ -75,7 +100,7 @@ type downloadPaperOutput struct {
 	Message string `json:"message" jsonschema:"description=给用户的提示,告知已导入工作台并开始自动解析"`
 }
 
-// newDownloadPaperTool 构建论文下载工具:本包下载 arxiv PDF,再经注入的 ingestPaper 入库到本人工作台并解析。
+// newDownloadPaperTool 构建论文下载工具:本包下载白名单学术站的 PDF,再经注入的 ingestPaper 入库到本人工作台并解析。
 func newDownloadPaperTool() tool.Tool {
 	fn := func(ctx context.Context, in downloadPaperInput) (downloadPaperOutput, error) {
 		if ingestPaper == nil {
@@ -97,12 +122,12 @@ func newDownloadPaperTool() tool.Tool {
 			PaperID: p.PaperID,
 			Title:   p.Title,
 			Status:  p.Status,
-			Message: "已从 arxiv 下载并导入工作台,正在自动解析,稍后可在工作台查看进度与研读。",
+			Message: "已下载并导入工作台,正在自动解析,稍后可在工作台查看进度与研读。",
 		}, nil
 	}
 	return function.NewFunctionTool(fn,
 		function.WithName("download_paper"),
-		function.WithDescription("把一篇 arxiv 论文的 PDF 下载并导入用户的工作台,导入后自动解析入库。仅支持 arxiv.org 的 PDF 直链(如 https://arxiv.org/pdf/2503.03480),不要传摘要页(/abs/)或其他站点的地址。"),
+		function.WithDescription("把一篇论文的 PDF 下载并导入用户的工作台,导入后自动解析入库。须传 PDF 直链(如 https://arxiv.org/pdf/2503.03480),不要传摘要页;支持 arxiv、bioRxiv、medRxiv、OpenReview、ACL Anthology、PMC、PMLR、NeurIPS、CVF、Semantic Scholar 等正规学术开放站,可直接用 search_arxiv / search_semantic_scholar 返回的 pdf_url。"),
 	)
 }
 
@@ -113,7 +138,7 @@ func fetchPDF(ctx context.Context, rawURL string) ([]byte, error) {
 		return nil, fmt.Errorf("download_paper: 无效的下载链接: %s", rawURL)
 	}
 	if !hostAllowed(u.Hostname()) {
-		return nil, fmt.Errorf("download_paper: 目前只支持下载 arxiv 论文(arxiv.org),收到的域名是 %s", u.Hostname())
+		return nil, fmt.Errorf("download_paper: 域名 %s 不在支持的学术站白名单内,请换 arxiv/bioRxiv/OpenReview/ACL/PMC/PMLR/NeurIPS/CVF/Semantic Scholar 等开放站的 PDF 直链", u.Hostname())
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {

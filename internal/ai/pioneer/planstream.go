@@ -7,6 +7,7 @@ package pioneer
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"trpc.group/trpc-go/trpc-agent-go/event"
@@ -153,29 +154,89 @@ func splitSafe(buf string) (out, hold string) {
 	return buf[:len(buf)-maxHold], buf[len(buf)-maxHold:]
 }
 
-// extractFinalAnswer 从全程模型输出里取最终答案:优先取最后一个 FINAL_ANSWER 标签之后的文本,
-// 退而求其次取 "FINAL ANSWER:" 之后,再兜底剥离所有标签返回剩余。
+const finalAnswerPrefix = "FINAL ANSWER:"
+
+// extractFinalAnswer 从全程模型输出里取最终答案:
+// 1. 优先取最后一个 FINAL_ANSWER 标签之后的文本(模型守协议时最干净)。
+// 2. 退而取 "FINAL ANSWER:" 之后。
+// 3. 模型没打 FINAL_ANSWER 却带了规划/思考/动作标签(doubao 常见):这些段全是过程,
+//    面向用户的结论在最后一个过程标签之后,取它并丢掉残留的「我将…」动作旁白,
+//    避免把内部思考与动作叙述当结论吐进气泡。
+// 4. 全程无标签:整体即答案。
 func extractFinalAnswer(full string) string {
 	full = strings.TrimSpace(full)
 	if full == "" {
 		return ""
 	}
 	if idx := strings.LastIndex(full, react.FinalAnswerTag); idx >= 0 {
-		return strings.TrimSpace(full[idx+len(react.FinalAnswerTag):])
-	}
-	if up := strings.ToUpper(full); strings.Contains(up, "FINAL ANSWER:") {
-		idx := strings.LastIndex(up, "FINAL ANSWER:")
-		return strings.TrimSpace(full[idx+len("FINAL ANSWER:"):])
-	}
-	return strings.TrimSpace(stripTags(full))
-}
-
-// stripTags 剥掉所有已知 planner 标签,仅在模型没打 FINAL_ANSWER 时兜底用。
-func stripTags(s string) string {
-	for _, t := range planTags {
-		if t.tag != "" {
-			s = strings.ReplaceAll(s, t.tag, "")
+		if ans := strings.TrimSpace(full[idx+len(react.FinalAnswerTag):]); ans != "" {
+			return ans
 		}
 	}
-	return s
+	if up := strings.ToUpper(full); strings.Contains(up, finalAnswerPrefix) {
+		idx := strings.LastIndex(up, finalAnswerPrefix)
+		if ans := strings.TrimSpace(full[idx+len(finalAnswerPrefix):]); ans != "" {
+			return ans
+		}
+	}
+	if idx, tag := lastProcessTag(full); idx >= 0 {
+		// 取最后过程标签之后的文本;若尾随一个空的 FINAL_ANSWER 标签先剥掉,再去旁白。
+		rest := strings.TrimSpace(strings.ReplaceAll(full[idx+len(tag):], react.FinalAnswerTag, ""))
+		if rest != "" {
+			return dropLeadingIntent(rest)
+		}
+	}
+	return full
+}
+
+// lastProcessTag 找最后一个过程标签(规划/重规划/动作/思考,不含 FINAL_ANSWER)的下标与字面量,无则 -1。
+func lastProcessTag(s string) (int, string) {
+	best, bestTag := -1, ""
+	for _, t := range planTags {
+		if t.phase == "" {
+			continue // 跳过 FINAL_ANSWER,它在上层单独处理
+		}
+		if i := strings.LastIndex(s, t.tag); i > best {
+			best, bestTag = i, t.tag
+		}
+	}
+	return best, bestTag
+}
+
+// paraSep 按空行切分段落。
+var paraSep = regexp.MustCompile(`\n\s*\n`)
+
+// intentPrefixes 是动作旁白的开头,如「我将询问用户…」这类面向自己的叙述,而非面向用户的结论。
+var intentPrefixes = []string{
+	"我将", "我会", "我先", "我准备", "接下来我", "下面我",
+	"I will ", "I'll ", "I am going to ", "I'm going to ",
+}
+
+// dropLeadingIntent 丢掉答案开头的动作旁白段(如「我将询问用户…」),保留其后真正面向用户的结论。
+// 仅在后面还有段落时才丢,避免把唯一一段误删空;段间以空行分隔。
+func dropLeadingIntent(s string) string {
+	raw := paraSep.Split(s, -1)
+	paras := make([]string, 0, len(raw))
+	for _, p := range raw {
+		if p = strings.TrimSpace(p); p != "" {
+			paras = append(paras, p)
+		}
+	}
+	i := 0
+	for i < len(paras)-1 && hasAnyPrefix(paras[i], intentPrefixes) {
+		i++
+	}
+	if i == 0 {
+		return s
+	}
+	return strings.Join(paras[i:], "\n\n")
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
 }

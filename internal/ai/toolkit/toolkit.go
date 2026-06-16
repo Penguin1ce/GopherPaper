@@ -66,6 +66,11 @@ func Init(c config.ToolsConfig) error {
 	// 论文下载工具给小云雀:把联网找到的论文 PDF 直链下载并导入用户工作台(uploaded,不解析)。
 	// 实现由 paperservice.Init 反向注入,破依赖环;此处无条件登记,运行期才触达下载实现。
 	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newDownloadPaperTool())
+	// arXiv 学术检索给小云雀:无 key,无条件登记;返回的 pdf_url 与 download_paper 闭环。
+	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newArxivTool())
+	// Semantic Scholar 学术检索给小云雀:key 可选,无条件登记(留空走公共额度);带引用数适合找经典文献。
+	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newSemanticScholarTool(c.SemanticScholarAPIKey))
+	zlog.Info("学术检索工具已登记", "agent", constant.AgentPioneer, "s2_key", c.SemanticScholarAPIKey != "")
 	// Tavily 联网搜索给小云雀:补足模型知识截止后的实时信息。
 	if c.TavilyAPIKey != "" {
 		funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newTavilyTool(c.TavilyAPIKey))

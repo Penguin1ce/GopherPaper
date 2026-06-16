@@ -1184,12 +1184,60 @@ label > span {
   font-size: 0.86em;
 }
 
-.md pre {
+/* 代码块外壳:相对定位托住右上角复制按钮,宽度收缩交给内部 pre 横向滚动。 */
+.md-codeblock {
+  position: relative;
+  min-width: 0;
   margin: 0 0 0.8em;
+}
+
+.md-codeblock .md-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  padding: 3px 10px;
+  border: 1px solid rgba(232, 239, 235, 0.22);
+  border-radius: 6px;
+  background: rgba(28, 42, 37, 0.85);
+  color: #cdd8d2;
+  font-size: 12px;
+  line-height: 1.6;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.16s var(--ease), color 0.16s, border-color 0.16s;
+}
+
+.md-codeblock:hover .md-copy,
+.md-codeblock .md-copy:focus-visible {
+  opacity: 1;
+}
+
+/* 触屏无 hover,按钮常显以便点按。 */
+@media (hover: none) {
+  .md-codeblock .md-copy {
+    opacity: 1;
+  }
+}
+
+.md-codeblock .md-copy:hover {
+  color: #fff;
+  border-color: rgba(232, 239, 235, 0.45);
+}
+
+.md-codeblock .md-copy.done {
+  opacity: 1;
+  color: #8fe3b6;
+  border-color: rgba(143, 227, 182, 0.5);
+}
+
+.md pre {
+  margin: 0;
   padding: 12px 14px;
   border-radius: var(--r-sm);
   background: #1c2a25;
-  overflow: auto;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .md pre code {

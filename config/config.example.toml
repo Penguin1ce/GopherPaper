@@ -62,6 +62,7 @@ pioneer_skills = ["skills/pioneer"]    # 小云雀的本地 skill 目录
 baidu_map_ak = ""                      # 百度地图开放平台 AK,非空时给小云雀挂 geocode 地理编码工具
 baidu_map_sk = ""                      # AK 开了 SN 校验时填对应 SK,留空表示 AK 走 IP 白名单校验
 tavily_api_key = ""                    # Tavily 联网搜索密钥,非空时给小云雀挂 web_search 工具,补足实时信息
+semantic_scholar_api_key = ""          # Semantic Scholar 检索密钥,可选;留空走公共额度(限流紧),配置后走专属额度更稳
 
 # 工具显示名映射:原始工具名 → 前端展示名,SSE 推工具调用状态时换用,未配置回退原始名。
 # mcp 工具名带 toolset 名前缀,key 要写完整名,如 my-coffee_queryShopList。
@@ -69,6 +70,9 @@ tavily_api_key = ""                    # Tavily 联网搜索密钥,非空时给�
 geocode = "地点定位"
 list_my_papers = "我的论文列表"
 web_search = "联网搜索"
+search_arxiv = "arXiv 检索"
+search_semantic_scholar = "学术检索"
+download_paper = "下载论文"
 search_my_papers = "检索我的论文"
 my-coffee_queryShopList = "查询瑞幸门店"
 my-coffee_searchProductForMcp = "搜索瑞幸商品"
