@@ -16,11 +16,20 @@ func CreateSession(ctx context.Context, studentID, paperID, title, agentType str
 	if agentType != "" && agentType != constant.AgentPioneer {
 		return nil, errs.ErrAgentTypeInvalid
 	}
-	s := &model.Session{StudentID: studentID, PaperID: paperID, AgentType: agentType, Title: title}
+	s := &model.Session{StudentID: studentID, PaperID: paperID, AgentType: agentType, Title: truncateTitle(title)}
 	if err := chatdao.CreateSession(ctx, s); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+// truncateTitle 按字符截断会话标题到列上限，超长补省略号，防 title 列溢出报 Error 1406。
+func truncateTitle(title string) string {
+	r := []rune(title)
+	if len(r) <= constant.SessionTitleMaxRunes {
+		return title
+	}
+	return string(r[:constant.SessionTitleMaxRunes-1]) + "…"
 }
 
 // ListSessions 列出学生的全部会话。

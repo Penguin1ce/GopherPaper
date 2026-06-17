@@ -116,6 +116,9 @@ const (
 const (
 	MaxContextMessages = 20            // 喂给模型的历史消息最大条数，超出只取最近的
 	SessionAppName     = "gopherpaper" // trpc Session 的 appName，与 userID/sessionID 共同定位会话事件
+	// SessionTitleMaxRunes 是会话标题入库前的字符上限，须与 model.Session.Title 的 gorm size 对齐，
+	// 超长按字符截断加省略号，防论文标题拼「问答」后撑爆 title 列(Error 1406)。
+	SessionTitleMaxRunes = 255
 	// PioneerMaxHistoryRuns 是小云雀工作记忆喂模型的最大消息条数。含工具调用/返回,故比纯文本窗口大,
 	// 既保留近几轮工具轨迹供复用,又防 ReAct 轨迹无限堆积撑爆上下文。
 	PioneerMaxHistoryRuns = 40

@@ -15,7 +15,7 @@ type Session struct {
 	PaperID   string         `gorm:"size:36;index" json:"paper_id,omitempty"`
 	// AgentType 标记会话由哪个 agent 应答,空为默认论文助教,pioneer 为小云雀。
 	AgentType string         `gorm:"size:16;index" json:"agent_type,omitempty"`
-	Title     string         `gorm:"size:128" json:"title"`
+	Title     string         `gorm:"size:255" json:"title"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
