@@ -1,7 +1,7 @@
 # GopherPaper · 科研文献智能解析与知识服务系统
 
-<p align="left">
-  <img src="doc/icon.png" alt="GopherPaper 产品图标" width="360">
+<p align="center">
+  <img src="doc/产品.png" alt="GopherPaper 产品图标" width="460">
 </p>
 
 基于 [trpc-agent-go](https://github.com/trpc-group/trpc-agent-go) 编排的多智能体论文解析与问答系统:论文上传 → MinerU 解析 → 结构化抽取 → 知识库构建 → 多轮问答(带页码出处与召回配图)→ 研读报告生成。
