@@ -59,6 +59,7 @@ var allowedPaperHosts = []string{
 	"neurips.cc",         // NeurIPS 会议录(proceedings.neurips.cc)
 	"semanticscholar.org", // Semantic Scholar 开放 PDF 镜像
 	"thecvf.com",         // CVF 开放获取(CVPR/ICCV 等)
+	"ieeexplore.ieee.org", // IEEE Xplore(多为订阅站,直链 PDF 需机构权限才下得到)
 }
 
 // hostAllowed 判断下载域名是否在学术站白名单内:精确或子域后缀匹配。
@@ -144,6 +145,7 @@ func fetchPDF(ctx context.Context, rawURL string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("download_paper: 构建下载请求失败: %w", err)
 	}
+	setAcademicHeaders(req)
 	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download_paper: 下载论文失败: %w", err)

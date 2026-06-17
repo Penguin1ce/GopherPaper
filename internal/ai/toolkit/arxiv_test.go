@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // arxivSample 是一条精简的 arXiv Atom 响应,覆盖 id/标题/作者/摘要/时间。
@@ -115,6 +116,64 @@ func TestArxivFilters(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("arxivSearch: %v", err)
+	}
+}
+
+// withArxivFastRetry 把退避节奏临时缩到近零并保留次数,避免测试空等真实秒级退避。
+func withArxivFastRetry(t *testing.T) {
+	old := arxivRetryDelays
+	arxivRetryDelays = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
+	t.Cleanup(func() { arxivRetryDelays = old })
+}
+
+// TestArxivRateLimited 验证持续 429 重试耗尽后给出可识别的限流错误。
+func TestArxivRateLimited(t *testing.T) {
+	withArxivFastRetry(t)
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+	old := arxivBaseURL
+	arxivBaseURL = srv.URL
+	defer func() { arxivBaseURL = old }()
+
+	if _, err := arxivSearch(context.Background(), arxivInput{Query: "x"}); err == nil {
+		t.Fatal("429 应报错")
+	}
+	// 首请求 + 3 次重试 = 4 次访问。
+	if hits != len(arxivRetryDelays)+1 {
+		t.Errorf("应重试至耗尽共 %d 次,实际 %d 次", len(arxivRetryDelays)+1, hits)
+	}
+}
+
+// TestArxivRetryThenSucceed 验证先 429 后放行能自动重试拿到结果。
+func TestArxivRetryThenSucceed(t *testing.T) {
+	withArxivFastRetry(t)
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if hits < 2 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte(arxivSample))
+	}))
+	defer srv.Close()
+	old := arxivBaseURL
+	arxivBaseURL = srv.URL
+	defer func() { arxivBaseURL = old }()
+
+	out, err := arxivSearch(context.Background(), arxivInput{Query: "x"})
+	if err != nil {
+		t.Fatalf("重试后应成功: %v", err)
+	}
+	if len(out.Papers) != 1 {
+		t.Fatalf("应解析 1 篇,得到 %d", len(out.Papers))
+	}
+	if hits != 2 {
+		t.Errorf("应在第 2 次成功,实际访问 %d 次", hits)
 	}
 }
 

@@ -135,6 +135,7 @@ func s2Search(ctx context.Context, apiKey string, in s2Input) (s2Output, error) 
 		if err != nil {
 			return s2Output{}, fmt.Errorf("search_semantic_scholar: 构建请求失败: %w", err)
 		}
+		setAcademicHeaders(req)
 		if apiKey != "" {
 			req.Header.Set("x-api-key", apiKey)
 		}
@@ -144,11 +145,12 @@ func s2Search(ctx context.Context, apiKey string, in s2Input) (s2Output, error) 
 		}
 		status := resp.StatusCode
 		if status == http.StatusTooManyRequests && attempt < len(s2RetryDelays) {
+			delay := retryAfterDelay(resp, s2RetryDelays[attempt])
 			resp.Body.Close()
 			select {
 			case <-ctx.Done():
 				return s2Output{}, ctx.Err()
-			case <-time.After(s2RetryDelays[attempt]):
+			case <-time.After(delay):
 			}
 			continue
 		}

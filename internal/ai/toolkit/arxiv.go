@@ -24,6 +24,10 @@ var arxivBaseURL = "https://export.arxiv.org/api/query"
 
 var arxivClient = &http.Client{Timeout: 20 * time.Second}
 
+// arxivRetryDelays 是撞 429 后的退避重试节奏:arXiv 官方建议请求间隔 3 秒,突发会限流,
+// 逐步拉长重试间隔多数能在一两拍内放行;留作变量便于测试覆盖缩短。
+var arxivRetryDelays = []time.Duration{time.Second, 2 * time.Second, 3 * time.Second}
+
 type arxivInput struct {
 	Query      string `json:"query" jsonschema:"description=检索词,只放主题关键词或字段语法(如 ti:transformer au:vaswani);年份/分类不要塞进这里,用下面的专门参数,required"`
 	MaxResults int    `json:"max_results,omitempty" jsonschema:"description=返回条数,默认 5,上限 10"`
@@ -112,22 +116,45 @@ func arxivSearch(ctx context.Context, in arxivInput) (arxivOutput, error) {
 		params.Set("sortBy", "relevance")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, arxivBaseURL+"?"+params.Encode(), nil)
-	if err != nil {
-		return arxivOutput{}, fmt.Errorf("search_arxiv: 构建请求失败: %w", err)
-	}
-	resp, err := arxivClient.Do(req)
-	if err != nil {
-		return arxivOutput{}, fmt.Errorf("search_arxiv: 请求 arXiv 失败: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return arxivOutput{}, fmt.Errorf("search_arxiv: arXiv 返回 %d", resp.StatusCode)
-	}
-
+	reqURL := arxivBaseURL + "?" + params.Encode()
+	// 撞 429 就按 arxivRetryDelays 退避重试,首请求 + len 次重试;非 429 立即返回。
 	var feed arxivFeed
-	if err := xml.NewDecoder(resp.Body).Decode(&feed); err != nil {
-		return arxivOutput{}, fmt.Errorf("search_arxiv: 解析响应失败: %w", err)
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			return arxivOutput{}, fmt.Errorf("search_arxiv: 构建请求失败: %w", err)
+		}
+		setAcademicHeaders(req)
+		resp, err := arxivClient.Do(req)
+		if err != nil {
+			return arxivOutput{}, fmt.Errorf("search_arxiv: 请求 arXiv 失败: %w", err)
+		}
+		status := resp.StatusCode
+		if status == http.StatusTooManyRequests && attempt < len(arxivRetryDelays) {
+			delay := retryAfterDelay(resp, arxivRetryDelays[attempt])
+			resp.Body.Close()
+			select {
+			case <-ctx.Done():
+				return arxivOutput{}, ctx.Err()
+			case <-time.After(delay):
+			}
+			continue
+		}
+		if status == http.StatusTooManyRequests {
+			resp.Body.Close()
+			return arxivOutput{}, fmt.Errorf("search_arxiv: arXiv 持续限流(429),已重试 %d 次仍失败,稍后再试或改用 search_semantic_scholar", len(arxivRetryDelays))
+		}
+		if status != http.StatusOK {
+			resp.Body.Close()
+			return arxivOutput{}, fmt.Errorf("search_arxiv: arXiv 返回 %d", status)
+		}
+		feed = arxivFeed{}
+		err = xml.NewDecoder(resp.Body).Decode(&feed)
+		resp.Body.Close()
+		if err != nil {
+			return arxivOutput{}, fmt.Errorf("search_arxiv: 解析响应失败: %w", err)
+		}
+		break
 	}
 
 	papers := make([]arxivPaper, 0, len(feed.Entries))
