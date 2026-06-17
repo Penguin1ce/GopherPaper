@@ -45,6 +45,10 @@
   --shadow-3: 0 22px 60px rgba(20, 41, 34, 0.14);
 
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 240ms;
 }
 
 * {
@@ -76,9 +80,20 @@ button {
   cursor: pointer;
 }
 
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(25, 113, 97, 0.42);
+  outline-offset: 2px;
 }
 
 .eyebrow {
@@ -196,8 +211,11 @@ button:disabled {
   color: var(--text-soft);
   font-size: 13px;
   font-weight: 650;
-  transition: background 0.16s var(--ease), border-color 0.16s var(--ease),
-    color 0.16s var(--ease), transform 0.12s var(--ease);
+  transform-origin: center;
+  transition: background var(--motion-base) var(--ease-out),
+    border-color var(--motion-base) var(--ease-out),
+    color var(--motion-base) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .reader-back {
@@ -205,18 +223,10 @@ button:disabled {
   padding: 0 13px;
 }
 
-.reader-back:hover,
-.reader-clear:hover {
-  background: var(--surface-soft);
-  border-color: var(--line-strong);
-  color: var(--text);
-}
-
 .reader-back:active,
 .reader-clear:active,
-.reader-card-remove:active,
-.reader-sel-btn:active {
-  transform: translateY(1px);
+.reader-card-remove:active {
+  transform: scale(0.96);
 }
 
 .reader-body {
@@ -408,11 +418,6 @@ button:disabled {
   line-height: 1;
 }
 
-.reader-card-remove:hover {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
 .reader-card-src,
 .reader-card-dst {
   overflow-wrap: anywhere;
@@ -457,11 +462,14 @@ button:disabled {
   font-size: 13px;
   font-weight: 650;
   transform: translate(-50%, -130%);
-  transition: background 0.16s var(--ease), transform 0.12s var(--ease);
+  transform-origin: center;
+  transition: background var(--motion-base) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-base) var(--ease-out);
 }
 
-.reader-sel-btn:hover {
-  background: var(--accent-dark);
+.reader-sel-btn:active {
+  transform: translate(-50%, -130%) scale(0.97);
 }
 
 @media (max-width: 980px) {
@@ -513,6 +521,24 @@ button:disabled {
 
   .reader-doc {
     padding: 14px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .reader-back:hover,
+  .reader-clear:hover {
+    background: var(--surface-soft);
+    border-color: var(--line-strong);
+    color: var(--text);
+  }
+
+  .reader-card-remove:hover {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  .reader-sel-btn:hover {
+    background: var(--accent-dark);
   }
 }
 

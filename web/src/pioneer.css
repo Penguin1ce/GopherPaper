@@ -47,6 +47,11 @@
   --shadow-3: 0 22px 60px rgba(20, 41, 34, 0.14);
 
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 240ms;
+  --focus-ring: 0 0 0 3px rgba(25, 113, 97, 0.16);
 }
 
 * {
@@ -80,6 +85,11 @@ textarea {
 
 button {
   cursor: pointer;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
 }
 
 button:disabled,
@@ -126,7 +136,13 @@ textarea {
 input:focus,
 textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(25, 113, 97, 0.15);
+  box-shadow: var(--focus-ring);
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(25, 113, 97, 0.42);
+  outline-offset: 2px;
 }
 
 .pioneer-btn {
@@ -143,17 +159,16 @@ textarea:focus {
   font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.01em;
-  transition: background 0.16s var(--ease), border-color 0.16s var(--ease),
-    transform 0.12s var(--ease), box-shadow 0.16s var(--ease);
-}
-
-.pioneer-btn:hover:not(:disabled) {
-  border-color: var(--line-strong);
-  background: var(--surface-soft);
+  transform-origin: center;
+  transition: background var(--motion-base) var(--ease-out),
+    border-color var(--motion-base) var(--ease-out),
+    color var(--motion-base) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-base) var(--ease-out);
 }
 
 .pioneer-btn:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: scale(0.97);
 }
 
 .pioneer-btn.primary {
@@ -166,23 +181,12 @@ textarea:focus {
     0 6px 16px rgba(15, 87, 74, 0.22);
 }
 
-.pioneer-btn.primary:hover:not(:disabled) {
-  background: var(--accent-dark);
-  color: #fff;
-}
-
 .pioneer-btn.secondary {
   background: var(--surface);
   border-color: var(--line);
 }
 
 .pioneer-btn.danger {
-  color: var(--danger);
-}
-
-.pioneer-btn.danger:hover:not(:disabled) {
-  background: var(--danger-soft);
-  border-color: var(--danger-soft);
   color: var(--danger);
 }
 
@@ -326,12 +330,14 @@ textarea:focus {
   font-size: 16px;
   line-height: 1;
   text-decoration: none;
-  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+  transform-origin: center;
+  transition: background var(--motion-base) var(--ease-out),
+    border-color var(--motion-base) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
-.brand-back:hover {
-  background: var(--surface-soft);
-  border-color: var(--line-strong);
+.brand-back:active {
+  transform: scale(0.94);
 }
 
 .pioneer-sessions {
@@ -363,11 +369,8 @@ textarea:focus {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  transition: border-color 0.16s var(--ease), background 0.16s var(--ease);
-}
-
-.session-item:hover {
-  border-color: var(--line-strong);
+  transition: border-color var(--motion-base) var(--ease-out),
+    background var(--motion-base) var(--ease-out);
 }
 
 .session-item.active {
@@ -409,12 +412,13 @@ textarea:focus {
   color: var(--faint);
   font-size: 17px;
   line-height: 1;
-  transition: all 0.14s var(--ease);
+  transition: background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
-.session-del:hover {
-  background: var(--danger-soft);
-  color: var(--danger);
+.session-del:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 .luckin-card {
@@ -598,13 +602,15 @@ textarea:focus {
   background: var(--surface);
   color: var(--text-soft);
   font-size: 13px;
-  transition: all 0.16s var(--ease);
+  transform-origin: center;
+  transition: background var(--motion-base) var(--ease-out),
+    border-color var(--motion-base) var(--ease-out),
+    color var(--motion-base) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
-.hint:hover {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-  color: var(--accent-dark);
+.hint:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .p-message {
@@ -1068,10 +1074,6 @@ textarea:focus {
   text-underline-offset: 2px;
 }
 
-.md a:hover {
-  color: var(--accent);
-}
-
 .md strong {
   font-weight: 650;
 }
@@ -1109,10 +1111,12 @@ textarea:focus {
   line-height: 1.6;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.16s var(--ease), color 0.16s, border-color 0.16s;
+  transition: opacity var(--motion-base) var(--ease-out),
+    color var(--motion-base) var(--ease-out),
+    border-color var(--motion-base) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
-.md-codeblock:hover .md-copy,
 .md-codeblock .md-copy:focus-visible {
   opacity: 1;
 }
@@ -1124,9 +1128,8 @@ textarea:focus {
   }
 }
 
-.md-codeblock .md-copy:hover {
-  color: #fff;
-  border-color: rgba(232, 239, 235, 0.45);
+.md-codeblock .md-copy:active {
+  transform: scale(0.97);
 }
 
 .md-codeblock .md-copy.done {
@@ -1217,16 +1220,13 @@ textarea:focus {
   text-decoration: none;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset,
     0 6px 16px rgba(15, 87, 74, 0.18);
-  transition: background 0.16s var(--ease), transform 0.12s var(--ease);
-}
-
-.md .rich-pay-button:hover {
-  background: var(--accent-dark);
-  color: #fff;
+  transform-origin: center;
+  transition: background var(--motion-base) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .md .rich-pay-button:active {
-  transform: translateY(1px);
+  transform: scale(0.97);
 }
 
 /* 微信支付卡片,本地生成二维码 + 移动端拉起链接 */
@@ -1277,12 +1277,15 @@ textarea:focus {
   font-family: var(--font-sans);
   text-decoration: none;
   box-shadow: var(--shadow-1);
+  transform-origin: center;
+  transition: border-color var(--motion-base) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-base) var(--ease-out);
 }
 
-.md .rich-qr-card:hover,
-.md .rich-image-card:hover {
-  border-color: var(--accent);
-  color: var(--text);
+.md .rich-qr-card:active,
+.md .rich-image-card:active {
+  transform: scale(0.985);
 }
 
 .md .rich-link-kicker {
@@ -1317,6 +1320,69 @@ textarea:focus {
   color: var(--muted);
   font-size: 12px;
   font-weight: 650;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pioneer-btn:hover:not(:disabled) {
+    border-color: var(--line-strong);
+    background: var(--surface-soft);
+  }
+
+  .pioneer-btn.primary:hover:not(:disabled) {
+    background: var(--accent-dark);
+    color: #fff;
+  }
+
+  .pioneer-btn.danger:hover:not(:disabled) {
+    background: var(--danger-soft);
+    border-color: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  .brand-back:hover {
+    background: var(--surface-soft);
+    border-color: var(--line-strong);
+  }
+
+  .session-item:hover {
+    border-color: var(--line-strong);
+  }
+
+  .session-del:hover {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  .hint:hover {
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+    color: var(--accent-dark);
+  }
+
+  .md a:hover {
+    color: var(--accent);
+  }
+
+  .md-codeblock:hover .md-copy {
+    opacity: 1;
+  }
+
+  .md-codeblock .md-copy:hover {
+    color: #fff;
+    border-color: rgba(232, 239, 235, 0.45);
+  }
+
+  .md .rich-pay-button:hover {
+    background: var(--accent-dark);
+    color: #fff;
+  }
+
+  .md .rich-qr-card:hover,
+  .md .rich-image-card:hover {
+    border-color: var(--accent);
+    color: var(--text);
+    box-shadow: var(--shadow-2);
+  }
 }
 
 /* 中等宽度:收窄三栏,计划栏仍在右侧但更紧凑 */
