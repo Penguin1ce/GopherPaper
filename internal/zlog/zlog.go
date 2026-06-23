@@ -1,11 +1,11 @@
 // Package zlog 是对标准库 slog 的极薄封装，提供全局 logger。
+// 写文件时按日期切分(每天一个文件)，单文件超额滚动到序号后缀，并按数量清理历史文件。
 package zlog
 
 import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -14,19 +14,16 @@ var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 // out 是当前日志输出目标，供 Writer 交给 gin 等共用同一去向。
 var out io.Writer = os.Stdout
 
-// Init 初始化全局 logger，file 为空则输出到 stdout，否则写入该文件（自动建目录、追加写）。
-func Init(level, file string) error {
+// Init 初始化全局 logger。file 为空则输出到 stdout，否则按日期切分写入该路径所在目录:
+// 每天一个文件(prefix-2006-01-02.log)，单文件超过 maxSizeMB 同日滚动到 .N 后缀，
+// 历史文件数超过 maxBackups 时按修改时间清理最旧的。总磁盘占用约束在约 maxBackups×maxSizeMB。
+func Init(level, file string, maxSizeMB, maxBackups int) error {
 	if file != "" {
-		if dir := filepath.Dir(file); dir != "" && dir != "." {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return err
-			}
-		}
-		f, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		w, err := newRotateWriter(file, maxSizeMB, maxBackups)
 		if err != nil {
 			return err
 		}
-		out = f
+		out = w
 	}
 	logger = slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: parseLevel(level)}))
 	slog.SetDefault(logger)

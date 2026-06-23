@@ -45,7 +45,7 @@ func run(cfgPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := zlog.Init(cfg.Log.Level, cfg.Log.File); err != nil {
+	if err := zlog.Init(cfg.Log.Level, cfg.Log.File, cfg.Log.MaxSizeMB, cfg.Log.MaxBackups); err != nil {
 		return err
 	}
 

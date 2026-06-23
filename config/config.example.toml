@@ -7,7 +7,9 @@ mode = "debug" # debug / release
 
 [log]
 level = "info"         # debug / info / warn / error
-file = "log/app.log"   # 留空输出到 stdout；填路径则写文件（自动建目录、追加写）
+file = "log/app.log"   # 留空输出到 stdout；填路径则按日期切分写入该目录（自动建目录、追加写），实际文件名形如 log/app-2006-01-02.log
+max_size_mb = 100      # 单个日志文件大小上限（MB），超额同日滚动到 app-2006-01-02.1.log，缺省 100
+max_backups = 30       # 保留的历史日志文件数，超出按修改时间清理最旧的，缺省 30；总占用约束在 max_backups×max_size_mb
 
 # ── Host 意图路由小模型：火山方舟直连，与下游解耦可单独换小模型 ──
 [models.intent]

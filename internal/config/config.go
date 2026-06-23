@@ -43,8 +43,10 @@ type ServerConfig struct {
 }
 
 type LogConfig struct {
-	Level string `toml:"level"` // debug / info / warn / error
-	File  string `toml:"file"`  // 空则输出到 stdout
+	Level      string `toml:"level"`       // debug / info / warn / error
+	File       string `toml:"file"`        // 空则输出到 stdout；填路径则按日期切分写入该目录
+	MaxSizeMB  int    `toml:"max_size_mb"` // 单个日志文件大小上限（MB），超额同日滚动到序号后缀
+	MaxBackups int    `toml:"max_backups"` // 保留的历史日志文件数，超出按修改时间清理最旧的
 }
 
 // ModelsConfig 聚合了系统中用到的多个对话模型。
@@ -199,6 +201,12 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Log.Level == "" {
 		c.Log.Level = "info"
+	}
+	if c.Log.MaxSizeMB <= 0 {
+		c.Log.MaxSizeMB = 100
+	}
+	if c.Log.MaxBackups <= 0 {
+		c.Log.MaxBackups = 30
 	}
 	if c.JWT.ExpireHours == 0 {
 		c.JWT.ExpireHours = 24
