@@ -36,6 +36,15 @@ func Report(ctx context.Context, ownerID, paperID string, t constant.ReportType)
 	return nil, errs.ErrReportGenerating
 }
 
+// ReadyReports 列出某篇论文已生成的研读报告类型,仅限本人,供前端进入时回填就绪态。
+// 只读,不触发任何生成。
+func ReadyReports(ctx context.Context, ownerID, paperID string) ([]constant.ReportType, error) {
+	if _, err := owned(ctx, ownerID, paperID); err != nil {
+		return nil, err
+	}
+	return paperdao.ListReportTypes(ctx, paperID)
+}
+
 // ensureReport 保证某类报告存在并返回:命中缓存即复用,否则抢 Redis 锁后生成并落库。
 // 抢锁失败说明已有 worker 或并发点击在生成,返回 ErrReportGenerating,只允许一次写入。
 // 调用前须保证 ctx 已注入 owner 租户,供 ai.GenerateReport 选到该用户模型。
