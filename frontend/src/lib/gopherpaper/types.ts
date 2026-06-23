@@ -131,7 +131,6 @@ export type ReportType =
   | "method"
   | "result"
   | "innovation"
-  | "compare"
   | "future";
 
 export interface RegisterPayload {

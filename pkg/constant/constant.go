@@ -43,14 +43,13 @@ const (
 	ReportMethod     ReportType = "method"     // 研究方法总结
 	ReportResult     ReportType = "result"     // 实验结果总结
 	ReportInnovation ReportType = "innovation" // 创新点与不足分析
-	ReportCompare    ReportType = "compare"    // 同类文献对比
 	ReportFuture     ReportType = "future"     // 后续研究建议
 )
 
 // Valid 判断报告类型是否合法。
 func (t ReportType) Valid() bool {
 	switch t {
-	case ReportQuickRead, ReportMethod, ReportResult, ReportInnovation, ReportCompare, ReportFuture:
+	case ReportQuickRead, ReportMethod, ReportResult, ReportInnovation, ReportFuture:
 		return true
 	default:
 		return false
@@ -59,7 +58,7 @@ func (t ReportType) Valid() bool {
 
 // AllReportTypes 返回全部研读报告类型，供解析完成后批量预生成扇出。
 func AllReportTypes() []ReportType {
-	return []ReportType{ReportQuickRead, ReportMethod, ReportResult, ReportInnovation, ReportCompare, ReportFuture}
+	return []ReportType{ReportQuickRead, ReportMethod, ReportResult, ReportInnovation, ReportFuture}
 }
 
 // PaperStatus 是论文从上传到就绪的解析状态机。
@@ -291,11 +290,6 @@ const (
 论文片段：
 {context}`
 
-	ReportComparePrompt = `你是文献对比助手。基于下面的目标论文与同类文献片段，做对比说明：研究问题、方法、数据、结论的异同与各自优劣。用 Markdown 表格或分点输出。
-
-论文片段：
-{context}`
-
 	ReportFuturePrompt = `你是科研方向建议助手。基于下面的论文片段，给出后续研究建议：可延伸的问题、可改进的方法、潜在应用方向。用 Markdown 分点输出。
 
 论文片段：
@@ -311,8 +305,6 @@ func ReportPromptFor(t ReportType) string {
 		return ReportResultPrompt
 	case ReportInnovation:
 		return ReportInnovationPrompt
-	case ReportCompare:
-		return ReportComparePrompt
 	case ReportFuture:
 		return ReportFuturePrompt
 	default:

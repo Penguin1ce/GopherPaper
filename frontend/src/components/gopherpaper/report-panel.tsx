@@ -8,7 +8,6 @@ import {
   type LucideIcon,
   Lightbulb,
   Loader2,
-  Scale,
   Workflow,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -27,7 +26,6 @@ const REPORTS: { type: ReportType; label: string; desc: string; icon: LucideIcon
   { type: "method", label: "研究方法", desc: "方法流程与设计", icon: Workflow },
   { type: "result", label: "实验结果", desc: "指标、现象与结论", icon: BarChart3 },
   { type: "innovation", label: "创新与不足", desc: "贡献点与局限", icon: Lightbulb },
-  { type: "compare", label: "同类对比", desc: "与相关工作的异同", icon: Scale },
   { type: "future", label: "未来建议", desc: "可延展研究方向", icon: Compass },
 ];
 

@@ -53,7 +53,7 @@ type ChatResponse struct {
 
 // ReportRequest 是研读报告请求体，由前端按钮带报告类型触发。
 type ReportRequest struct {
-	Type string `json:"type" binding:"required"` // quickread/method/result/innovation/compare/future
+	Type string `json:"type" binding:"required"` // quickread/method/result/innovation/future
 }
 
 // TranslateRequest 是精读页逐段翻译请求体，前端把选中的英文原文送来。

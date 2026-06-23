@@ -25,12 +25,6 @@ func Generate(ctx context.Context, in *core.ReportInput) (*core.Reply, error) {
 	if err != nil {
 		docs = nil
 	}
-	// compare 类型再补一轮跨库检索,召回同类文献做对比。
-	if in.ReportType == constant.ReportCompare {
-		if more, err := retrieval.RetrieveVisible(ctx, query, owner); err == nil {
-			docs = append(docs, more...)
-		}
-	}
 
 	sysPrompt := strings.ReplaceAll(constant.ReportPromptFor(in.ReportType), "{context}", retrieval.FormatDocs(docs))
 	content, err := agentrt.Generate(ctx, sysPrompt, nil, "请基于以上论文片段生成报告。")

@@ -140,7 +140,7 @@ type PaperSection struct {
 func (PaperSection) TableName() string { return "paper_sections" }
 
 // PaperReport 是某篇论文某类研读报告的持久化结果，按 (paper_id, report_type) 唯一。
-// 同类报告生成一次后落库，再次点击同一按钮命中缓存直接复用,不重复调模型。
+// 同一类型报告生成一次后落库，再次点击同一按钮命中缓存直接复用,不重复调模型。
 type PaperReport struct {
 	ID         uint64              `gorm:"primaryKey" json:"-"`
 	PaperID    string              `gorm:"size:36;not null;uniqueIndex:idx_paper_report_type" json:"paper_id"`
