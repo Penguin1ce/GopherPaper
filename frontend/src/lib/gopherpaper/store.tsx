@@ -215,6 +215,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...prev,
         [paperID]: { ...prev[paperID], [reportType]: true },
       }));
+      setPapers((list) =>
+        list.map((p) =>
+          p.id === paperID && !isSettled(p.status)
+            ? { ...p, status: "ready" }
+            : p,
+        ),
+      );
     },
     [],
   );
@@ -276,17 +283,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const updates = await Promise.all(
           pending.map((p) => api.paperStatus(p.id)),
         );
-        setPapers((list) =>
-          list.map((p) => {
-            const u = updates.find((x) => x.id === p.id);
-            return u ? { ...p, ...u } : p;
-          }),
-        );
+        // 经 applyStatusEvent 落地,实时通道(SSE)瞬断时轮询也能补「可提问」通知。
+        for (const u of updates) {
+          applyStatusEvent(u.id, u.status, u.fail_reason);
+        }
       } catch {
-        stopPolling();
+        // 临时网络/代理错误不应永久停止兜底轮询,下一轮继续查。
       }
     }, 4200);
-  }, [stopPolling]);
+  }, [stopPolling, applyStatusEvent]);
 
   // 列表变化时按需开/停轮询。
   useEffect(() => {

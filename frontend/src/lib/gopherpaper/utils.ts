@@ -1,6 +1,6 @@
 import type { Paper, PaperStatus, Session } from "./types";
 
-export const READY_STATUSES: PaperStatus[] = ["ready", "indexed", "extracted"];
+export const READY_STATUSES: PaperStatus[] = ["ready"];
 
 export function isSettled(status: PaperStatus): boolean {
   return READY_STATUSES.includes(status) || status === "failed";
