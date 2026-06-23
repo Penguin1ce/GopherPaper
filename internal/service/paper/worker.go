@@ -71,7 +71,8 @@ func runPipeline(ctx context.Context, task parseTask) {
 		// 图描述失败不阻断,图块退化为只用 caption 召回。
 		zlog.Error("图片描述生成失败,降级只用 caption", "paper_id", task.PaperID, "err", err)
 	}
-	chunks := buildChunks(task, doc)
+	chunks := buildMetaChunks(task, structured)
+	chunks = append(chunks, buildChunks(task, doc)...)
 	chunks = append(chunks, buildFigureChunks(task, doc)...)
 	if _, err := knowledge.UpsertChunks(ctx, chunks); err != nil {
 		fail(ctx, task, "写入向量库失败", err)
@@ -122,6 +123,73 @@ func toSections(paperID string, doc *core.ParsedDoc) []model.PaperSection {
 			PageNo:   sec.PageNo,
 			OrderIdx: sec.OrderIdx,
 		})
+	}
+	return out
+}
+
+// buildMetaChunks 把详细页结构化字段写入知识库,补足正文中不一定逐字出现的关键词与摘要。
+func buildMetaChunks(task parseTask, s *core.PaperStructured) []knowledge.Chunk {
+	content := structuredContent(s)
+	if content == "" {
+		return nil
+	}
+	return []knowledge.Chunk{{
+		Content:    content,
+		Scope:      constant.KnowledgeScopePrivate,
+		OwnerID:    task.OwnerID,
+		DocID:      task.PaperID,
+		SourceFile: task.FileName,
+		ChunkIndex: -1,
+		Metadata: map[string]any{
+			constant.MilvusFieldBlockType: constant.BlockTypeText,
+			"section":                     "论文结构化详情",
+			"source":                      "paper_meta",
+		},
+	}}
+}
+
+func structuredContent(s *core.PaperStructured) string {
+	if s == nil {
+		return ""
+	}
+	var b strings.Builder
+	writeText := func(label, value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		fmt.Fprintf(&b, "%s: %s\n", label, value)
+	}
+	writeList := func(label string, values []string) {
+		values = compactStrings(values)
+		if len(values) == 0 {
+			return
+		}
+		fmt.Fprintf(&b, "%s: %s\n", label, strings.Join(values, "；"))
+	}
+
+	writeText("标题", s.Title)
+	writeList("作者", s.Authors)
+	writeList("单位", s.Affiliations)
+	writeText("摘要", s.Abstract)
+	writeList("关键词", s.Keywords)
+	writeList("研究问题", s.ResearchQuestions)
+	writeText("方法", s.Methods)
+	writeText("实验", s.Experiments)
+	writeText("结果", s.Results)
+	writeList("创新点", s.Innovations)
+	writeList("局限性", s.Limitations)
+	writeList("未来工作", s.FutureWork)
+	return strings.TrimSpace(b.String())
+}
+
+func compactStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			out = append(out, v)
+		}
 	}
 	return out
 }
