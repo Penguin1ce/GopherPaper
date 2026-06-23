@@ -105,7 +105,7 @@ func UpsertChunks(ctx context.Context, chunks []Chunk) ([]string, error) {
 	return ids, nil
 }
 
-// Search 按多租户可见性向量检索:科研基础库全员可见,私有库仅本人可见;docID 非空时限定到该论文。
+// Search 按多租户可见性混合检索:科研基础库全员可见,私有库仅本人可见;docID 非空时限定到该论文。
 func Search(ctx context.Context, query, ownerID, docID string, topK int) (*vectorstore.SearchResult, error) {
 	return searchWithFilter(ctx, query, scopeCondition(ownerID, docID), topK)
 }
@@ -120,19 +120,21 @@ func SearchImages(ctx context.Context, query, ownerID, docID string, topK int) (
 	return searchWithFilter(ctx, query, filter, topK)
 }
 
-// searchWithFilter 用给定过滤条件做一次向量检索,统一处理向量化与空结果。
+// searchWithFilter 用给定过滤条件做一次混合检索,统一处理向量化与空结果。
 func searchWithFilter(ctx context.Context, query string, filter *searchfilter.UniversalFilterCondition, topK int) (*vectorstore.SearchResult, error) {
 	if trpcStore == nil || trpcEmb == nil {
 		return nil, fmt.Errorf("knowledge: trpc store 未初始化")
 	}
+	query = strings.TrimSpace(query)
 	vec, err := trpcEmb.GetEmbedding(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: trpc 查询向量化失败: %w", err)
 	}
 	res, err := trpcStore.Search(ctx, &vectorstore.SearchQuery{
+		Query:      query,
 		Vector:     vec,
 		Limit:      topK,
-		SearchMode: vectorstore.SearchModeVector,
+		SearchMode: vectorstore.SearchModeHybrid,
 		Filter:     &vectorstore.SearchFilter{FilterCondition: filter},
 	})
 	if err != nil {
