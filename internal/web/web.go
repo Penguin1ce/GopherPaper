@@ -60,7 +60,7 @@ func missingHTML(title string) []byte {
     <title>%s</title>
   </head>
   <body>
-    <div id="root">前端构建产物不存在,请先在 web 目录执行 npm run build,再重新编译 Go 服务。</div>
+    <div id="root">前端构建产物不存在,请先在 frontend 目录执行 npm run build,再重新编译 Go 服务。</div>
   </body>
 </html>`, title)
 }
