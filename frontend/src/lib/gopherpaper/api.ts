@@ -16,14 +16,6 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api/v1";
 
-function wsBase(): string {
-  const configured = process.env.NEXT_PUBLIC_WS_BASE;
-  if (configured) return configured.replace(/\/$/, "");
-  if (typeof location === "undefined") return "";
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}`;
-}
-
 export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -324,22 +316,23 @@ export interface ReportReadyEvent {
 
 type WsMessage = PaperStatusEvent | ReportReadyEvent;
 
-export function openStatusSocket(
+// openStatusStream 用 SSE 订阅解析进度与报告就绪。
+// 走相对路径经 Next 的 /api/v1 流式代理同源转发(WS 无法过 fetch 代理,故用 SSE);
+// EventSource 自带断线重连,调用方只需在登出时 close。
+export function openStatusStream(
   jwt: string,
   onEvent: (e: PaperStatusEvent) => void,
   onReport?: (e: ReportReadyEvent) => void,
-): WebSocket | null {
-  if (!jwt || typeof WebSocket === "undefined") return null;
-  const base = wsBase();
-  if (!base) return null;
-  const url = `${base}${API_BASE}/ws?token=${encodeURIComponent(jwt)}`;
-  let socket: WebSocket;
+): EventSource | null {
+  if (!jwt || typeof EventSource === "undefined") return null;
+  const url = `${API_BASE}/events?token=${encodeURIComponent(jwt)}`;
+  let source: EventSource;
   try {
-    socket = new WebSocket(url);
+    source = new EventSource(url);
   } catch {
     return null;
   }
-  socket.addEventListener("message", (event) => {
+  source.addEventListener("message", (event) => {
     let msg: WsMessage;
     try {
       msg = JSON.parse(event.data) as WsMessage;
@@ -350,5 +343,5 @@ export function openStatusSocket(
     if (msg.type === "paper_status") onEvent(msg as PaperStatusEvent);
     else if (msg.type === "report_ready") onReport?.(msg as ReportReadyEvent);
   });
-  return socket;
+  return source;
 }

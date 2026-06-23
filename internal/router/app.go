@@ -36,8 +36,8 @@ func Init(mode string) *gin.Engine {
 		api.POST("/user/register", user.Register)  // 校验验证码并注册
 		api.POST("/user/login", user.Login)        // 登录签发 JWT
 
-		// WebSocket 订阅解析进度，握手鉴权走 query token。
-		api.GET("/ws", wshandler.Subscribe)
+		// SSE 订阅解析进度，鉴权走 query token(EventSource 带不了头)。
+		api.GET("/events", wshandler.Subscribe)
 
 		// 取召回引用的图片，img 标签带不了头，鉴权走 query token。
 		api.GET("/papers/:id/figures/:name", paperhandler.Figure)

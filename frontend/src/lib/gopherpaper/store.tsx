@@ -99,8 +99,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     Record<string, Partial<Record<ReportType, boolean>>>
   >({});
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const wsRetryRef = useRef<number | null>(null);
+  const wsRef = useRef<EventSource | null>(null);
   const pollRef = useRef<number | null>(null);
   const toastSeq = useRef(0);
   const hydratedRef = useRef(false);
@@ -144,15 +143,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const disconnectWs = useCallback(() => {
-    if (wsRetryRef.current) {
-      window.clearTimeout(wsRetryRef.current);
-      wsRetryRef.current = null;
-    }
     if (wsRef.current) {
-      const socket = wsRef.current;
+      const source = wsRef.current;
       wsRef.current = null;
       try {
-        socket.close();
+        source.close();
       } catch {
         // 忽略关闭异常
       }
@@ -249,19 +244,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const connectWs = useCallback(
     (jwt: string) => {
       disconnectWs();
-      const socket = api.openStatusSocket(
+      const source = api.openStatusStream(
         jwt,
         (e) => applyStatusEvent(e.paper_id, e.status, e.detail),
         (e) => applyReportReady(e.paper_id, e.report_type),
       );
-      if (!socket) return;
-      wsRef.current = socket;
-      socket.addEventListener("close", () => {
-        if (wsRef.current !== socket) return;
-        wsRef.current = null;
-        if (jwt) wsRetryRef.current = window.setTimeout(() => connectWs(jwt), 3000);
-      });
-      socket.addEventListener("error", () => socket.close());
+      if (!source) return;
+      wsRef.current = source;
+      // EventSource 自带断线重连,无需手动重试;登出时经 disconnectWs 关闭即止。
     },
     [applyStatusEvent, applyReportReady, disconnectWs],
   );
