@@ -224,14 +224,24 @@ func RAGPromptFor(t IntentType) string {
 	}
 }
 
-// ExtractPrompt 是结构化抽取 agent 的 system prompt，要求输出固定 schema 的 JSON。
+// ExtractPrompt 是 map 阶段单窗口抽取的 system prompt，要求只抽取本段有依据的字段。
+// 输入可能是论文全文或其中一段，故强调本段没涉及的字段一律留空、绝不编造。
 // 注意：除题目/作者/单位/关键词外，其余字段一律要求用自己的话概括、禁止照抄原文。
 // 部分模型(经网关路由到 Claude 等)在逐字照抄长段输入时会被截断，导致 JSON 不闭合。
-const ExtractPrompt = `你是科研论文结构化信息抽取器。阅读下面的论文正文，抽取关键信息并只输出一个 JSON，禁止任何多余文字。
-要求：题目/作者/单位/关键词按原文填写；abstract、research_questions、methods、experiments、results、innovations、limitations、future_work 一律用中文简要概括，禁止大段照抄原文。字段缺失时填空字符串或空数组，不要编造。格式：
+const ExtractPrompt = `你是科研论文结构化信息抽取器。下面给出的可能是一篇论文的全文或其中一段，请只抽取材料中有明确依据的字段，并只输出一个 JSON，禁止任何多余文字。
+要求：题目/作者/单位/关键词按原文填写；abstract、research_questions、methods、experiments、results、innovations、limitations、future_work 一律用中文简要概括，禁止大段照抄原文；本段没有涉及的字段一律留空字符串或空数组，绝不编造、绝不臆测。格式：
 {"title":"题目","authors":["作者"],"affiliations":["单位"],"abstract":"用一两句话概括摘要","keywords":["关键词"],"research_questions":["研究问题"],"methods":"概括方法流程","experiments":"概括实验设置与数据","results":"概括主要结果","innovations":["创新点"],"limitations":["局限性"],"future_work":["未来工作"]}
 
-论文正文：
+论文材料：
+{context}`
+
+// ExtractReducePrompt 是 reduce 阶段的 system prompt，把同一篇论文多个片段各自抽取的
+// JSON 合并成最终唯一一份：列表并集去重、文本字段综合凝练，禁止照抄堆砌与编造。
+const ExtractReducePrompt = `你是科研论文信息合并器。下面是同一篇论文若干片段各自抽取出的 JSON 列表，请合并成最终唯一一个 JSON，只输出 JSON，禁止任何多余文字。
+要求：列表字段(authors、affiliations、keywords、research_questions、innovations、limitations、future_work)取并集并去重，保持原有顺序、去掉重复与空项；文本字段中 title 取最完整准确的一个，abstract、methods、experiments、results 综合各片段用中文凝练成连贯通顺的一段，禁止简单照抄堆砌、禁止编造未出现的内容；所有片段都缺的字段留空字符串或空数组。格式：
+{"title":"题目","authors":["作者"],"affiliations":["单位"],"abstract":"用一两句话概括摘要","keywords":["关键词"],"research_questions":["研究问题"],"methods":"概括方法流程","experiments":"概括实验设置与数据","results":"概括主要结果","innovations":["创新点"],"limitations":["局限性"],"future_work":["未来工作"]}
+
+各片段抽取结果：
 {context}`
 
 // FigureDescribePrompt 是解析期给论文插图/表格生成内容描述的指令,描述入库供按图内容召回。
