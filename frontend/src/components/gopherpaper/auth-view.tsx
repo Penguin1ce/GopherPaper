@@ -3,8 +3,11 @@
 import {
   ArrowLeft,
   ArrowRight,
+  BookOpenText,
+  Compass,
   FileText,
   Layers,
+  Library,
   Loader2,
   MessageSquareText,
   Quote,
@@ -37,30 +40,11 @@ const PIPELINE = [
 ] as const;
 
 const STEP_INTERVAL = 1500;
-const STEP_HOLD = 2400;
 
-const AGENT_NODES = [
-  {
-    name: "小云鸮",
-    output: "证据链.md",
-    icon: Quote,
-    className: "left-[18.25rem] top-5",
-    delay: 0,
-  },
-  {
-    name: "小云雀",
-    output: "工具结果.json",
-    icon: MessageSquareText,
-    className: "left-[19.15rem] top-32",
-    delay: 0.35,
-  },
-  {
-    name: "小囊鼠",
-    output: "研读报告.pdf",
-    icon: FileText,
-    className: "left-[18.65rem] top-[15rem]",
-    delay: 0.7,
-  },
+const AGENTS = [
+  { name: "小文鸮", role: "论文精读", icon: BookOpenText },
+  { name: "小云雀", role: "先锋工具", icon: Compass },
+  { name: "小囊鼠", role: "知识管理", icon: Library },
 ] as const;
 
 /* 磁吸 — 元素向光标轻微靠拢,motion value 走在 render 之外 */
@@ -250,8 +234,8 @@ function BrandMark({ onClick }: { onClick?: () => void }) {
       onClick={onClick}
       className="group flex items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
     >
-      <span className="flex size-9 items-center justify-center rounded-lg bg-primary font-serif text-lg font-semibold text-primary-foreground shadow-sm transition-transform group-active:scale-95">
-        G
+      <span className="flex size-9 items-center justify-center overflow-hidden rounded-lg bg-primary/10 shadow-sm transition-transform group-hover:scale-105 group-active:scale-95">
+        <img src="/mascot-gopher.png" alt="GopherPaper" className="size-full object-cover" />
       </span>
       <span className="font-serif text-lg font-semibold tracking-tight">GopherPaper</span>
     </button>
@@ -290,11 +274,11 @@ function TopNav({ mode, setMode }: { mode: AuthMode; setMode: (m: AuthMode) => v
 
 function Landing({ onStart, onRegister }: { onStart: () => void; onRegister: () => void }) {
   const reduce = useReducedMotion();
-  const fade = (delay: number) =>
+  const rise = (delay: number) =>
     reduce
       ? { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { duration: 0.3, delay } }
       : {
-          initial: { opacity: 0, y: 18 },
+          initial: { opacity: 0, y: 16 },
           animate: { opacity: 1, y: 0 },
           transition: { duration: 0.7, ease: EASE_OUT, delay },
         };
@@ -304,40 +288,77 @@ function Landing({ onStart, onRegister }: { onStart: () => void; onRegister: () 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, transition: { duration: 0.25 } }}
-      className="grid flex-1 items-center gap-10 py-8 lg:grid-cols-[0.92fr_1.08fr] lg:gap-16 lg:py-4"
+      className="grid flex-1 items-center gap-12 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:py-6"
     >
+      {/* 左 — 主张与行动 */}
       <div className="max-w-xl">
-        <h1 className="sr-only">GopherPaper 科研文献智能解析与问答</h1>
-        <motion.div {...fade(0.05)}>
-          <ResearchSignal />
+        <motion.div {...rise(0.05)}>
+          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
+            <span className="relative flex size-1.5">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/60" />
+              <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
+            </span>
+            三只智能体在线 · 科研文献智能解析
+          </span>
         </motion.div>
 
-        <motion.div {...fade(0.22)} className="mt-8 flex flex-wrap items-center gap-3">
+        <motion.h1
+          {...rise(0.12)}
+          className="mt-5 text-balance font-serif text-[3rem] font-semibold leading-[1.05] tracking-[-0.03em] text-foreground sm:text-[3.6rem]"
+        >
+          <span className="text-primary">耄耋</span>读论文
+        </motion.h1>
+
+        <motion.p
+          {...rise(0.2)}
+          className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground"
+        >
+          上传 PDF，自动解析结构、抽取要点、构建知识库。再由三只智能体陪你精读、检索与沉淀——每个回答都标注来源段落与页码。
+        </motion.p>
+
+        <motion.div {...rise(0.28)} className="mt-8 flex flex-wrap items-center gap-3">
           <Magnetic strength={0.35}>
             <Button size="lg" onClick={onStart} className="group h-12 gap-2 px-6 text-base">
               登录进入工作台
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
             </Button>
           </Magnetic>
-          <Button
-            size="lg"
-            variant="outline"
-            onClick={onRegister}
-            className="h-12 px-6 text-base"
-          >
+          <Button size="lg" variant="outline" onClick={onRegister} className="h-12 px-6 text-base">
             创建账号
           </Button>
         </motion.div>
+
+        {/* 三只智能体 — 干净一行,无浮标堆叠 */}
+        <motion.div {...rise(0.36)} className="mt-10 border-t border-border/70 pt-6">
+          <ul className="grid gap-x-6 gap-y-4 sm:grid-cols-3">
+            {AGENTS.map((a) => {
+              const Icon = a.icon;
+              return (
+                <li key={a.name} className="flex items-start gap-2.5">
+                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Icon className="size-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold tracking-tight text-foreground">
+                      {a.name}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">{a.role}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </motion.div>
       </div>
 
-      {/* 产品演示 console */}
+      {/* 右 — 产品演示 console + 吉祥物 */}
       <motion.div
         initial={reduce ? { opacity: 0 } : { opacity: 0, y: 26, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={
           reduce
             ? { duration: 0.4, delay: 0.1 }
-            : { type: "spring", stiffness: 90, damping: 18, mass: 0.8, delay: 0.18 }
+            : { type: "spring", stiffness: 90, damping: 18, mass: 0.8, delay: 0.22 }
         }
         className="lg:justify-self-end"
       >
@@ -346,177 +367,6 @@ function Landing({ onStart, onRegister }: { onStart: () => void; onRegister: () 
         </Tilt>
       </motion.div>
     </motion.section>
-  );
-}
-
-function ResearchSignal() {
-  const reduce = useReducedMotion();
-  const drift = reduce
-    ? {}
-    : {
-        y: [0, -8, 0],
-        rotate: [-0.6, 0.8, -0.6],
-      };
-  const pulse = reduce
-    ? {}
-    : {
-        scale: [1, 1.08, 1],
-        opacity: [0.72, 1, 0.72],
-      };
-
-  return (
-    <div aria-hidden className="relative h-[23rem] w-full max-w-[36rem]">
-      <motion.div
-        className="absolute left-2 top-14 h-56 w-40 rounded-xl border border-border bg-card p-4 shadow-panel"
-        animate={drift}
-        transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
-      >
-        <div className="mb-4 flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <FileText className="size-4" />
-          </span>
-          <span className="h-2 w-16 rounded-full bg-foreground/15" />
-        </div>
-        <div className="space-y-2.5">
-          <span className="block h-2 w-full rounded-full bg-muted" />
-          <span className="block h-2 w-[88%] rounded-full bg-muted" />
-          <span className="block h-2 w-[72%] rounded-full bg-muted" />
-          <span className="block h-2 w-[94%] rounded-full bg-muted" />
-          <span className="block h-2 w-[64%] rounded-full bg-muted" />
-        </div>
-        <div className="mt-5 grid grid-cols-3 gap-2">
-          <span className="h-9 rounded-md bg-sienna/10" />
-          <span className="h-9 rounded-md bg-primary/10" />
-          <span className="h-9 rounded-md bg-muted" />
-        </div>
-        {!reduce && (
-          <motion.span
-            className="absolute inset-x-4 top-5 h-px bg-primary/80 shadow-[0_0_20px_oklch(0.48_0.1_200/0.42)]"
-            animate={{ y: [0, 176, 0], opacity: [0, 1, 0] }}
-            transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
-          />
-        )}
-      </motion.div>
-
-      <motion.div
-        className="absolute left-28 top-4 h-44 w-32 rounded-xl border border-border/80 bg-card/75 p-3 shadow-sm backdrop-blur"
-        animate={reduce ? {} : { y: [0, 7, 0], rotate: [1.5, -0.4, 1.5] }}
-        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-      >
-        <span className="mb-3 block h-16 rounded-lg bg-muted" />
-        <span className="mb-2 block h-1.5 w-full rounded-full bg-foreground/15" />
-        <span className="mb-2 block h-1.5 w-[78%] rounded-full bg-foreground/15" />
-        <span className="block h-1.5 w-[52%] rounded-full bg-foreground/15" />
-      </motion.div>
-
-      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 540 352" fill="none">
-        {[
-          "M154 164 C218 92 262 102 312 146",
-          "M178 214 C230 228 270 218 326 190",
-          "M306 164 C370 112 410 112 482 132",
-          "M310 188 C372 230 418 240 492 218",
-        ].map((d, i) => (
-          <motion.path
-            key={d}
-            d={d}
-            stroke="currentColor"
-            className="text-primary/35"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeDasharray="4 8"
-            animate={reduce ? {} : { strokeDashoffset: [0, -48] }}
-            transition={{ duration: 2.8 + i * 0.35, repeat: Infinity, ease: "linear" }}
-          />
-        ))}
-      </svg>
-
-      <motion.div
-        className="absolute left-[39%] top-[43%] flex size-28 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-2xl border border-primary/30 bg-card shadow-[0_22px_60px_-24px_oklch(0.21_0.02_230/0.35)]"
-        animate={pulse}
-        transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
-      >
-        <span className="absolute size-40 rounded-full border border-primary/10" />
-        <span className="absolute size-28 rounded-full border border-primary/15" />
-        <span className="flex size-14 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-          <Layers className="size-6" />
-        </span>
-      </motion.div>
-
-      {AGENT_NODES.map((agent, i) => {
-        const Icon = agent.icon;
-        return (
-          <motion.div
-            key={agent.name}
-            className={`absolute z-10 w-[8.75rem] rounded-xl border border-border bg-card/90 px-3 py-2.5 shadow-sm backdrop-blur ${agent.className}`}
-            animate={reduce ? {} : { x: [0, i % 2 === 0 ? 6 : -5, 0], y: [0, i === 1 ? 5 : -4, 0] }}
-            transition={{ duration: 5 + i, repeat: Infinity, ease: "easeInOut", delay: agent.delay }}
-          >
-            <motion.span
-              className="absolute -left-10 -top-4 flex items-center gap-1 rounded-full border border-primary/20 bg-background/90 px-2 py-1 text-[10px] font-medium text-primary shadow-sm"
-              animate={reduce ? {} : { rotate: [0, 2, 0], y: [0, -3, 0] }}
-              transition={{ duration: 4.2 + i * 0.3, repeat: Infinity, ease: "easeInOut", delay: agent.delay }}
-            >
-              Tools
-              <span className="size-1 rounded-full bg-primary/60" />
-            </motion.span>
-            <motion.span
-              className="absolute left-[4.35rem] -top-4 rounded-full border border-sienna/20 bg-background/90 px-2 py-1 text-[10px] font-medium text-sienna shadow-sm"
-              animate={reduce ? {} : { x: [0, 3, 0] }}
-              transition={{ duration: 4.8 + i * 0.2, repeat: Infinity, ease: "easeInOut", delay: agent.delay + 0.2 }}
-            >
-              Skills
-            </motion.span>
-            <motion.span
-              className="absolute -bottom-4 left-10 rounded-full border border-border bg-background/95 px-2 py-1 text-[10px] font-medium text-muted-foreground shadow-sm"
-              animate={reduce ? {} : { y: [0, 3, 0] }}
-              transition={{ duration: 5 + i * 0.25, repeat: Infinity, ease: "easeInOut", delay: agent.delay + 0.4 }}
-            >
-              MCP
-            </motion.span>
-            <motion.span
-              className="absolute left-[8.2rem] top-1 grid w-[6.75rem] gap-1 rounded-lg border border-primary/15 bg-background/95 px-2 py-1.5 text-[10px] shadow-sm backdrop-blur"
-              animate={reduce ? {} : { x: [0, 4, 0], opacity: [0.86, 1, 0.86] }}
-              transition={{ duration: 4.6 + i * 0.25, repeat: Infinity, ease: "easeInOut", delay: agent.delay + 0.5 }}
-            >
-              <span className="absolute -left-3 top-1/2 h-px w-3 bg-primary/30" />
-              <span className="font-medium text-muted-foreground">产出</span>
-              <span className="truncate font-mono text-[11px] text-foreground">
-                {agent.output}
-              </span>
-            </motion.span>
-
-            <span className="flex items-center gap-2">
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sienna/10 text-sienna">
-                <Icon className="size-3.5" />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold tracking-tight text-foreground">
-                  {agent.name}
-                </span>
-                <span className="mt-1 block h-1.5 w-16 rounded-full bg-foreground/12" />
-              </span>
-            </span>
-          </motion.div>
-        );
-      })}
-
-      {!reduce && (
-        <>
-          {[0, 1, 2, 3, 4].map((i) => (
-            <motion.span
-              key={i}
-              className="absolute size-1.5 rounded-full bg-primary"
-              style={{
-                left: `${34 + i * 9}%`,
-                top: `${35 + (i % 3) * 12}%`,
-              }}
-              animate={{ opacity: [0, 1, 0], scale: [0.5, 1.3, 0.5] }}
-              transition={{ duration: 2.4, repeat: Infinity, delay: i * 0.36, ease: "easeInOut" }}
-            />
-          ))}
-        </>
-      )}
-    </div>
   );
 }
 
@@ -531,19 +381,16 @@ function Console() {
       setStep(PIPELINE.length - 1);
       return;
     }
-    const last = PIPELINE.length - 1;
-    const delay = step >= last ? STEP_HOLD : STEP_INTERVAL;
-    const t = window.setTimeout(
-      () => setStep((s) => (s >= last ? 0 : s + 1)),
-      delay,
-    );
+    // 跑到问答即停,不循环
+    if (step >= PIPELINE.length - 1) return;
+    const t = window.setTimeout(() => setStep((s) => s + 1), STEP_INTERVAL);
     return () => window.clearTimeout(t);
   }, [step, reduce]);
 
   const answered = step >= PIPELINE.length - 1;
 
   return (
-    <div className="relative w-full max-w-[26rem]">
+    <div className="relative w-[26rem] max-w-full">
       {/* 背后浮起的薄卡,做层次 */}
       <div
         aria-hidden
@@ -568,7 +415,7 @@ function Console() {
                     }`}
                   >
                     <Icon className="size-3" />
-                    {active && !reduce && (
+                    {active && !reduce && !answered && (
                       <motion.span
                         className="absolute inset-0 rounded-full ring-2 ring-primary/40"
                         animate={{ scale: [1, 1.5], opacity: [0.6, 0] }}
@@ -630,40 +477,49 @@ function Console() {
             </span>
           </div>
 
-          <AnimatePresence mode="wait">
-            {answered ? (
-              <motion.div
-                key="reply"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, ease: EASE_OUT }}
-                className="max-w-[88%] space-y-2 rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-2.5"
-              >
-                <p className="text-[12.5px] leading-relaxed text-foreground">
-                  采用双盲随机对照设计，受试者被分配至 L-茶氨酸或安慰剂组，以注意力与压力相关指标作为主要结局。
-                </p>
-                <div className="flex items-center gap-1.5 border-t border-border/70 pt-2 text-[11px] text-sienna">
-                  <Quote className="size-3" />
-                  来源 §3.2 方法 · 第 7 页
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="typing"
-                exit={{ opacity: 0 }}
-                className="flex w-fit items-center gap-1 rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-2.5"
-              >
-                {[0, 1, 2].map((i) => (
-                  <motion.span
-                    key={i}
-                    className="size-1.5 rounded-full bg-muted-foreground/60"
-                    animate={reduce ? {} : { opacity: [0.3, 1, 0.3] }}
-                    transition={{ duration: 1, repeat: Infinity, delay: i * 0.18 }}
-                  />
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {/* Gopher 作答 — 头像常驻,只换气泡内容,布局恒定 */}
+          <div className="flex items-start gap-2">
+            <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-card shadow-sm">
+              <img src="/mascot-gopher.png" alt="" className="size-full object-cover" />
+            </span>
+            {/* 预留最高状态(回答气泡)的高度,避免打字态/回答态切换时整卡忽大忽小 */}
+            <div className="min-h-[6.25rem] flex-1">
+              <AnimatePresence mode="wait">
+              {answered ? (
+                <motion.div
+                  key="reply"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, ease: EASE_OUT }}
+                  className="max-w-[88%] space-y-2 rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-2.5"
+                >
+                  <p className="text-[12.5px] leading-relaxed text-foreground">
+                    采用双盲随机对照设计，受试者被分配至 L-茶氨酸或安慰剂组，以注意力与压力相关指标作为主要结局。
+                  </p>
+                  <div className="flex items-center gap-1.5 border-t border-border/70 pt-2 text-[11px] text-sienna">
+                    <Quote className="size-3" />
+                    来源 §3.2 方法 · 第 7 页
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="typing"
+                  exit={{ opacity: 0 }}
+                  className="flex w-fit items-center gap-1 rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-2.5"
+                >
+                  {[0, 1, 2].map((i) => (
+                    <motion.span
+                      key={i}
+                      className="size-1.5 rounded-full bg-muted-foreground/60"
+                      animate={reduce ? {} : { opacity: [0.3, 1, 0.3] }}
+                      transition={{ duration: 1, repeat: Infinity, delay: i * 0.18 }}
+                    />
+                  ))}
+                </motion.div>
+              )}
+              </AnimatePresence>
+            </div>
+          </div>
         </div>
       </div>
     </div>
