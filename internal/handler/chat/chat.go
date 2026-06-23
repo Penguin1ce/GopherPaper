@@ -119,7 +119,7 @@ func SendMessage(c *gin.Context) {
 	ctx = core.WithStream(ctx, func(ev core.StreamEvent) {
 		switch ev.Kind {
 		case constant.StreamEventDelta:
-			emit(ev.Kind, dto.StreamDeltaPayload{Content: ev.Delta})
+			emit(ev.Kind, dto.StreamDeltaPayload{Content: ev.Delta, Reset: ev.Reset})
 		case constant.StreamEventPlan:
 			emit(ev.Kind, dto.StreamPlanPayload{Phase: ev.Phase, Content: ev.Delta})
 		default:

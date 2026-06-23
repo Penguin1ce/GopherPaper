@@ -28,9 +28,10 @@ type (
 	StreamToolPayload struct {
 		Tool string `json:"tool"`
 	}
-	// StreamDeltaPayload 是 delta 事件载荷。
+	// StreamDeltaPayload 是 delta 事件载荷,reset 为 true 时前端先清空已流式正文再追加。
 	StreamDeltaPayload struct {
 		Content string `json:"content"`
+		Reset   bool   `json:"reset,omitempty"`
 	}
 	// StreamPlanPayload 是 plan 事件载荷,phase 标规划阶段,content 为该阶段文本增量。
 	StreamPlanPayload struct {

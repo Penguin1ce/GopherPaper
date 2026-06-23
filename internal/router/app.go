@@ -2,8 +2,6 @@
 package router
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"GopherPaper/internal/handler"
@@ -13,7 +11,6 @@ import (
 	wshandler "GopherPaper/internal/handler/ws"
 	"GopherPaper/internal/middleware"
 	"GopherPaper/internal/response"
-	"GopherPaper/internal/web"
 	"GopherPaper/internal/zlog"
 )
 
@@ -23,19 +20,6 @@ func Init(mode string) *gin.Engine {
 	r := gin.New()
 	// 访问日志与 panic 恢复都写到 zlog 的输出目标，和应用日志同去向（文件或 stdout）。
 	r.Use(gin.LoggerWithWriter(zlog.Writer()), gin.RecoveryWithWriter(zlog.Writer()))
-
-	r.GET("/", func(c *gin.Context) {
-		c.Data(http.StatusOK, "text/html; charset=utf-8", web.IndexHTML())
-	})
-	// 精读页是独立入口,新标签页打开,前端按 ?id 渲染 PDF。
-	r.GET("/reader", func(c *gin.Context) {
-		c.Data(http.StatusOK, "text/html; charset=utf-8", web.ReaderHTML())
-	})
-	// 小云雀页是独立入口,多面手 agent 会话。
-	r.GET("/pioneer", func(c *gin.Context) {
-		c.Data(http.StatusOK, "text/html; charset=utf-8", web.PioneerHTML())
-	})
-	r.StaticFS("/static", http.FS(web.Static()))
 
 	// 健康检查，无需鉴权。
 	r.GET("/healthz", func(c *gin.Context) {
@@ -69,11 +53,12 @@ func Init(mode string) *gin.Engine {
 			authed.POST("/user/logout", user.Logout) // 注销当前登录
 
 			// 论文上传与管理。
-			authed.POST("/papers", paperhandler.Upload)            // 上传 PDF，触发异步解析
-			authed.GET("/papers", paperhandler.List)               // 列出我的论文
-			authed.GET("/papers/search", paperhandler.Search)      // 历史文献检索
-			authed.GET("/papers/:id", paperhandler.Detail)         // 论文详情与结构化元信息
-			authed.GET("/papers/:id/status", paperhandler.Status)  // 解析状态兜底查询
+			authed.POST("/papers", paperhandler.Upload)                  // 上传 PDF，触发异步解析
+			authed.GET("/papers", paperhandler.List)                     // 列出我的论文
+			authed.GET("/papers/search", paperhandler.Search)            // 历史文献检索
+			authed.GET("/papers/:id", paperhandler.Detail)               // 论文详情与结构化元信息
+			authed.GET("/papers/:id/status", paperhandler.Status)        // 解析状态兜底查询
+			authed.GET("/papers/:id/reports", paperhandler.Reports)      // 列出已生成的研读报告类型
 			authed.POST("/papers/:id/report", paperhandler.Report)       // 生成研读报告
 			authed.POST("/papers/:id/translate", paperhandler.Translate) // 精读页逐段翻译
 

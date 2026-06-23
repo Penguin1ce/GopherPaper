@@ -24,9 +24,15 @@ docker compose -f deploy/docker-compose.yml up -d
 # 2. 配置：填入大模型 API key、MinerU API token、SMTP 授权码等
 cp config/config.example.toml config/config.toml
 
-# 3. 启动前端后端
-cd web && npm run build && cd .. && go run cmd/server/main.go
+# 3. 启动后端 API
+go run cmd/server/main.go
+
+# 4. 启动独立 Next.js 前端
+cd frontend && npm install && npm run dev
 ```
+
+前端默认运行在 `http://localhost:3000`。开发期 Next 会把 `/api/v1/*`
+代理到 `http://127.0.0.1:8080`,可通过 `GOPHERPAPER_API_ORIGIN` 覆盖。
 
 具体细节请参考这篇博客[世界的尽头](https://muzimi.org/zh/docs/projects/GopherPaper/Windows%E7%8E%AF%E5%A2%83%E9%85%8D%E7%BD%AE)
 

@@ -8,9 +8,11 @@ import (
 	"GopherPaper/pkg/constant"
 )
 
-// capture 收集切分器外发的 plan 事件,按 phase 聚合文本;同时记录是否误发了正文(delta)事件。
+// capture 收集切分器外发的事件:plan 事件按 phase 聚合文本,delta 事件聚合正文并记录 reset 序列。
 type capture struct {
 	plan    map[string]string
+	delta   string
+	resets  []bool
 	gotName map[string]bool
 }
 
@@ -18,15 +20,19 @@ func newCapture() (*planSplitter, *capture) {
 	c := &capture{plan: map[string]string{}, gotName: map[string]bool{}}
 	sp := newPlanSplitter(func(ev core.StreamEvent) {
 		c.gotName[ev.Kind] = true
-		if ev.Kind == constant.StreamEventPlan {
+		switch ev.Kind {
+		case constant.StreamEventPlan:
 			c.plan[ev.Phase] += ev.Delta
+		case constant.StreamEventDelta:
+			c.delta += ev.Delta
+			c.resets = append(c.resets, ev.Reset)
 		}
 	})
 	return sp, c
 }
 
-func TestPlanSplitter_OnlyPlanSectionsEmitted(t *testing.T) {
-	// 正文段(FINAL_ANSWER 之后)不应外发任何事件,只有计划段进 plan 流。
+func TestPlanSplitter_BodyStreamsAsDelta(t *testing.T) {
+	// 计划段进 plan 流,FINAL_ANSWER 正文段作为 delta 流式外发(气泡逐字出),且不污染计划栏。
 	sp, c := newCapture()
 	sp.feed("/*PLANNING*/步骤1\n步骤2/*ACTION*/查论文/*REASONING*/找到了/*FINAL_ANSWER*/这是答案")
 	if got := strings.TrimSpace(c.plan["planning"]); got != "步骤1\n步骤2" {
@@ -38,8 +44,8 @@ func TestPlanSplitter_OnlyPlanSectionsEmitted(t *testing.T) {
 	if got := strings.TrimSpace(c.plan["reasoning"]); got != "找到了" {
 		t.Errorf("reasoning = %q", got)
 	}
-	if c.gotName[constant.StreamEventDelta] {
-		t.Error("正文段不应外发 delta 事件")
+	if got := strings.TrimSpace(c.delta); got != "这是答案" {
+		t.Errorf("正文应作为 delta 外发, delta = %q", got)
 	}
 	for _, v := range c.plan {
 		if strings.Contains(v, "这是答案") {
@@ -48,6 +54,23 @@ func TestPlanSplitter_OnlyPlanSectionsEmitted(t *testing.T) {
 		if strings.Contains(v, "/*") {
 			t.Errorf("计划段不应含标签碎片: %q", v)
 		}
+	}
+}
+
+func TestPlanSplitter_BodyResetAcrossTurns(t *testing.T) {
+	// 多轮 ReAct:第一轮首个正文增量不重置,跨轮后第二轮首个正文增量带 Reset,前端据此只展示末轮。
+	sp, c := newCapture()
+	sp.feed("/*FINAL_ANSWER*/第一轮答案")
+	sp.endTurn()
+	sp.feed("/*FINAL_ANSWER*/第二轮答案")
+	if len(c.resets) < 2 {
+		t.Fatalf("应至少两次 delta, resets = %v", c.resets)
+	}
+	if c.resets[0] {
+		t.Error("首轮首个正文增量不应带 Reset")
+	}
+	if !c.resets[len(c.resets)-1] {
+		t.Error("跨轮后新一轮首个正文增量应带 Reset")
 	}
 }
 

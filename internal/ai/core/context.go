@@ -13,6 +13,7 @@ type StreamEvent struct {
 	Tool  string // 工具名,工具事件时有值
 	Delta string // 文本增量,delta 与 plan 事件时有值
 	Phase string // 规划阶段(planning/replanning/action/reasoning),plan 事件时有值
+	Reset bool   // delta 事件:true 表示新一轮答案开始,前端先清空已流式正文再追加(先锋者多轮只展示末轮)
 }
 
 // StreamHandler 消费流式通知,由 handler 注入,把事件写成 SSE 推给前端。

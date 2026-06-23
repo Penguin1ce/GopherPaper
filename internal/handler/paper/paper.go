@@ -200,6 +200,21 @@ func Report(c *gin.Context) {
 	response.OK(c, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})
 }
 
+// Reports 列出某篇论文已生成的研读报告类型,前端进入论文时回填就绪态并自动展示,不触发生成。
+// GET /api/v1/papers/:id/reports
+func Reports(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	types, err := paperservice.ReadyReports(c.Request.Context(), ownerID, c.Param("id"))
+	if err != nil {
+		writePaperErr(c, err, "查询失败")
+		return
+	}
+	if types == nil {
+		types = []constant.ReportType{}
+	}
+	response.OK(c, gin.H{"ready": types})
+}
+
 // Translate 把精读页选中的英文原文译成中文,前端选区触发,不经分类器、不走 RAG。
 // POST /api/v1/papers/:id/translate
 func Translate(c *gin.Context) {

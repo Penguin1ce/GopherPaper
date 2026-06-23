@@ -156,6 +156,19 @@ func GetReport(ctx context.Context, paperID string, t constant.ReportType) (*mod
 	return &r, nil
 }
 
+// ListReportTypes 列出某篇论文已落库的研读报告类型，供前端进页面时回填就绪态。
+func ListReportTypes(ctx context.Context, paperID string) ([]constant.ReportType, error) {
+	var types []constant.ReportType
+	err := dao.DB.WithContext(ctx).
+		Model(&model.PaperReport{}).
+		Where("paper_id = ?", paperID).
+		Pluck("report_type", &types).Error
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 列出研读报告类型失败: %w", err)
+	}
+	return types, nil
+}
+
 // SaveReport 写入或覆盖某篇论文某类研读报告缓存，按 (paper_id, report_type) 幂等。
 func SaveReport(ctx context.Context, r *model.PaperReport) error {
 	err := dao.DB.WithContext(ctx).Clauses(clause.OnConflict{
