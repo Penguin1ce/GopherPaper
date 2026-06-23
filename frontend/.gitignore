@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# pdf.js worker:dev/build 前由 scripts/copy-pdf-worker.mjs 从 node_modules 拷入,不提交
+/public/pdfjs/
+
 # production
 /build
 
