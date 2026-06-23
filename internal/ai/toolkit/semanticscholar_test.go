@@ -72,15 +72,16 @@ func TestSemanticScholarSearch(t *testing.T) {
 	}
 }
 
-// TestSemanticScholarFilters 验证 year/venue/fields_of_study 透传为 S2 query 参数。
+// TestSemanticScholarFilters 验证 year/fields_of_study 透传为 S2 query 参数,
+// 而 venue 不透传服务端(改走客户端别名模糊匹配)。
 func TestSemanticScholarFilters(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if got := q.Get("year"); got != "2025-2026" {
 			t.Errorf("year = %q", got)
 		}
-		if got := q.Get("venue"); got != "NeurIPS,ICML" {
-			t.Errorf("venue = %q", got)
+		if _, ok := q["venue"]; ok {
+			t.Error("venue 应走客户端过滤,不带 venue 服务端参数")
 		}
 		if got := q.Get("fieldsOfStudy"); got != "Computer Science" {
 			t.Errorf("fieldsOfStudy = %q", got)
@@ -98,6 +99,30 @@ func TestSemanticScholarFilters(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("s2Search: %v", err)
+	}
+}
+
+// TestSemanticScholarVenueClientFilter 验证 venue 走客户端别名模糊匹配:
+// 填缩写 EMNLP 应命中 publicationVenue.name 为全称的论文,arXiv 预印本被滤掉。
+func TestSemanticScholarVenueClientFilter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(s2Sample))
+	}))
+	defer srv.Close()
+	old := s2BaseURL
+	s2BaseURL = srv.URL
+	defer func() { s2BaseURL = old }()
+
+	out, err := s2Search(context.Background(), "", s2Input{Query: "x", Venue: "EMNLP"})
+	if err != nil {
+		t.Fatalf("s2Search: %v", err)
+	}
+	// 仅第一条(EMNLP 全称)命中,第二条 venue=arXiv 被滤。
+	if len(out.Papers) != 1 {
+		t.Fatalf("EMNLP 过滤应只保留 1 篇,得到 %d", len(out.Papers))
+	}
+	if out.Papers[0].Title != "SimCSE" {
+		t.Errorf("应保留 SimCSE,得到 %q", out.Papers[0].Title)
 	}
 }
 
