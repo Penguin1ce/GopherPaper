@@ -216,6 +216,58 @@ func TestSemanticScholarRetryThenSucceed(t *testing.T) {
 	}
 }
 
+// TestSemanticScholarServerError 验证持续 500 重试耗尽后给出可识别的错误。
+func TestSemanticScholarServerError(t *testing.T) {
+	withFastRetry(t)
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	old := s2BaseURL
+	s2BaseURL = srv.URL
+	defer func() { s2BaseURL = old }()
+
+	if _, err := s2Search(context.Background(), "", s2Input{Query: "x"}); err == nil {
+		t.Fatal("500 应报错")
+	}
+	if hits != len(s2RetryDelays)+1 {
+		t.Errorf("应重试至耗尽共 %d 次,实际 %d 次", len(s2RetryDelays)+1, hits)
+	}
+}
+
+// TestSemanticScholarServerErrorRetryThenSucceed 验证 500 后放行能自动重试拿到结果。
+func TestSemanticScholarServerErrorRetryThenSucceed(t *testing.T) {
+	withFastRetry(t)
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if hits < 2 {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		_, _ = w.Write([]byte(s2Sample))
+	}))
+	defer srv.Close()
+	old := s2BaseURL
+	s2BaseURL = srv.URL
+	defer func() { s2BaseURL = old }()
+
+	out, err := s2Search(context.Background(), "", s2Input{Query: "x"})
+	if err != nil {
+		t.Fatalf("500 后重试应成功: %v", err)
+	}
+	if len(out.Papers) != 2 {
+		t.Fatalf("应解析 2 篇,得到 %d", len(out.Papers))
+	}
+	if hits != 2 {
+		t.Errorf("应在第 2 次成功,实际访问 %d 次", hits)
+	}
+}
+
 // TestHostAllowed 验证白名单:精确与子域后缀命中,非白名单与近似域名拒绝。
 func TestHostAllowed(t *testing.T) {
 	allow := []string{

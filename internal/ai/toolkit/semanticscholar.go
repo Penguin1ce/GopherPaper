@@ -96,22 +96,31 @@ func newSemanticScholarTool(apiKey string) tool.Tool {
 // s2VenueAliases 把常见顶会缩写映射到其会在 S2 venue/publicationVenue.name 里出现的匹配片段
 // (含缩写本身与全称关键片段),用于客户端模糊匹配。表外的 venue 退化为按原词小写匹配。
 var s2VenueAliases = map[string][]string{
-	"neurips":     {"neurips", "nips", "neural information processing systems"},
-	"icml":        {"icml", "international conference on machine learning"},
-	"iclr":        {"iclr", "international conference on learning representations"},
-	"cvpr":        {"cvpr", "computer vision and pattern recognition"},
-	"iccv":        {"iccv", "international conference on computer vision"},
-	"eccv":        {"eccv", "european conference on computer vision"},
-	"acl":         {"acl", "association for computational linguistics"},
-	"emnlp":       {"emnlp", "empirical methods in natural language processing"},
-	"naacl":       {"naacl", "north american chapter of the association for computational linguistics"},
-	"aaai":        {"aaai", "association for the advancement of artificial intelligence"},
-	"ijcai":       {"ijcai", "international joint conference on artificial intelligence"},
-	"kdd":         {"kdd", "knowledge discovery and data mining"},
-	"sigir":       {"sigir"},
-	"www":         {"www", "world wide web", "the web conference"},
-	"interspeech": {"interspeech"},
-	"icassp":      {"icassp", "acoustics, speech and signal processing"},
+	"neurips":          {"neurips", "nips", "neural information processing systems"},
+	"icml":             {"icml", "international conference on machine learning"},
+	"iclr":             {"iclr", "international conference on learning representations"},
+	"cvpr":             {"cvpr", "computer vision and pattern recognition"},
+	"iccv":             {"iccv", "international conference on computer vision"},
+	"eccv":             {"eccv", "european conference on computer vision"},
+	"acl":              {"acl", "association for computational linguistics"},
+	"emnlp":            {"emnlp", "empirical methods in natural language processing"},
+	"naacl":            {"naacl", "north american chapter of the association for computational linguistics"},
+	"aaai":             {"aaai", "association for the advancement of artificial intelligence"},
+	"ijcai":            {"ijcai", "international joint conference on artificial intelligence"},
+	"kdd":              {"kdd", "knowledge discovery and data mining"},
+	"sigir":            {"sigir"},
+	"www":              {"www", "world wide web", "the web conference"},
+	"interspeech":      {"interspeech"},
+	"icassp":           {"icassp", "acoustics, speech and signal processing"},
+	"usenix security":  {"usenix security"},
+	"usenix":           {"usenix"},
+	"ccs":              {"ccs", "computer and communications security"},
+	"s&p":              {"s&p", "ieee symposium on security and privacy", "security and privacy"},
+	"sp":               {"s&p", "ieee symposium on security and privacy", "security and privacy"},
+	"oakland":          {"security and privacy", "oakland"},
+	"ndss":             {"ndss", "network and distributed system security"},
+	"raid":             {"raid", "research in attacks, intrusions"},
+	"acsac":            {"acsac", "annual computer security applications"},
 }
 
 // splitVenues 把逗号分隔的 venue 入参切成小写去空的 token 列表。
@@ -195,7 +204,8 @@ func s2Search(ctx context.Context, apiKey string, in s2Input) (s2Output, error) 
 			return s2Output{}, fmt.Errorf("search_semantic_scholar: 请求 Semantic Scholar 失败: %w", err)
 		}
 		status := resp.StatusCode
-		if status == http.StatusTooManyRequests && attempt < len(s2RetryDelays) {
+		// 429 限流与 500 临时服务端错误都可退避重试:500 通常是 S2 瞬时抖动,重试大多能放行。
+		if (status == http.StatusTooManyRequests || status == http.StatusInternalServerError) && attempt < len(s2RetryDelays) {
 			delay := retryAfterDelay(resp, s2RetryDelays[attempt])
 			resp.Body.Close()
 			select {
@@ -210,6 +220,9 @@ func s2Search(ctx context.Context, apiKey string, in s2Input) (s2Output, error) 
 		resp.Body.Close()
 		if status == http.StatusTooManyRequests {
 			return s2Output{}, fmt.Errorf("search_semantic_scholar: Semantic Scholar 持续限流(429),已重试 %d 次仍失败,稍后再试或改用 search_arxiv", len(s2RetryDelays))
+		}
+		if status == http.StatusInternalServerError {
+			return s2Output{}, fmt.Errorf("search_semantic_scholar: Semantic Scholar 服务端错误(500),已重试 %d 次仍失败,稍后再试或改用 search_arxiv", len(s2RetryDelays))
 		}
 		if err != nil {
 			return s2Output{}, fmt.Errorf("search_semantic_scholar: 解析响应失败: %w", err)
