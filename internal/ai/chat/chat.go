@@ -22,6 +22,7 @@ import (
 
 	"GopherPaper/internal/ai/agentrt"
 	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/ai/ragagent"
 	"GopherPaper/internal/ai/retrieval"
 	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/tenant"
@@ -63,10 +64,45 @@ func ClassifyIntent(ctx context.Context, query string) constant.IntentType {
 	return parseIntent(content)
 }
 
-// ChatRAG 按意图做参数化 RAG:检索片段拼进 system prompt,经带工具 chat agent 生成并收集出处进 Meta。
-// history 为多轮上下文,经 agent 注入,夹在 system prompt 与当前 query 之间。
-// 图块走单独一轮检索(不与正文同池),命中的图片随 query 一起发给多模态 chat 模型推理。
+// ChatRAG 按意图做 RAG,并按子类选生成方式:
+//   - summary/method 走 agentic 循环(ragagent):agent 自主规划→检索→反思→决策,多轮按需检索;
+//   - fact 走单轮快路径:预检索一次拼进 system prompt,单轮生成(事实定位通常一次召回即可,省延迟)。
+//
+// history 为多轮上下文,经 agent 注入,夹在 system prompt 与当前 query 之间。两路均把出处收进 Reply.Meta。
 func ChatRAG(ctx context.Context, query string, intent constant.IntentType, history []trpcmodel.Message) (*core.Reply, error) {
+	if intent != constant.IntentFact {
+		return agenticRAG(ctx, query, intent, history)
+	}
+	return factRAG(ctx, query, history)
+}
+
+// agenticRAG 让 agent 在主循环里自主多轮检索作答(summary/method)。
+// 出处散在各轮工具调用中,故挂 ctx 引用收集器,循环结束后排空填进 Meta。
+func agenticRAG(ctx context.Context, query string, intent constant.IntentType, history []trpcmodel.Message) (*core.Reply, error) {
+	ctx = retrieval.WithRefSink(ctx)
+	content, err := ragagent.Generate(ctx, constant.AgenticRAGPromptFor(intent), history, query, policyFor(intent))
+	if err != nil {
+		return nil, err
+	}
+	reply := &core.Reply{Content: content, Intent: intent}
+	if sources := retrieval.DrainRefs(ctx); len(sources) > 0 {
+		reply.Meta = map[string]any{"sources": sources}
+	}
+	return reply, nil
+}
+
+// policyFor 按问答子类给 agentic 循环定工具迭代预算:方法类常需逐步检索故放宽,其余按概括预算。
+func policyFor(intent constant.IntentType) ragagent.Policy {
+	if intent == constant.IntentMethod {
+		return ragagent.Policy{MaxIter: constant.AgenticMaxIterMethod}
+	}
+	return ragagent.Policy{MaxIter: constant.AgenticMaxIterSummary}
+}
+
+// factRAG 是 fact 子类的单轮快路径:预检索正文与图块各一次拼进 system prompt,命中图随 query 发给
+// 多模态 chat 模型,单轮生成并收集出处进 Meta(保持改造前的事实定位行为不变)。
+func factRAG(ctx context.Context, query string, history []trpcmodel.Message) (*core.Reply, error) {
+	const intent = constant.IntentFact
 	owner := tenant.MustStudentID(ctx)
 	paperID := core.PaperIDFrom(ctx)
 	docs, err := retrieval.RetrieveForPaper(ctx, query, owner, paperID)
@@ -109,7 +145,7 @@ func figureInstruction(imgDocs []*retrieval.Doc) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\n下面是与问题相关、已随消息提供给你的图片。若某张图能直观支撑回答,请用 Markdown 图片语法 ![简短说明](figure://文件名) 把它插入到正文对应位置;文件名只能用下面列出的,不要编造,不需要时不必插图:\n")
+	b.WriteString("\n\n下面是与问题相关、已随消息提供给你的图片。只要图能直观支撑回答,就用 Markdown 图片语法 ![简短说明](figure://文件名) 把它插入到正文对应位置,并在正文里点明该图说明了什么;文件名只能用下面列出的,不要编造,确实没有相关图时才不插:\n")
 	for _, d := range imgDocs {
 		name := filepath.Base(retrieval.MetaString(d, constant.MilvusFieldImgURI))
 		if name == "" {

@@ -68,3 +68,17 @@ func TestChat(t *testing.T) {
 	}
 	t.Logf("trpc chat 切片跑通: intent=%q 内容长度=%d", reply.Intent, len(reply.Content))
 }
+
+// TestPolicyFor 验证意图到 agentic 工具迭代预算的映射:method 放宽,其余按概括预算。
+func TestPolicyFor(t *testing.T) {
+	if got := policyFor(constant.IntentMethod).MaxIter; got != constant.AgenticMaxIterMethod {
+		t.Errorf("method MaxIter = %d, want %d", got, constant.AgenticMaxIterMethod)
+	}
+	if got := policyFor(constant.IntentSummary).MaxIter; got != constant.AgenticMaxIterSummary {
+		t.Errorf("summary MaxIter = %d, want %d", got, constant.AgenticMaxIterSummary)
+	}
+	// 未知子类回退到概括预算。
+	if got := policyFor(constant.IntentType("unknown")).MaxIter; got != constant.AgenticMaxIterSummary {
+		t.Errorf("unknown MaxIter = %d, want %d", got, constant.AgenticMaxIterSummary)
+	}
+}

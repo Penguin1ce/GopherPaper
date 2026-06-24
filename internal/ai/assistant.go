@@ -20,6 +20,7 @@ import (
 	extractflow "GopherPaper/internal/ai/extract"
 	figureflow "GopherPaper/internal/ai/figure"
 	pioneerflow "GopherPaper/internal/ai/pioneer"
+	ragagentflow "GopherPaper/internal/ai/ragagent"
 	reportflow "GopherPaper/internal/ai/report"
 	"GopherPaper/internal/ai/retrieval"
 	translateflow "GopherPaper/internal/ai/translate"
@@ -61,6 +62,7 @@ func EvictUser(userID string) {
 	}
 	pioneerflow.EvictUser(userID)
 	agentrt.EvictUser(userID)
+	ragagentflow.EvictUser(userID)
 	aimodel.EvictUser(userID)
 }
 

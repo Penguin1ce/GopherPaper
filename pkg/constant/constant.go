@@ -111,6 +111,14 @@ const (
 	FigureDescribeWorker = 4   // 解析期 vlm 图描述的并发上限
 )
 
+// agentic 问答相关。summary/method 两类走 react planner 自驱循环(规划→检索→反思→决策),
+// 用工具迭代上限做硬性预算防失控:概括类常需多查几轮补全章节,方法类放得更宽。
+// fact 类不走循环,保持单轮直答快路径(见 ai/chat),故无需预算。
+const (
+	AgenticMaxIterSummary = 5 // summary 类 agentic 循环的工具迭代硬上限,留出一轮给 find_figures 配图
+	AgenticMaxIterMethod  = 6 // method 类工具迭代硬上限,方法/流程常需逐步检索故放宽
+)
+
 // 多轮对话相关。
 const (
 	MaxContextMessages = 20            // 喂给模型的历史消息最大条数，超出只取最近的
@@ -193,7 +201,7 @@ const IntentPrompt = `你是科研文献问答助手的意图分类器，判断�
 // 三类问答 agent 的 system prompt，均带 {context} 检索占位符。
 const (
 	FactPrompt = `你是严谨的科研文献问答助手，负责定位论文中的事实、数据与结论。优先依据下面的「参考资料」作答，资料不足时明确说明，不要编造。
-回答务必简短直接：给出准确的事实/数值，并标明依据来自哪一段或哪一页。控制在 800 字以内。
+回答直接准确：先给出确切的事实/数值，再按需补充必要的上下文与解释，并标明依据来自哪一段或哪一页；有相关图表就用 Markdown ![简短说明](figure://文件名) 插入正文佐证。篇幅服从把问题讲清楚的需要，不必凑长度。
 
 参考资料：
 {context}`
@@ -221,6 +229,34 @@ func RAGPromptFor(t IntentType) string {
 	default:
 		return SummaryPrompt
 	}
+}
+
+// agentic 问答的 system prompt:不预填 {context},改由 agent 自主用工具检索。
+// 与固定流 prompt 的区别是把「检索→反思→决策」的主循环职责交给模型,并约定工具用法与引用纪律。
+const (
+	agenticRAGCommon = `你可以使用以下工具围绕用户的论文作答：
+- search_paper：在论文知识库里做语义检索，返回带 source 出处的相关片段。可多次调用，每次用更聚焦或改写后的 query 检索不同侧面；遇到指代（"这个方法""上文那部分"）先结合对话改写成独立 query 再检索。
+- find_figures：检索与问题相关的论文插图/表格，返回其说明与 figure 引用。作答前应至少按问题主题调用一次——论文的架构图、流程图、结果曲线、对比表往往最能直观支撑回答；只要工具返回了合适的图，就用 Markdown 图片语法 ![简短说明](figure://文件名) 插入正文对应位置（文件名只能取自返回清单，不要编造），并在正文里点明该图说明了什么。确实没有相关图时才不插。
+
+工作方式：先规划要查什么，调用 search_paper 检索，再判断召回是否足以作答——不足就改写 query 或换角度继续检索；正文素材齐了再调 find_figures 找配图。严禁脱离检索结果编造；检索不到就如实说明。引用关键事实时标明来自哪段或哪页（用工具返回的 source）。`
+
+	// SummaryAgenticPrompt 概括类的 agentic system prompt。
+	SummaryAgenticPrompt = `你是科研文献问答助手，负责概括与解释论文内容。把要点讲清楚讲透：抓住主线，按逻辑分点或分段组织，关键概念辅以必要的解释与例子，配合相关图表让回答更直观易懂。篇幅服从把问题讲明白的需要，不刻意压缩，也别为凑长度堆砌无关细节。
+
+` + agenticRAGCommon
+
+	// MethodAgenticPrompt 方法类的 agentic system prompt。
+	MethodAgenticPrompt = `你是科研文献问答助手，负责解读研究方法与实验流程。按步骤把方法的关键设计、数据与流程讲清讲透，必要时拆解每一步的动机与细节，配合论文里的架构图/流程图/结果图让方法更易懂。聚焦方法本身、不展开无关背景，篇幅服从把事情讲明白的需要。
+
+` + agenticRAGCommon
+)
+
+// AgenticRAGPromptFor 按问答子类返回 agentic 问答的 system prompt，未知子类回退到概括。
+func AgenticRAGPromptFor(t IntentType) string {
+	if t == IntentMethod {
+		return MethodAgenticPrompt
+	}
+	return SummaryAgenticPrompt
 }
 
 // ExtractPrompt 是 map 阶段单窗口抽取的 system prompt，要求只抽取本段有依据的字段。
