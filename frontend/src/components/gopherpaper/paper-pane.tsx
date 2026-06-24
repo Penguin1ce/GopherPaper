@@ -1,6 +1,6 @@
 "use client";
 
-import { FileUp, Loader2, RefreshCw, Search, X } from "lucide-react";
+import { FileUp, Loader2, PanelLeftOpen, RefreshCw, Search, X } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -46,7 +46,7 @@ function ActiveStatusStrip({ paper }: { paper: Paper }) {
   );
 }
 
-export function PaperPane() {
+export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void }) {
   const { papers, activePaper, activePaperID, selectPaper, uploadPaper, refreshPapers } = useApp();
   const guard = useGuard();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -73,11 +73,25 @@ export function PaperPane() {
     <aside className="flex min-h-0 flex-col border-r bg-muted/30">
       <div className="space-y-4 p-5 pb-4">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-baseline gap-2">
-            <h2 className="text-[17px] font-bold tracking-tight">论文库</h2>
-            {papers.length > 0 && (
-              <span className="font-mono text-xs text-muted-foreground">{papers.length}</span>
+          <div className="flex items-center gap-1.5">
+            {onExpandSidebar && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={onExpandSidebar}
+                title="展开侧栏"
+                className="hidden lg:inline-flex"
+              >
+                <PanelLeftOpen className="size-4" />
+              </Button>
             )}
+            <div className="flex items-baseline gap-2">
+              <h2 className="text-[17px] font-bold tracking-tight">论文库</h2>
+              {papers.length > 0 && (
+                <span className="font-mono text-xs text-muted-foreground">{papers.length}</span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <Button

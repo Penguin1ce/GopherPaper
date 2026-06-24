@@ -16,6 +16,7 @@ import type {
   AuthUser,
   Message,
   Paper,
+  PlanStep,
   RegisterPayload,
   ReportType,
   Session,
@@ -23,6 +24,13 @@ import type {
 import { chatSessions, isSettled, paperTitle, sessionsForPaper } from "./utils";
 
 const AUTH_KEY = "gopherpaper.auth";
+
+// 工具名 → 执行过程里「检索」步的检索对象文案(左列已是「检索」标签,这里只写对象避免重复);
+// 未列出的工具回退到原始工具名。
+const TOOL_STEP_TEXT: Record<string, string> = {
+  search_paper: "论文知识库",
+  find_figures: "图表与表格",
+};
 
 export interface ToastItem {
   id: number;
@@ -509,10 +517,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setToolNote("");
           patch((m) => ({ ...m, content: m.content + chunk }));
         };
+        // 执行过程(规划/检索/思考)累积:同 phase 续接、换 phase 新建一段;合帧后经 patch 写入
+        // 占位消息的 plan 字段。plan 事件通常先于首个 delta 到达,patch 会让占位提前上屏,
+        // 用户在答案写出前即看到流程在动(消除多轮检索的等待焦虑)。
+        const planSteps: PlanStep[] = [];
+        let planRafID: number | null = null;
+        const flushPlan = () => {
+          planRafID = null;
+          patch((m) => ({ ...m, plan: planSteps.map((s) => ({ ...s })) }));
+        };
         const cancelFlush = () => {
           if (rafID !== null) {
             cancelAnimationFrame(rafID);
             rafID = null;
+          }
+          if (planRafID !== null) {
+            cancelAnimationFrame(planRafID);
+            planRafID = null;
           }
         };
         try {
@@ -521,9 +542,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
               pending += text;
               if (rafID === null) rafID = requestAnimationFrame(flush);
             },
-            // 工具状态不进消息气泡,显示在输入框上方的独立状态气泡。
-            onTool: (tool, done) =>
-              setToolNote(done ? `${tool} 已返回,正在继续…` : `正在调用 ${tool} …`),
+            // 工具状态:输入框上方的状态气泡 + 执行过程步。
+            // 模型(doubao)未必稳定输出 planner 标签,工具调用是框架确定性事件——
+            // 据此合成规划/检索/思考三类步,保证执行过程稳定显示。
+            onTool: (tool, done) => {
+              if (!done) {
+                setToolNote(`正在调用 ${tool} …`);
+                // 首次工具调用前合成规划步(模型未输出时补全)
+                if (!planSteps.some((s) => s.phase === "planning" || s.phase === "replanning")) {
+                  planSteps.push({ phase: "planning", text: "分析问题，制定检索策略" });
+                }
+                const text = TOOL_STEP_TEXT[tool] || tool;
+                const last = planSteps[planSteps.length - 1];
+                if (!(last && last.phase === "action" && last.text === text)) {
+                  planSteps.push({ phase: "action", text });
+                }
+                if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
+              } else {
+                setToolNote(`${tool} 已返回,正在继续…`);
+                // 工具结果返回后合成思考步
+                const last = planSteps[planSteps.length - 1];
+                if (!last || last.phase !== "reasoning") {
+                  planSteps.push({ phase: "reasoning", text: "综合检索结果，整理回答" });
+                  if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
+                }
+              }
+            },
+            // 规划/检索/思考阶段文本:累积成 plan 步,实时流进「执行过程」活动条。
+            onPlan: (phase, content) => {
+              const last = planSteps[planSteps.length - 1];
+              if (last && last.phase === phase) last.text += content;
+              else planSteps.push({ phase, text: content });
+              if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
+            },
           });
           // 收尾:取消待处理的帧回调,最终消息直接整体替换占位。
           cancelFlush();
@@ -533,6 +584,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // 这里补个本地唯一 ID 避免多轮渲染 key 冲突;重开会话时由 listMessages 还原真实 ID。
             if (!assistant.id) assistant.id = `local-a-${Date.now()}`;
             if (data.meta) assistant.meta = data.meta;
+            // 把本轮累积的执行过程挂到最终消息,供答后折叠回看;瞬态不入库,刷新即失。
+            if (planSteps.length) assistant.plan = planSteps;
             setMessages((list) => [
               ...list.filter((m) => m.id !== placeholderID),
               assistant,

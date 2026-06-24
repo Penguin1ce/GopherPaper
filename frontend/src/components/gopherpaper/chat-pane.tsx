@@ -1,10 +1,15 @@
 "use client";
 
-import { Loader2, Plus, Send } from "lucide-react";
+import { BookOpenText, ChevronDown, Loader2, Plus, Send } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { figureUrl } from "@/lib/gopherpaper/api";
@@ -14,6 +19,7 @@ import { formatTime, intentLabel, paperTitle, sessionTitle } from "@/lib/gopherp
 import { cn } from "@/lib/utils";
 import { Empty, useGuard } from "./app-ui";
 import { Markdown } from "./markdown";
+import { ProcessTrace } from "./process-trace";
 
 function extractSources(meta?: Record<string, unknown>): Reference[] {
   if (!meta) return [];
@@ -30,46 +36,94 @@ function buildFigureMap(refs: Reference[]): Record<string, string> {
   return map;
 }
 
+function referenceName(ref: Reference, index: number) {
+  return ref.source_file || ref.source_uri || `片段 ${index + 1}`;
+}
+
+function referenceScope(ref: Reference) {
+  return ref.knowledge_scope === "public" ? "基础库" : "我的论文";
+}
+
 function Sources({ refs }: { refs: Reference[] }) {
+  const [open, setOpen] = useState(false);
+
   if (refs.length === 0) return null;
+  const firstName = referenceName(refs[0], 0);
+  const scopeSummary = Array.from(new Set(refs.map(referenceScope))).join(" / ");
+
   return (
-    <div className="mt-4 rounded-xl border border-sienna/25 bg-sienna/[0.04] p-3">
-      <div className="mb-2 text-xs font-semibold tracking-wide text-sienna">
-        引用出处 · {refs.length}
-      </div>
-      <ol className="space-y-2">
-        {refs.map((r, i) => {
-          const name = r.source_file || r.source_uri || `片段 ${i + 1}`;
-          const scope = r.knowledge_scope === "public" ? "基础库" : "我的论文";
-          const isImage = r.block_type === "image" && !!r.img_name && !!r.doc_id;
-          const src = isImage ? figureUrl(r.doc_id!, r.img_name!) : "";
-          return (
-            <li key={i} className="flex items-center gap-2 text-xs">
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-sienna/12 font-mono text-[10px] text-sienna">
-                {i + 1}
-              </span>
-              {isImage ? (
-                <a className="shrink-0" href={src} target="_blank" rel="noreferrer">
-                  <img className="size-10 rounded-md border object-cover" src={src} alt={name} loading="lazy" />
-                </a>
-              ) : (
-                <span className="min-w-0 flex-1 truncate" title={name}>
-                  {name}
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="mt-3 overflow-hidden rounded-xl border bg-muted/25"
+    >
+      <CollapsibleTrigger
+        render={
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          />
+        }
+      >
+        <BookOpenText className="size-3.5 shrink-0 text-primary" aria-hidden />
+        <span className="min-w-0 flex-1 truncate">
+          <span className="font-semibold text-foreground/85">引用来源 · {refs.length}</span>
+          {!open && (
+            <span className="ml-2 font-normal text-muted-foreground">
+              {[scopeSummary, `${firstName}${refs.length > 1 ? ` 等 ${refs.length} 条` : ""}`]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          )}
+        </span>
+        <ChevronDown
+          className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
+          aria-hidden
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <ol className="max-h-72 space-y-2 overflow-y-auto border-t px-3 py-2.5">
+          {refs.map((r, i) => {
+            const name = referenceName(r, i);
+            const scope = referenceScope(r);
+            const isImage = r.block_type === "image" && !!r.img_name && !!r.doc_id;
+            const src = isImage ? figureUrl(r.doc_id!, r.img_name!) : "";
+            return (
+              <li key={i} className="flex items-start gap-2 rounded-lg px-1 py-1 text-xs">
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-sienna/12 font-mono text-[10px] text-sienna">
+                  {i + 1}
                 </span>
-              )}
-              {typeof r.page_no === "number" && r.page_no > 0 && (
-                <Badge variant="secondary" className="rounded-full font-normal">
-                  p.{r.page_no}
-                </Badge>
-              )}
-              <Badge variant="outline" className="rounded-full font-normal">
-                {scope}
-              </Badge>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
+                {isImage && (
+                  <a className="shrink-0" href={src} target="_blank" rel="noreferrer">
+                    <img className="size-10 rounded-md border object-cover" src={src} alt={name} loading="lazy" />
+                  </a>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-foreground/80" title={name}>
+                    {name}
+                  </span>
+                  <span className="mt-1 flex flex-wrap gap-1.5">
+                    {typeof r.page_no === "number" && r.page_no > 0 && (
+                      <Badge variant="secondary" className="rounded-full font-normal">
+                        p.{r.page_no}
+                      </Badge>
+                    )}
+                    <Badge variant="outline" className="rounded-full font-normal">
+                      {scope}
+                    </Badge>
+                    {isImage && (
+                      <Badge variant="secondary" className="rounded-full font-normal">
+                        图像
+                      </Badge>
+                    )}
+                  </span>
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -82,6 +136,9 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: Messag
       {isAssistant ? (
         // 助教答案直接铺在版面上(Perplexity 式),不套气泡框,留白拆开
         <div className="w-full">
+          {message.plan && message.plan.length > 0 && (
+            <ProcessTrace steps={message.plan} live={!!message.streaming} />
+          )}
           <Markdown figures={figures}>{message.content}</Markdown>
           {refs.length > 0 && <Sources refs={refs} />}
         </div>
@@ -132,11 +189,10 @@ export function ChatPane() {
   } = useApp();
   const guard = useGuard();
   const [input, setInput] = useState("");
-  const listRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    bottomRef.current?.scrollIntoView({ behavior: "instant" });
   }, [messages, sending, toolNote]);
 
   const submit = () => {
@@ -181,7 +237,7 @@ export function ChatPane() {
         </Button>
       </div>
       <ScrollArea className="min-h-0 flex-1">
-        <div ref={listRef} className="mx-auto flex max-h-full w-full max-w-3xl flex-col gap-6 px-6 py-5">
+        <div className="mx-auto flex max-h-full w-full max-w-3xl flex-col gap-6 px-6 py-5">
           {!hasContent ? (
             <div className="mx-auto flex min-h-[24rem] w-full max-w-xl flex-col justify-center gap-4">
               <Empty
@@ -220,6 +276,7 @@ export function ChatPane() {
               )}
             </>
           )}
+          <div ref={bottomRef} />
         </div>
       </ScrollArea>
       <form

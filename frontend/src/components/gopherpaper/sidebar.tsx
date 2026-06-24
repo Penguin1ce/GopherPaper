@@ -1,6 +1,6 @@
 "use client";
 
-import { Coffee, LogOut, Plus, Trash2 } from "lucide-react";
+import { Coffee, LogOut, PanelLeftClose, Plus, Trash2 } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { useApp } from "@/lib/gopherpaper/store";
 import { formatTime, sessionsForPaper, sessionTitle } from "@/lib/gopherpaper/utils";
 import { Empty, useGuard } from "./app-ui";
 
-export function Sidebar() {
+export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
   const {
     user,
     sessions,
@@ -42,6 +42,18 @@ export function Sidebar() {
           <Button type="button" variant="ghost" size="icon" onClick={logout} title="退出登录">
             <LogOut className="size-4" />
           </Button>
+          {onCollapse && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onCollapse}
+              title="收起侧栏"
+              className="hidden lg:inline-flex"
+            >
+              <PanelLeftClose className="size-4" />
+            </Button>
+          )}
         </div>
       </div>
       <Separator />

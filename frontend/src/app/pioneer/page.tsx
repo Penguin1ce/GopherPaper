@@ -300,7 +300,7 @@ export default function PioneerPage() {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [luckin, setLuckin] = useState<LuckinCred | null>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setToken(loadToken());
@@ -312,8 +312,7 @@ export default function PioneerPage() {
   }, [token]);
 
   useEffect(() => {
-    const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    bottomRef.current?.scrollIntoView({ behavior: "instant" });
   }, [messages, sending, toolNote]);
 
   const fail = (e: unknown) =>
@@ -600,7 +599,7 @@ export default function PioneerPage() {
           </Button>
         </header>
         <ScrollArea className="min-h-0 flex-1">
-          <div ref={listRef} className="flex max-h-full flex-col gap-5 p-4">
+          <div className="flex max-h-full flex-col gap-5 p-4">
             {messages.length === 0 && !sending ? (
               <div className="mx-auto flex min-h-[24rem] w-full max-w-xl flex-col justify-center gap-4">
                 <div className="rounded-lg border border-dashed bg-muted/30 p-8 text-center">
@@ -632,6 +631,7 @@ export default function PioneerPage() {
                 )}
               </>
             )}
+            <div ref={bottomRef} />
           </div>
         </ScrollArea>
         {error && (
