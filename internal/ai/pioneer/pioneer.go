@@ -22,6 +22,7 @@ import (
 	redissession "trpc.group/trpc-go/trpc-agent-go/session/redis"
 
 	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/ai/planstream"
 	"GopherPaper/internal/ai/toolkit"
 	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/config"
@@ -86,7 +87,7 @@ func Chat(ctx context.Context, sessionID, query string) (string, error) {
 		return "", err
 	}
 	// 挂了 React planner,模型输出带规划/动作标签,用标签感知收集器分流 plan 与正文。
-	return collectPlanEvents(ctx, ch)
+	return planstream.CollectEvents(ctx, ch)
 }
 
 // runnerForUser 懒建该用户的 runner,模型取自 aimodel,工具与 skill 取 pioneer 分组。

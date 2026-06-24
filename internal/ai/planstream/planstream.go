@@ -1,8 +1,8 @@
-// planstream.go 是小云雀挂 React planner 后的标签感知收集器。
-// planner 把模型输出按 /*PLANNING*/ /*ACTION*/ /*REASONING*/ /*REPLANNING*/ /*FINAL_ANSWER*/
-// 分段流出:规划/动作/思考段路由到 plan 流事件给前端面板,只有 FINAL_ANSWER 之后的文本
-// 作为正文 delta 与最终落库答案,保证 history 存的是干净答案、正文气泡不含标签。
-package pioneer
+// Package planstream 是挂 React planner 的 agent 的标签感知事件收集器,供小云雀与论文助教
+// agentic 链路共用。planner 把模型输出按 /*PLANNING*/ /*ACTION*/ /*REASONING*/ /*REPLANNING*/
+// /*FINAL_ANSWER*/ 分段流出:规划/动作/思考段路由到 plan 流事件给前端面板,只有 FINAL_ANSWER
+// 之后的文本作为正文 delta 与最终落库答案,保证 history 存的是干净答案、正文气泡不含标签。
+package planstream
 
 import (
 	"context"
@@ -27,19 +27,19 @@ var planTags = []struct{ tag, phase string }{
 	{react.FinalAnswerTag, ""},
 }
 
-// collectPlanEvents 聚合带 planner 的 runner 事件流。
+// CollectEvents 聚合带 planner 的 runner 事件流。
 // 计划栏:partial 文本喂标签切分器,规划/动作/思考段实时外发到计划栏,FINAL_ANSWER 正文段作为
 // 应答增量流式进气泡(逐字出);切分器跨轮带 Reset 保证气泡只展示末轮正文。
 // 最终答案:ReAct 多轮里只保留「最后一轮」的内容 —— 终轮即用户可见结论,中间轮是思考与工具调用,
 // 不能拼接(否则把过程当结论吐出);再经 extractFinalAnswer 剥可能的标签。这样不依赖模型守标签协议:
 // doubao 常只打 PLANNING、后续用自然语言叙述,取末轮仍能拿到干净答案。
-func collectPlanEvents(ctx context.Context, ch <-chan *event.Event) (string, error) {
+func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) {
 	emit := core.StreamFrom(ctx)
 	sp := newPlanSplitter(emit)
 	var lastContent string
 	for ev := range ch {
 		if ev.Error != nil {
-			return "", fmt.Errorf("pioneer: %s", ev.Error.Message)
+			return "", fmt.Errorf("planstream: %s", ev.Error.Message)
 		}
 		if ev.Object == trpcmodel.ObjectTypeToolResponse {
 			if emit != nil {
@@ -75,7 +75,7 @@ func collectPlanEvents(ctx context.Context, ch <-chan *event.Event) (string, err
 	}
 	answer := extractFinalAnswer(lastContent)
 	if answer == "" {
-		return "", fmt.Errorf("pioneer: 模型返回空内容")
+		return "", fmt.Errorf("planstream: 模型返回空内容")
 	}
 	return answer, nil
 }
@@ -121,7 +121,7 @@ func (s *planSplitter) feed(delta string) {
 }
 
 // flush 把规划/动作/思考段外发到计划栏,把 FINAL_ANSWER 正文段作为应答增量流式上屏(气泡逐字出)。
-// 多轮 ReAct 只展示末轮(与 collectPlanEvents 的 lastContent 覆盖式一致):新一轮首个正文增量带 Reset,
+// 多轮 ReAct 只展示末轮(与 CollectEvents 的 lastContent 覆盖式一致):新一轮首个正文增量带 Reset,
 // 让前端先清空上一轮已流式的正文再追加;done 事件最终仍以 extractFinalAnswer 的干净答案覆盖落库。
 func (s *planSplitter) flush(text string) {
 	if text == "" || s.emit == nil {
