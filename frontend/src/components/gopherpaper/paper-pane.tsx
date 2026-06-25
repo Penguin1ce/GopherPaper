@@ -1,6 +1,6 @@
 "use client";
 
-import { FileUp, Loader2, PanelLeftOpen, RefreshCw, Search, X } from "lucide-react";
+import { FileUp, Loader2, PanelLeftOpen, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -47,12 +48,22 @@ function ActiveStatusStrip({ paper }: { paper: Paper }) {
 }
 
 export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void }) {
-  const { papers, activePaper, activePaperID, selectPaper, uploadPaper, refreshPapers } = useApp();
+  const {
+    papers,
+    activePaper,
+    activePaperID,
+    selectPaper,
+    uploadPaper,
+    removePaper,
+    refreshPapers,
+  } = useApp();
   const guard = useGuard();
   const fileRef = useRef<HTMLInputElement>(null);
   const [picked, setPicked] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Paper | null>(null);
+  const [deletingID, setDeletingID] = useState("");
   const [query, setQuery] = useState("");
 
   const onUpload = (e: React.FormEvent) => {
@@ -67,7 +78,18 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
     }).finally(() => setUploading(false));
   };
 
+  const onDelete = () => {
+    if (!deleteTarget || deletingID) return;
+    const id = deleteTarget.id;
+    setDeletingID(id);
+    guard(async () => {
+      await removePaper(id);
+      setDeleteTarget(null);
+    }).finally(() => setDeletingID(""));
+  };
+
   const showStrip = activePaper && activePaper.status !== "ready";
+  const deletingTarget = Boolean(deleteTarget && deletingID === deleteTarget.id);
 
   return (
     <aside className="flex min-h-0 flex-col border-r bg-muted/30">
@@ -150,33 +172,92 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
             <Empty title="还没有论文" text="点击右上角「上传」加入第一篇 PDF。" compact />
           ) : (
             papers.map((p) => (
-              <button
+              <div
                 key={p.id}
-                type="button"
                 className={cn(
-                  "w-full rounded-xl px-3.5 py-3 text-left transition-colors",
+                  "group/paper flex w-full items-start rounded-xl transition-colors",
                   p.id === activePaperID
                     ? "bg-card shadow-sm ring-1 ring-border"
-                    : "hover:bg-card/70",
+                    : "hover:bg-card/70 focus-within:bg-card/70",
                 )}
-                onClick={() => selectPaper(p.id)}
               >
-                <div className="flex items-start justify-between gap-2.5">
-                  <strong className="line-clamp-2 text-[13.5px] font-semibold leading-snug">
-                    {paperTitle(p)}
-                  </strong>
-                  <StatusBadge status={p.status} />
-                </div>
-                <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">
-                  {[p.file_name, formatSize(p.size), formatTime(p.updated_at || p.created_at)]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-              </button>
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 rounded-l-xl px-3.5 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => selectPaper(p.id)}
+                >
+                  <div className="flex items-start justify-between gap-2.5">
+                    <strong className="line-clamp-2 text-[13.5px] font-semibold leading-snug">
+                      {paperTitle(p)}
+                    </strong>
+                    <StatusBadge status={p.status} />
+                  </div>
+                  <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">
+                    {[p.file_name, formatSize(p.size), formatTime(p.updated_at || p.created_at)]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  aria-label={`删除 ${paperTitle(p)}`}
+                  title="删除论文"
+                  disabled={Boolean(deletingID)}
+                  className={cn(
+                    "mr-2 mt-2 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 outline-none transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 sm:opacity-0 sm:group-hover/paper:opacity-100 sm:group-focus-within/paper:opacity-100",
+                    deletingID === p.id && "opacity-100 sm:opacity-100",
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteTarget(p);
+                  }}
+                >
+                  {deletingID === p.id ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-3.5" />
+                  )}
+                </button>
+              </div>
             ))
           )}
         </div>
       </ScrollArea>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !deletingID) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>删除论文</DialogTitle>
+            <DialogDescription>
+              将删除「{deleteTarget ? paperTitle(deleteTarget) : ""}」及其绑定会话、报告、图片和向量索引。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deletingTarget}
+              onClick={() => setDeleteTarget(null)}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deletingTarget}
+              onClick={onDelete}
+            >
+              {deletingTarget && <Loader2 className="size-4 animate-spin" />}
+              删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
         <DialogContent>

@@ -6,6 +6,7 @@ import (
 	chatdao "GopherPaper/internal/dao/chat"
 	"GopherPaper/internal/history"
 	"GopherPaper/internal/model"
+	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 	"GopherPaper/pkg/errs"
 )
@@ -50,6 +51,25 @@ func DeleteSession(ctx context.Context, studentID, sessionID string) error {
 	if err := chatdao.DeleteSession(ctx, sessionID); err != nil {
 		return err
 	}
+	return nil
+}
+
+// DeleteSessionsForPaper 删除某学生绑定到某篇论文的全部会话及历史。
+func DeleteSessionsForPaper(ctx context.Context, studentID, paperID string) error {
+	sessions, err := chatdao.ListSessionsByPaper(ctx, studentID, paperID)
+	if err != nil {
+		zlog.Error("查询论文绑定会话失败", "student_id", studentID, "paper_id", paperID, "err", err)
+		return err
+	}
+	zlog.Info("开始删除论文绑定会话", "student_id", studentID, "paper_id", paperID, "count", len(sessions))
+	for _, s := range sessions {
+		zlog.Info("删除论文绑定会话", "student_id", studentID, "paper_id", paperID, "session_id", s.ID, "title", s.Title)
+		if err := DeleteSession(ctx, studentID, s.ID); err != nil {
+			zlog.Error("删除论文绑定会话失败", "student_id", studentID, "paper_id", paperID, "session_id", s.ID, "err", err)
+			return err
+		}
+	}
+	zlog.Info("论文绑定会话删除完成", "student_id", studentID, "paper_id", paperID, "count", len(sessions))
 	return nil
 }
 

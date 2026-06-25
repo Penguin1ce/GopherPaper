@@ -110,6 +110,9 @@ func Delete(ctx context.Context, id string) error {
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperSection{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperReport{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperTag{}).Error; err != nil {
 			return err
 		}

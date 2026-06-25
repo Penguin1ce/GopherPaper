@@ -36,6 +36,19 @@ func ListSessions(ctx context.Context, studentID string) ([]model.Session, error
 	return sessions, nil
 }
 
+// ListSessionsByPaper 列出某学生绑定到某篇论文的会话。
+func ListSessionsByPaper(ctx context.Context, studentID, paperID string) ([]model.Session, error) {
+	var sessions []model.Session
+	err := dao.DB.WithContext(ctx).
+		Where("student_id = ? and paper_id = ?", studentID, paperID).
+		Order("updated_at desc").
+		Find(&sessions).Error
+	if err != nil {
+		return nil, fmt.Errorf("dao/chat: 查询论文会话列表失败: %w", err)
+	}
+	return sessions, nil
+}
+
 // GetSession 按 id 取会话，不存在返回 errs.ErrSessionNotFound。
 func GetSession(ctx context.Context, id string) (*model.Session, error) {
 	var s model.Session

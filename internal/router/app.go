@@ -57,6 +57,7 @@ func Init(mode string) *gin.Engine {
 			authed.GET("/papers", paperhandler.List)                     // 列出我的论文
 			authed.GET("/papers/search", paperhandler.Search)            // 历史文献检索
 			authed.GET("/papers/:id", paperhandler.Detail)               // 论文详情与结构化元信息
+			authed.DELETE("/papers/:id", paperhandler.Delete)            // 删除本人论文及派生数据
 			authed.GET("/papers/:id/status", paperhandler.Status)        // 解析状态兜底查询
 			authed.GET("/papers/:id/reports", paperhandler.Reports)      // 列出已生成的研读报告类型
 			authed.POST("/papers/:id/report", paperhandler.Report)       // 生成研读报告

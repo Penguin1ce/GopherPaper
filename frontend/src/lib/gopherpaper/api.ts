@@ -148,6 +148,12 @@ export function paperDetail(id: string) {
   return request<PaperDetail>(`/papers/${encodeURIComponent(id)}`);
 }
 
+export function deletePaper(id: string) {
+  return request<null>(`/papers/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 export function generateReport(id: string, type: ReportType) {
   return request<ChatResponse>(`/papers/${encodeURIComponent(id)}/report`, {
     method: "POST",
