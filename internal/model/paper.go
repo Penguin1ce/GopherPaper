@@ -90,6 +90,7 @@ type Paper struct {
 	PageCount  int                  `json:"page_count"`
 	Category   string               `gorm:"size:64;index" json:"category,omitempty"`
 	Progress   int                  `json:"progress"` // 阅读进度 0-100
+	Keywords   JSONStrings          `gorm:"-" json:"keywords,omitempty"` // 非表列 从 paper_meta 回填供前端筛选
 	CreatedAt  time.Time            `json:"created_at"`
 	UpdatedAt  time.Time            `json:"updated_at"`
 	DeletedAt  gorm.DeletedAt       `gorm:"index" json:"-"`

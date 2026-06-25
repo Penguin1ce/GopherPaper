@@ -20,6 +20,7 @@ export interface Paper {
   page_count: number;
   category?: string;
   progress: number;
+  keywords?: string[];
   created_at: string;
   updated_at: string;
 }
