@@ -18,6 +18,7 @@ import type {
   Paper,
   PlanStep,
   RegisterPayload,
+  ReportRun,
   ReportType,
   Session,
 } from "./types";
@@ -58,8 +59,10 @@ interface AppContextValue {
   toasts: ToastItem[];
   activePaper: Paper | null;
   activeSession: Session | null;
-  // 各论文已后台预生成就绪的研读报告类型,供报告面板免轮询直接拉缓存
+  // 各论文已生成就绪的研读报告类型,供报告面板免轮询直接拉缓存
   reportReady: Record<string, Partial<Record<ReportType, boolean>>>;
+  // 各论文各类报告一次生成的实时进度(执行计划/进行中/失败),由 report_progress 事件累积
+  reportProgress: Record<string, Partial<Record<ReportType, ReportRun>>>;
   // 动作
   toast: (message: string, type?: "ok" | "error") => void;
   dismissToast: (id: number) => void;
@@ -75,6 +78,8 @@ interface AppContextValue {
   createSession: (title: string, paperID?: string) => Promise<Session>;
   removeSession: (id: string) => Promise<void>;
   sendMessage: (query: string) => Promise<void>;
+  // 报告面板点击生成时调用,重置该报告的进度为「进行中」,后续阶段由 SSE 累积。
+  beginReport: (paperID: string, type: ReportType) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -106,11 +111,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [reportReady, setReportReady] = useState<
     Record<string, Partial<Record<ReportType, boolean>>>
   >({});
+  const [reportProgress, setReportProgress] = useState<
+    Record<string, Partial<Record<ReportType, ReportRun>>>
+  >({});
 
   const wsRef = useRef<EventSource | null>(null);
   const pollRef = useRef<number | null>(null);
+  const reportPollRef = useRef<number | null>(null);
   const toastSeq = useRef(0);
   const hydratedRef = useRef(false);
+  // papers 的同步镜像,供 applyStatusEvent 在 setPapers 更新函数之外读现状判重,
+  // 避免把 toast 等副作用写进 updater(StrictMode 会双调 updater 导致弹两次)。
+  const papersRef = useRef<Paper[]>([]);
+  useEffect(() => {
+    papersRef.current = papers;
+  }, [papers]);
+  // reportProgress 的同步镜像,供报告轮询兜底在 interval 闭包里读当前 live 集合,避免闭包陈旧。
+  const reportProgressRef = useRef(reportProgress);
+  useEffect(() => {
+    reportProgressRef.current = reportProgress;
+  }, [reportProgress]);
 
   api.setToken(token);
 
@@ -150,6 +170,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const stopReportPoll = useCallback(() => {
+    if (reportPollRef.current) {
+      window.clearInterval(reportPollRef.current);
+      reportPollRef.current = null;
+    }
+  }, []);
+
   const disconnectWs = useCallback(() => {
     if (wsRef.current) {
       const source = wsRef.current;
@@ -167,6 +194,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const logout = useCallback((notifyServer = true) => {
     if (notifyServer) void api.logout();
     stopPolling();
+    stopReportPoll();
     disconnectWs();
     persist(null, "");
     setPapers([]);
@@ -175,7 +203,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setActivePaperID("");
     setActiveSessionID("");
     setReportReady({});
-  }, [disconnectWs, persist, stopPolling]);
+    setReportProgress({});
+  }, [disconnectWs, persist, stopPolling, stopReportPoll]);
 
   // 401 统一登出,被动登出不再回调后端(token 已失效)。
   useEffect(() => {
@@ -185,39 +214,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ---- WS 推送进度 ----
   const applyStatusEvent = useCallback(
     (paperID: string, status: Paper["status"], detail?: string) => {
-      setPapers((list) => {
-        const existing = list.find((p) => p.id === paperID);
-        if (!existing) {
-          // 列表里还没有(刚上传未刷新),异步补齐。
-          api
-            .listPapers()
-            .then((fresh) => setPapers(Array.isArray(fresh) ? fresh : []))
-            .catch(() => {});
-          return list;
-        }
-        if (existing.status === status) return list;
-        if (status === "ready") {
-          toast(`「${paperTitle(existing)}」已就绪,可提问`);
-        } else if (status === "failed") {
-          toast(`「${paperTitle(existing)}」解析失败:${detail || "未知原因"}`, "error");
-        }
-        return list.map((p) =>
+      // 判重与 toast 都在 updater 之外做:SSE 与轮询兜底会就同一状态各调一次,
+      // updater 必须纯,副作用留在这里只触发一次。
+      const existing = papersRef.current.find((p) => p.id === paperID);
+      if (!existing) {
+        // 列表里还没有(刚上传未刷新),异步补齐。
+        api
+          .listPapers()
+          .then((fresh) => setPapers(Array.isArray(fresh) ? fresh : []))
+          .catch(() => {});
+        return;
+      }
+      if (existing.status === status) return;
+      if (status === "ready") {
+        toast(`「${paperTitle(existing)}」已就绪,可提问`);
+      } else if (status === "failed") {
+        toast(`「${paperTitle(existing)}」解析失败:${detail || "未知原因"}`, "error");
+      }
+      // 先同步推进镜像,紧随其后的同状态事件(SSE/轮询)即被上面的判重拦掉。
+      papersRef.current = papersRef.current.map((p) =>
+        p.id === paperID
+          ? { ...p, status, fail_reason: detail || p.fail_reason }
+          : p,
+      );
+      setPapers((list) =>
+        list.map((p) =>
           p.id === paperID
             ? { ...p, status, fail_reason: detail || p.fail_reason }
             : p,
-        );
-      });
+        ),
+      );
     },
     [toast],
   );
 
-  // 报告就绪:记入对应论文,报告面板据此免轮询直接拉缓存。
+  // 报告就绪:记入对应论文,报告面板据此免轮询直接拉缓存;同时把该报告进度收尾(停 live)。
   const applyReportReady = useCallback(
     (paperID: string, reportType: ReportType) => {
       setReportReady((prev) => ({
         ...prev,
         [paperID]: { ...prev[paperID], [reportType]: true },
       }));
+      setReportProgress((prev) => {
+        const run = prev[paperID]?.[reportType];
+        if (!run) return prev;
+        return {
+          ...prev,
+          [paperID]: { ...prev[paperID], [reportType]: { ...run, live: false } },
+        };
+      });
       setPapers((list) =>
         list.map((p) =>
           p.id === paperID && !isSettled(p.status)
@@ -227,6 +272,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
     },
     [],
+  );
+
+  // beginReport 在用户点生成时重置该报告的进度为「进行中、空步」,随后由 SSE 阶段事件累积。
+  const beginReport = useCallback((paperID: string, type: ReportType) => {
+    setReportProgress((prev) => ({
+      ...prev,
+      [paperID]: {
+        ...prev[paperID],
+        [type]: { steps: [], live: true, failed: false },
+      },
+    }));
+  }, []);
+
+  // 报告生成阶段进度:failed 标记失败并停 live;其余阶段按 phase 续接/新建执行计划步。
+  const applyReportProgress = useCallback(
+    (paperID: string, type: ReportType, phase: string, detail?: string) => {
+      if (phase === "failed") {
+        const paper = papersRef.current.find((p) => p.id === paperID);
+        toast(`「${paper ? paperTitle(paper) : "论文"}」报告生成失败`, "error");
+      }
+      setReportProgress((prev) => {
+        const paperMap = prev[paperID] || {};
+        const cur = paperMap[type] || { steps: [], live: true, failed: false };
+        if (phase === "failed") {
+          return {
+            ...prev,
+            [paperID]: { ...paperMap, [type]: { ...cur, live: false, failed: true } },
+          };
+        }
+        const steps = cur.steps.slice();
+        const last = steps[steps.length - 1];
+        if (last && last.phase === phase) {
+          steps[steps.length - 1] = { ...last, text: last.text + (detail || "") };
+        } else {
+          steps.push({ phase, text: detail || "" });
+        }
+        return {
+          ...prev,
+          [paperID]: { ...paperMap, [type]: { steps, live: true, failed: false } },
+        };
+      });
+    },
+    [toast],
   );
 
   // 进入某篇论文时回填已落库报告的就绪态,让报告面板免点击自动展示历史报告。
@@ -256,12 +344,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         jwt,
         (e) => applyStatusEvent(e.paper_id, e.status, e.detail),
         (e) => applyReportReady(e.paper_id, e.report_type),
+        (e) => applyReportProgress(e.paper_id, e.report_type, e.phase, e.detail),
       );
       if (!source) return;
       wsRef.current = source;
       // EventSource 自带断线重连,无需手动重试;登出时经 disconnectWs 关闭即止。
     },
-    [applyStatusEvent, applyReportReady, disconnectWs],
+    [applyStatusEvent, applyReportReady, applyReportProgress, disconnectWs],
   );
 
   // ---- 轮询兜底 ----
@@ -300,6 +389,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
       stopPolling();
     }
   }, [papers, token, startPolling, stopPolling]);
+
+  // 报告就绪轮询兜底:报告生成要一分多钟,期间 SSE 一旦卡顿/断开,report_ready 事件可能丢失,
+  // 仅靠事件会把界面永远停在「生成中」。只要还有 live 报告就定时 listReports 补位,命中即置就绪并收尾。
+  useEffect(() => {
+    if (!token) return;
+    const hasLive = Object.values(reportProgress).some((m) =>
+      Object.values(m).some((r) => r?.live && !r.failed),
+    );
+    if (!hasLive) {
+      stopReportPoll();
+      return;
+    }
+    if (reportPollRef.current) return; // 已在轮询,避免重复起定时器
+    reportPollRef.current = window.setInterval(async () => {
+      // 闭包里读 ref 镜像取当前仍在生成的论文,避免读到起定时器那刻的陈旧集合。
+      const livePaperIds = Object.entries(reportProgressRef.current)
+        .filter(([, m]) => Object.values(m).some((r) => r?.live && !r.failed))
+        .map(([pid]) => pid);
+      if (livePaperIds.length === 0) {
+        stopReportPoll();
+        return;
+      }
+      try {
+        await Promise.all(
+          livePaperIds.map(async (pid) => {
+            const types = await api.listReports(pid);
+            for (const t of types) {
+              // 该类报告本地还标 live 却已落库,说明事件丢了,补一次就绪(applyReportReady 内会收尾 live)。
+              if (reportProgressRef.current[pid]?.[t]?.live) applyReportReady(pid, t);
+            }
+          }),
+        );
+      } catch {
+        // 临时网络/代理错误不停轮询,下一轮继续补。
+      }
+    }, 5000);
+  }, [token, reportProgress, stopReportPoll, applyReportReady]);
+
+  // 后台标签挂起 SSE 与轮询:每条 EventSource 长期占一条 HTTP/1.1 连接(同源仅 ~6 条),
+  // 多开标签会顶满连接池阻塞导航与接口。切到后台即 close 释放配额,回前台再重连补状态。
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVisibility = () => {
+      if (document.hidden) {
+        disconnectWs();
+        stopPolling();
+      } else if (token) {
+        connectWs(token);
+        // 后台期间可能漏掉解析进度,有未就绪论文就重启兜底轮询补回。
+        if (papersRef.current.some((p) => !isSettled(p.status))) startPolling();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [token, connectWs, disconnectWs, startPolling, stopPolling]);
 
   // ---- 数据加载 ----
   const refreshPapers = useCallback(
@@ -630,6 +774,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       disconnectWs();
       stopPolling();
+      stopReportPoll();
     };
     // 仅在挂载时跑一次恢复流程。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -658,6 +803,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     activePaper,
     activeSession,
     reportReady,
+    reportProgress,
     toast,
     dismissToast,
     login,
@@ -672,6 +818,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     createSession,
     removeSession,
     sendMessage,
+    beginReport,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

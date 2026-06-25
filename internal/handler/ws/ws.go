@@ -20,6 +20,14 @@ const heartbeat = 25 * time.Second
 // Subscribe 建立 SSE 流并按用户订阅解析进度与报告就绪推送。
 // GET /api/v1/events?token=<jwt>
 func Subscribe(c *gin.Context) {
+	// SSE 允许跨源直连:dev 下前端绕开 Next 代理直接连本端口(:8080),避免代理 fetch
+	// 长连断开不回收、堆满 Next 源连接池致前端卡死。鉴权走 query token、无 cookie,
+	// 故只回显 Origin 放行即可(EventSource 简单 GET 不触发预检)。
+	if origin := c.GetHeader("Origin"); origin != "" {
+		c.Header("Access-Control-Allow-Origin", origin)
+		c.Header("Vary", "Origin")
+	}
+
 	claims, err := auth.Parse(c.Query("token"))
 	if err != nil {
 		response.Fail(c, http.StatusUnauthorized, "token 无效")

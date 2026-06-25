@@ -90,6 +90,25 @@ const (
 	HeaderLuckinToken = "X-Luckin-Token" // 前端随消息携带瑞幸 token 的请求头
 )
 
+// AgentGopher 是小囊鼠 agent 的标识,也是会话 AgentType 与工具分组的取值。
+// 小囊鼠专管研读报告:把一篇报告拆成规划→撰写→评审多个专职子 agent 经流水线生成,
+// 取代论文助教一次性出报告的旧路径。
+const AgentGopher = "gopher"
+
+// ReportPhaseFailed 是研读报告生成失败的阶段名,由报告 worker 推 ws 的 report_progress 事件,
+// 前端据此把对应报告卡标记为失败态。生成中的 规划/检索/思考 阶段由 react planner 经 planstream
+// 直接发出(StreamEventPlan,phase 取 planning/action/reasoning/replanning),与问答链路一致。
+const ReportPhaseFailed = "failed"
+
+// ReportReadyCacheKeyPrefix 是某篇论文已就绪报告类型列表在 Redis 的键前缀,缓存 ReadyReports 结果,
+// 让前端生成期的轮询读 Redis 不打 MySQL;值是报告类型的 JSON 数组(可为空数组,以区分未缓存)。
+// 写报告(SaveReport)后失效该键,下次轮询从 DB 重建,故不会读到漏掉新报告的旧缓存。
+const ReportReadyCacheKeyPrefix = "report:ready:"
+
+// ReportReadyCacheTTL 是就绪列表缓存的存活时间,仅作兜底上界(正常由写报告时主动失效),
+// 防极端情况下缓存与 DB 长期不一致。
+const ReportReadyCacheTTL = 10 * time.Minute
+
 // 知识库相关。
 const (
 	DefaultKnowledgeCollection = "knowledge_chunks"
@@ -115,8 +134,9 @@ const (
 // 用工具迭代上限做硬性预算防失控:概括类常需多查几轮补全章节,方法类放得更宽。
 // fact 类不走循环,保持单轮直答快路径(见 ai/chat),故无需预算。
 const (
-	AgenticMaxIterSummary = 5 // summary 类 agentic 循环的工具迭代硬上限,留出一轮给 find_figures 配图
-	AgenticMaxIterMethod  = 6 // method 类工具迭代硬上限,方法/流程常需逐步检索故放宽
+	AgenticMaxIterSummary = 5  // summary 类 agentic 循环的工具迭代硬上限,留出一轮给 find_figures 配图
+	AgenticMaxIterMethod  = 6  // method 类工具迭代硬上限,方法/流程常需逐步检索故放宽
+	AgenticMaxIterReport  = 12 // 研读报告要覆盖全文、按报告结构逐方面检索,迭代预算给得最宽
 )
 
 // 多轮对话相关。
@@ -304,46 +324,38 @@ const PioneerInstruction = `你是「小云雀」,科研工作者的全能助手
 - 输出协议必须严格遵守:面向用户的最终结论一律放在 /*FINAL_ANSWER*/ 标签之后,且其后只写干净的答案正文、不得再出现 /*PLANNING*//*REASONING*//*ACTION*//*REPLANNING*/ 任何标签或"我将…""接下来我…"这类描述自己下一步动作的旁白。规划、思考、动作叙述只写在各自标签段内,它们对用户不可见;切勿把这些过程文字混进最终答案。
 - 默认使用中文回复,简洁直接。`
 
-// 研读报告各类型的 system prompt，均带 {context} 论文检索片段占位符。
+// GopherReportPrompt 是小囊鼠研读报告的 agentic system prompt:不预填片段,由 agent 用检索工具
+// 按 report-research skill 的流程自主多轮检索证据再下笔。{focus} 在构建期替换成该报告类型的聚焦点。
+// 输出协议(FINAL_ANSWER 等)由 react planner 注入,这里只描述任务与检索纪律。
+const GopherReportPrompt = `你是「小囊鼠」,科研论文研读报告撰写专员。围绕用户当前的这篇论文,生成一份聚焦「{focus}」的研读报告。
+
+工作方式:
+- 不要凭记忆臆断。先按 report-research skill 规定的流程,用 search_paper 工具围绕报告所需的各个方面分主题多轮检索论文证据,逐步补全;确认材料充分再下笔。
+- 架构图/流程图/结果曲线/对比表能直观支撑时,用 find_figures 找图,并用 Markdown ![简短说明](figure://文件名) 把图插进正文对应位置,文件名只能用工具返回的。
+- 用结构化 Markdown 组织成完整报告:分小节、有标题,关键结论须有检索到的论文证据支撑并带出处,不编造、不堆砌无关内容。篇幅服从把报告写充分,不必刻意压缩。
+- 定稿前自检一遍:聚焦点是否覆盖、有无无依据的论断、Markdown 是否规范。`
+
+// 各报告类型的聚焦点，一句话描述该类报告的侧重，替换进 GopherReportPrompt 的 {focus}。
 const (
-	ReportQuickReadPrompt = `你是科研论文速读助手。基于下面的论文片段，生成一份速读报告：研究背景、核心问题、方法概要、主要结论、一句话总评。用清晰的 Markdown 输出，简明扼要。
-
-论文片段：
-{context}`
-
-	ReportMethodPrompt = `你是科研方法分析助手。基于下面的论文片段，总结研究方法：技术路线、关键步骤、数据与实验设置、方法优势。用 Markdown 输出。
-
-论文片段：
-{context}`
-
-	ReportResultPrompt = `你是实验结果分析助手。基于下面的论文片段，总结实验结果：主要指标、对比结论、关键数据、结果的支撑力度。用 Markdown 输出。
-
-论文片段：
-{context}`
-
-	ReportInnovationPrompt = `你是论文评议助手。基于下面的论文片段，分析创新点与不足：列出主要创新贡献，再客观指出局限性与潜在问题。用 Markdown 分两部分输出。
-
-论文片段：
-{context}`
-
-	ReportFuturePrompt = `你是科研方向建议助手。基于下面的论文片段，给出后续研究建议：可延伸的问题、可改进的方法、潜在应用方向。用 Markdown 分点输出。
-
-论文片段：
-{context}`
+	ReportQuickReadFocus  = "研究背景、核心问题、方法概要、主要结论的速读概览"
+	ReportMethodFocus     = "技术路线、关键步骤、数据与实验设置、方法优势"
+	ReportResultFocus     = "主要指标、对比结论、关键数据与结果支撑力度"
+	ReportInnovationFocus = "主要创新贡献与客观的局限性、潜在问题"
+	ReportFutureFocus     = "可延伸的问题、可改进的方法与潜在应用方向"
 )
 
-// ReportPromptFor 按报告类型返回 system prompt，未知类型回退到速读。
-func ReportPromptFor(t ReportType) string {
+// ReportFocusFor 按报告类型返回聚焦点，未知类型回退到速读。
+func ReportFocusFor(t ReportType) string {
 	switch t {
 	case ReportMethod:
-		return ReportMethodPrompt
+		return ReportMethodFocus
 	case ReportResult:
-		return ReportResultPrompt
+		return ReportResultFocus
 	case ReportInnovation:
-		return ReportInnovationPrompt
+		return ReportInnovationFocus
 	case ReportFuture:
-		return ReportFuturePrompt
+		return ReportFutureFocus
 	default:
-		return ReportQuickReadPrompt
+		return ReportQuickReadFocus
 	}
 }

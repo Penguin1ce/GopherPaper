@@ -79,7 +79,10 @@ func Init(c config.ToolsConfig) error {
 	if err := initSkills(c.Skills, ""); err != nil {
 		return err
 	}
-	return initSkills(c.PioneerSkills, constant.AgentPioneer)
+	if err := initSkills(c.PioneerSkills, constant.AgentPioneer); err != nil {
+		return err
+	}
+	return initSkills(c.GopherSkills, constant.AgentGopher)
 }
 
 // initSkills 给某 agent 分组建 skill 仓库,目录列表为空则跳过。

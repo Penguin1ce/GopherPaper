@@ -1,6 +1,7 @@
 "use client";
 
-import { Coffee, LogOut, PanelLeftClose, Plus, Trash2 } from "lucide-react";
+import { Coffee, LogOut, NotebookText, PanelLeftClose, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -69,15 +70,20 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
           <Plus className="size-4" />
           新建会话
         </Button>
-        <a
+        <Link
+          className={buttonVariants({ variant: "outline", className: "h-10 w-full justify-start" })}
+          href="/reports"
+        >
+          <NotebookText className="size-4" />
+          研读报告 · 小囊鼠
+        </Link>
+        <Link
           className={buttonVariants({ variant: "outline", className: "h-10 w-full justify-start" })}
           href="/pioneer"
-          target="_blank"
-          rel="noreferrer"
         >
           <Coffee className="size-4" />
-          小云雀工具页
-        </a>
+          工具助手 · 小云雀
+        </Link>
       </div>
       <Separator />
       <div className="px-4 py-3">

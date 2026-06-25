@@ -1,7 +1,8 @@
-// tools.go 是 agentic 问答 agent 专用的检索工具:身份与论文范围全部从 ctx 取,模型不传 id。
+// Package ragtools 是 agentic agent 共用的论文检索工具:身份与论文范围全部从 ctx 取,模型不传 id。
 // 与 toolkit 的 search_my_papers 区别:这两个工具自动限定到当前会话绑定的论文(core.PaperIDFrom),
 // 并把命中出处写进 ctx 的引用收集器(retrieval.AddRefs),供循环结束后汇成 Reply.Meta["sources"]。
-package ragagent
+// 抽成叶子包供问答(ragagent)与研读报告(gopher)两条 agentic 链路复用,互不耦合。
+package ragtools
 
 import (
 	"context"
@@ -14,8 +15,14 @@ import (
 	"GopherPaper/internal/ai/core"
 	"GopherPaper/internal/ai/retrieval"
 	"GopherPaper/internal/tenant"
+	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 )
+
+// All 返回 agentic 链路的全部检索工具:正文检索与图表检索。
+func All() []tool.Tool {
+	return []tool.Tool{SearchPaper(), FindFigures()}
+}
 
 // ── search_paper ─────────────────────────────────────────────
 
@@ -33,8 +40,8 @@ type searchOutput struct {
 	Hits []searchHit `json:"hits" jsonschema:"description=命中的文献片段列表;为空表示没检索到相关资料,如实告知不要编造"`
 }
 
-// newSearchPaperTool 构建正文检索工具:身份从 ctx 取,论文范围用会话绑定的 paperID(空则跨可见库)。
-func newSearchPaperTool() tool.Tool {
+// SearchPaper 构建正文检索工具:身份从 ctx 取,论文范围用会话绑定的 paperID(空则跨可见库)。
+func SearchPaper() tool.Tool {
 	fn := func(ctx context.Context, in searchInput) (searchOutput, error) {
 		owner := tenant.MustStudentID(ctx)
 		docs, err := retrieval.RetrieveForPaper(ctx, in.Query, owner, core.PaperIDFrom(ctx))
@@ -42,6 +49,7 @@ func newSearchPaperTool() tool.Tool {
 			return searchOutput{}, fmt.Errorf("search_paper: 检索失败: %w", err)
 		}
 		docs = retrieval.DropImageDocs(docs) // 图块交给 find_figures,正文检索不混图说明
+		zlog.Debug("search_paper 检索", "paper_id", core.PaperIDFrom(ctx), "query", in.Query, "hits", len(docs))
 		retrieval.AddRefs(ctx, retrieval.References(docs))
 		hits := make([]searchHit, 0, len(docs))
 		for _, d := range docs {
@@ -75,15 +83,16 @@ type figuresOutput struct {
 	Figures []figureHit `json:"figures" jsonschema:"description=相关的论文插图/表格列表;为空表示没有相关图表,正常作答不必插图"`
 }
 
-// newFindFiguresTool 构建图表检索工具(文本化):只回说明与 figure 占位,不传图片字节。
+// FindFigures 构建图表检索工具(文本化):只回说明与 figure 占位,不传图片字节。
 // 模型据说明判断是否插图,用 figure://文件名 占位由前端解析成取图 URL。
-func newFindFiguresTool() tool.Tool {
+func FindFigures() tool.Tool {
 	fn := func(ctx context.Context, in figuresInput) (figuresOutput, error) {
 		owner := tenant.MustStudentID(ctx)
 		docs, err := retrieval.RetrieveImagesForPaper(ctx, in.Query, owner, core.PaperIDFrom(ctx))
 		if err != nil {
 			return figuresOutput{}, fmt.Errorf("find_figures: 图块检索失败: %w", err)
 		}
+		zlog.Debug("find_figures 检索", "paper_id", core.PaperIDFrom(ctx), "query", in.Query, "hits", len(docs))
 		retrieval.AddRefs(ctx, retrieval.References(docs))
 		figs := make([]figureHit, 0, len(docs))
 		for _, d := range docs {

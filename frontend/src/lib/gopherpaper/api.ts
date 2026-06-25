@@ -307,25 +307,50 @@ export interface PaperStatusEvent {
   detail?: string;
 }
 
-// ReportReadyEvent 是研读报告后台预生成完成的就绪通知。
+// ReportReadyEvent 是研读报告生成完成的就绪通知。
 export interface ReportReadyEvent {
   type: string;
   paper_id: string;
   report_type: ReportType;
 }
 
-type WsMessage = PaperStatusEvent | ReportReadyEvent;
+// ReportProgressEvent 是研读报告生成过程的阶段进度,phase 取 planning/action/reasoning/replanning,
+// 生成失败时为 failed;detail 为该阶段的文本增量。
+export interface ReportProgressEvent {
+  type: string;
+  paper_id: string;
+  report_type: ReportType;
+  phase: string;
+  detail?: string;
+}
+
+type WsMessage = PaperStatusEvent | ReportReadyEvent | ReportProgressEvent;
+
+// sseBase 给长连 SSE 选基址:优先直连后端,绕开 Next 的 fetch 代理。
+// 经代理转发时,dev 下浏览器关掉 EventSource(切页/重连)req.signal 不可靠触发,上游 Go
+// 连接不回收,堆满同源 ~6 条 HTTP/1.1 连接池后整个前端卡死。原生 EventSource 直连 Go 断开
+// 即可靠回收,且占用的是后端源(:8080)的连接池,不再挤占 Next 源 /api 请求的配额。
+// NEXT_PUBLIC_SSE_ORIGIN 显式指定后端源(如反代分离部署);未设且 dev 时按当前主机推 :8080;
+// 否则(prod 同源)回退走 Next 代理。
+function sseBase(): string {
+  const origin = process.env.NEXT_PUBLIC_SSE_ORIGIN;
+  if (origin) return `${origin.replace(/\/+$/, "")}/api/v1`;
+  if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
+    return `${window.location.protocol}//${window.location.hostname}:8080/api/v1`;
+  }
+  return API_BASE;
+}
 
 // openStatusStream 用 SSE 订阅解析进度与报告就绪。
-// 走相对路径经 Next 的 /api/v1 流式代理同源转发(WS 无法过 fetch 代理,故用 SSE);
-// EventSource 自带断线重连,调用方只需在登出时 close。
+// 基址见 sseBase:dev 直连后端、prod 同源走代理;EventSource 自带断线重连,调用方登出时 close。
 export function openStatusStream(
   jwt: string,
   onEvent: (e: PaperStatusEvent) => void,
   onReport?: (e: ReportReadyEvent) => void,
+  onProgress?: (e: ReportProgressEvent) => void,
 ): EventSource | null {
   if (!jwt || typeof EventSource === "undefined") return null;
-  const url = `${API_BASE}/events?token=${encodeURIComponent(jwt)}`;
+  const url = `${sseBase()}/events?token=${encodeURIComponent(jwt)}`;
   let source: EventSource;
   try {
     source = new EventSource(url);
@@ -342,6 +367,7 @@ export function openStatusStream(
     if (!msg || !msg.paper_id) return;
     if (msg.type === "paper_status") onEvent(msg as PaperStatusEvent);
     else if (msg.type === "report_ready") onReport?.(msg as ReportReadyEvent);
+    else if (msg.type === "report_progress") onProgress?.(msg as ReportProgressEvent);
   });
   return source;
 }
