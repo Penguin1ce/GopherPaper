@@ -115,6 +115,15 @@ export interface SendMessageResponse {
   meta?: Record<string, unknown>;
 }
 
+export interface PaperDeleteConfirmPayload {
+  paper_id: string;
+  title: string;
+  file_name?: string;
+  status?: string;
+  confirmation_token: string;
+  message?: string;
+}
+
 export interface ChatResponse {
   intent: string;
   content: string;

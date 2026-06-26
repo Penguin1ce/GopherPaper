@@ -1,12 +1,29 @@
 "use client";
 
-import { ArrowLeft, Coffee, Loader2, Plus, Send, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Coffee,
+  FileText,
+  Loader2,
+  Plus,
+  Send,
+  Trash2,
+} from "lucide-react";
 import Link from "next/link";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,10 +36,17 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import * as api from "@/lib/gopherpaper/api";
-import type { Message, PlanStep, Session } from "@/lib/gopherpaper/types";
+import type {
+  Message,
+  PaperDeleteConfirmPayload,
+  PlanStep,
+  Session,
+} from "@/lib/gopherpaper/types";
 import { formatTime, sessionTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
+import { Empty } from "@/components/gopherpaper/app-ui";
 import { Markdown } from "@/components/gopherpaper/markdown";
+import { WorkspaceFrame, WorkspacePanel } from "@/components/gopherpaper/workspace-frame";
 import {
   Plan,
   PlanAction,
@@ -36,6 +60,7 @@ const AUTH_KEY = "gopherpaper.auth";
 const LUCKIN_KEY = "gopherpaper.luckin";
 const LUCKIN_TTL_DAYS = 30;
 const LUCKIN_HEADER = "X-Luckin-Token";
+const DELETE_CONFIRM_HEADER = "X-GopherPaper-Delete-Confirm";
 const AGENT_TYPE = "pioneer";
 
 function loadToken(): string {
@@ -186,8 +211,8 @@ const PlanRail = memo(function PlanRail({
   pending: boolean;
 }) {
   return (
-    <aside className="hidden h-full min-h-0 w-96 border-l bg-background xl:flex xl:flex-col">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b px-4">
+    <WorkspacePanel as="aside" className="hidden w-96 flex-col xl:flex">
+      <div className="flex h-16 shrink-0 items-center justify-between border-b px-4">
         <div>
           <div className="text-sm font-medium">执行计划</div>
           <div className="text-xs text-muted-foreground">Plan · Execute</div>
@@ -247,27 +272,24 @@ const PlanRail = memo(function PlanRail({
         </div>
         </ScrollArea>
       </div>
-    </aside>
+    </WorkspacePanel>
   );
 });
 
 const Bubble = memo(function Bubble({ message }: { message: Message }) {
   const isAssistant = message.role === "assistant";
   return (
-    <article className={cn("flex flex-col gap-1", isAssistant ? "items-start" : "items-end")}>
-      <div
-        className={cn(
-          "max-w-[86%] rounded-xl border px-4 py-3 shadow-sm",
-          isAssistant ? "bg-card" : "bg-primary text-primary-foreground",
-        )}
-      >
-        {isAssistant ? (
+    <article className={cn("flex flex-col gap-1.5", isAssistant ? "items-start" : "items-end")}>
+      {isAssistant ? (
+        <div className="w-full">
           <Markdown richLinks>{message.content}</Markdown>
-        ) : (
+        </div>
+      ) : (
+        <div className="max-w-[80%] rounded-2xl bg-primary px-4 py-2.5 text-primary-foreground">
           <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
-        )}
-      </div>
-      <div className="flex gap-2 px-1 text-xs text-muted-foreground">
+        </div>
+      )}
+      <div className="flex gap-2 px-0.5 text-xs text-muted-foreground">
         <span>{isAssistant ? "小云雀" : "我"}</span>
         {message.created_at && <span>{formatTime(message.created_at)}</span>}
       </div>
@@ -302,6 +324,7 @@ export default function PioneerPage() {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [luckin, setLuckin] = useState<LuckinCred | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<PaperDeleteConfirmPayload | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -364,13 +387,17 @@ export default function PioneerPage() {
     }
   };
 
-  const send = async () => {
-    const q = input.trim();
+  const sendMessageText = async (
+    query: string,
+    options: { displayText?: string; extraHeaders?: Record<string, string> } = {},
+  ) => {
+    const q = query.trim();
     if (!q || sending) return;
+    const visibleText = options.displayText?.trim() || q;
     setError("");
     let sid = activeID;
     if (!sid) {
-      const title = q.length > 24 ? `${q.slice(0, 24)}…` : q;
+      const title = visibleText.length > 24 ? `${visibleText.slice(0, 24)}…` : visibleText;
       try {
         const s = await api.createSession(title, undefined, AGENT_TYPE);
         setSessions((list) => [s, ...list]);
@@ -389,7 +416,7 @@ export default function PioneerPage() {
         id: `local-${Date.now()}`,
         session_id: sid,
         role: "user",
-        content: q,
+        content: visibleText,
         created_at: new Date().toISOString(),
       },
     ]);
@@ -439,7 +466,7 @@ export default function PioneerPage() {
     };
 
     try {
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = { ...(options.extraHeaders ?? {}) };
       if (luckin?.token) headers[LUCKIN_HEADER] = luckin.token;
       const data = await api.sendMessage(sid, q, headers, {
         onDelta: (text, reset) => {
@@ -459,6 +486,7 @@ export default function PioneerPage() {
         },
         onTool: (tool, done) =>
           setToolNote(done ? `${tool} 已返回，正在继续…` : `正在调用 ${tool} …`),
+        onConfirmDeletePaper: (payload) => setDeleteConfirm(payload),
       });
       cancelFlush();
       setStreamPlan([]);
@@ -479,6 +507,27 @@ export default function PioneerPage() {
       setSending(false);
       setToolNote("");
     }
+  };
+
+  const send = async () => {
+    await sendMessageText(input);
+  };
+
+  const confirmPaperDelete = async () => {
+    if (!deleteConfirm || sending) return;
+    const title = deleteConfirm.title || deleteConfirm.file_name || deleteConfirm.paper_id;
+    const query = [
+      "用户已在前端删除确认弹窗中确认删除论文。",
+      `paper_id: ${deleteConfirm.paper_id}`,
+      `title: ${title}`,
+      "请立即调用 delete_my_paper 完成删除。",
+    ].join("\n");
+    const token = deleteConfirm.confirmation_token;
+    setDeleteConfirm(null);
+    await sendMessageText(query, {
+      displayText: `已确认删除《${title}》`,
+      extraHeaders: { [DELETE_CONFIRM_HEADER]: token },
+    });
   };
 
   if (token === null) {
@@ -520,9 +569,9 @@ export default function PioneerPage() {
   const railPending = sending && streamPlan.length === 0;
 
   return (
-    <main className="flex h-dvh overflow-hidden bg-muted/40">
-      <aside className="hidden h-full min-h-0 w-80 flex-col border-r bg-background lg:flex">
-        <div className="space-y-4 p-4">
+    <WorkspaceFrame>
+      <WorkspacePanel as="aside" className="hidden w-80 flex-col lg:flex">
+        <div className="space-y-3 border-b p-4">
           <div className="flex items-center gap-3">
             <Link
               className={buttonVariants({ variant: "ghost", size: "icon" })}
@@ -543,11 +592,9 @@ export default function PioneerPage() {
         </div>
         <div className="relative min-h-0 flex-1">
         <ScrollArea className="absolute! inset-0 px-3">
-          <div className="space-y-1 pb-4">
+          <div className="space-y-1 py-3">
             {sessions.length === 0 ? (
-              <p className="rounded-lg border border-dashed bg-muted/30 p-4 text-center text-sm text-muted-foreground">
-                还没有会话
-              </p>
+              <Empty title="还没有会话" text="发送一条消息后会自动创建云雀会话。" compact />
             ) : (
               sessions.map((s) => (
                 <div
@@ -587,10 +634,10 @@ export default function PioneerPage() {
         <div className="border-t p-3">
           <LuckinCard cred={luckin} onChange={setLuckin} />
         </div>
-      </aside>
+      </WorkspacePanel>
 
-      <section className="flex h-full min-w-0 flex-1 flex-col bg-background">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b px-4">
+      <WorkspacePanel className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b px-5">
           <div className="min-w-0">
             <div className="truncate text-sm font-medium">
               {activeSession ? sessionTitle(activeSession) : "输入消息会自动创建云雀会话"}
@@ -604,15 +651,13 @@ export default function PioneerPage() {
         </header>
         <div className="relative min-h-0 flex-1">
         <ScrollArea className="absolute! inset-0">
-          <div className="flex flex-col gap-5 p-4">
+          <div className="mx-auto flex max-h-full w-full max-w-3xl flex-col gap-6 px-6 py-5">
             {messages.length === 0 && !sending ? (
               <div className="mx-auto flex min-h-[24rem] w-full max-w-xl flex-col justify-center gap-4">
-                <div className="rounded-lg border border-dashed bg-muted/30 p-8 text-center">
-                  <h2 className="text-lg font-semibold">嗨，我是小云雀</h2>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    学术问题、找论文、点杯瑞幸，都可以直接说。
-                  </p>
-                </div>
+                <Empty
+                  title="嗨，我是小云雀"
+                  text="学术问题、找论文、点杯瑞幸，都可以直接说。"
+                />
                 <div className="flex flex-wrap justify-center gap-2">
                   {PROMPT_HINTS.map((h) => (
                     <Button key={h} type="button" variant="outline" onClick={() => setInput(h)}>
@@ -641,46 +686,124 @@ export default function PioneerPage() {
         </ScrollArea>
         </div>
         {error && (
-          <div className="border-t bg-destructive/10 px-4 py-2 text-sm text-destructive">
-            {error}
+          <div className="shrink-0 px-6 pt-2">
+            <div className="mx-auto w-full max-w-3xl rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
           </div>
         )}
         <form
-          className="shrink-0 border-t bg-background p-4"
+          className="shrink-0 px-6 pb-5 pt-2"
           onSubmit={(e) => {
             e.preventDefault();
             void send();
           }}
         >
-          <ToolStatus note={toolNote} />
-          <div className="flex items-end gap-2 rounded-[1.625rem] border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md">
-            <Textarea
-              rows={1}
-              value={input}
-              placeholder="我在国贸，帮我点一杯冰美式"
-              disabled={sending}
-              className="max-h-44 min-h-9 resize-none overflow-y-auto border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0"
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-            />
-            <Button
-              type="submit"
-              size="icon"
-              className="size-9 shrink-0 rounded-full"
-              disabled={sending || !input.trim()}
-              title="发送"
-            >
-              {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-            </Button>
+          <div className="mx-auto w-full max-w-3xl">
+            <ToolStatus note={toolNote} />
+            <div className="flex items-end gap-2 rounded-[1.625rem] border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md">
+              <Textarea
+                rows={1}
+                value={input}
+                placeholder="我在国贸，帮我点一杯冰美式"
+                disabled={sending}
+                className="max-h-44 min-h-9 resize-none overflow-y-auto border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0"
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+              />
+              <Button
+                type="submit"
+                size="icon"
+                className="size-9 shrink-0 rounded-full"
+                disabled={sending || !input.trim()}
+                title="发送"
+              >
+                {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              </Button>
+            </div>
           </div>
         </form>
-      </section>
+      </WorkspacePanel>
+      <Dialog
+        open={Boolean(deleteConfirm)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteConfirm(null);
+        }}
+      >
+        {deleteConfirm && (
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader className="min-w-0 pr-8">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-destructive/10 text-destructive">
+                  <AlertTriangle className="size-4" />
+                </span>
+                <DialogTitle className="min-w-0">确认删除论文</DialogTitle>
+              </div>
+              <DialogDescription>
+                删除后会清理这篇论文的绑定会话、报告、图片、向量索引和知识图谱节点。
+              </DialogDescription>
+            </DialogHeader>
+            <div className="min-w-0 overflow-hidden rounded-lg border bg-muted/30 p-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground ring-1 ring-border">
+                  <FileText className="size-4" />
+                </span>
+                <div className="min-w-0 space-y-1">
+                  <div className="line-clamp-2 min-w-0 break-words text-sm font-medium [overflow-wrap:anywhere]">
+                    {deleteConfirm.title || deleteConfirm.file_name || deleteConfirm.paper_id}
+                  </div>
+                  {deleteConfirm.file_name && (
+                    <div
+                      className="min-w-0 truncate text-xs text-muted-foreground"
+                      title={deleteConfirm.file_name}
+                    >
+                      {deleteConfirm.file_name}
+                    </div>
+                  )}
+                  <div className="break-all text-xs text-muted-foreground">
+                    ID: {deleteConfirm.paper_id}
+                  </div>
+                </div>
+              </div>
+              {deleteConfirm.message && (
+                <p className="mt-3 min-w-0 break-words text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                  {deleteConfirm.message}
+                </p>
+              )}
+            </div>
+            <DialogFooter className="sm:flex-nowrap">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => setDeleteConfirm(null)}
+              >
+                取消
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="w-full sm:w-auto"
+                disabled={sending || !deleteConfirm.confirmation_token}
+                onClick={() => void confirmPaperDelete()}
+              >
+                {sending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
+                确认删除
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
       <PlanRail steps={railSteps} live={railLive} pending={railPending} />
-    </main>
+    </WorkspaceFrame>
   );
 }

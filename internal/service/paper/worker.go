@@ -3,6 +3,7 @@ package paper
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -17,7 +18,10 @@ import (
 	"GopherPaper/internal/ws"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
+	"GopherPaper/pkg/errs"
 )
+
+var getPaperForPipeline = paperdao.Get
 
 // startParseWorker 起后台 goroutine 消费解析队列。连接关闭时通道随之关闭,goroutine 退出。
 func startParseWorker(ctx context.Context) error {
@@ -61,11 +65,18 @@ func runPipeline(ctx context.Context, task parseTask) {
 		fail(ctx, task, "结构化抽取失败", err)
 		return
 	}
+	if !paperPresentForPipeline(ctx, task, "save_structured") {
+		return
+	}
 	if err := saveStructured(ctx, task.PaperID, structured, doc); err != nil {
 		fail(ctx, task, "落库元信息失败", err)
 		return
 	}
 	setStatus(ctx, task, constant.PaperExtracted, "")
+
+	if !paperPresentForPipeline(ctx, task, "save_figures") {
+		return
+	}
 
 	saveFigures(task, doc) // 图片落盘并回填 ImgURI,best-effort 不阻断
 	if err := ai.DescribeFigures(ctx, doc.Figures); err != nil {
@@ -75,6 +86,9 @@ func runPipeline(ctx context.Context, task parseTask) {
 	chunks := buildMetaChunks(task, structured)
 	chunks = append(chunks, buildChunks(task, doc)...)
 	chunks = append(chunks, buildFigureChunks(task, doc)...)
+	if !paperPresentForPipeline(ctx, task, "upsert_chunks") {
+		return
+	}
 	if _, err := knowledge.UpsertChunks(ctx, chunks); err != nil {
 		fail(ctx, task, "写入向量库失败", err)
 		return
@@ -83,8 +97,14 @@ func runPipeline(ctx context.Context, task parseTask) {
 
 	// 写入知识图谱:论文与作者/关键词/机构/参考文献的关系,供关系发现与趋势分析。
 	// best-effort,失败只记日志不阻断论文就绪(图谱是增强能力)。
+	if !paperPresentForPipeline(ctx, task, "upsert_graph") {
+		return
+	}
 	upsertGraph(ctx, task, structured, doc)
 
+	if !paperPresentForPipeline(ctx, task, "mark_ready") {
+		return
+	}
 	setStatus(ctx, task, constant.PaperReady, "")
 	zlog.Info("论文解析入库完成", "paper_id", task.PaperID, "chunks", len(chunks))
 
@@ -93,6 +113,27 @@ func runPipeline(ctx context.Context, task parseTask) {
 }
 
 // saveStructured 落库结构化元信息、章节,并回填标题与页数。
+func paperPresentForPipeline(ctx context.Context, task parseTask, stage string) bool {
+	p, err := getPaperForPipeline(ctx, task.PaperID)
+	if err == nil && p != nil && p.OwnerID == task.OwnerID {
+		return true
+	}
+	if errors.Is(err, errs.ErrPaperNotFound) {
+		zlog.Info("论文已删除,停止解析写回", "paper_id", task.PaperID, "stage", stage)
+		return false
+	}
+	if err == nil && p != nil {
+		zlog.Warn("论文归属已变化,停止解析写回", "paper_id", task.PaperID, "owner", task.OwnerID, "actual_owner", p.OwnerID, "stage", stage)
+		return false
+	}
+	if err == nil {
+		zlog.Warn("论文查询返回空结果,停止解析写回", "paper_id", task.PaperID, "stage", stage)
+		return false
+	}
+	zlog.Error("检查论文是否仍存在失败,停止解析写回", "paper_id", task.PaperID, "stage", stage, "err", err)
+	return false
+}
+
 func saveStructured(ctx context.Context, paperID string, s *core.PaperStructured, doc *core.ParsedDoc) error {
 	meta := &model.PaperMeta{
 		PaperID:           paperID,
