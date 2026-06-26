@@ -77,6 +77,18 @@ func (w *rotateWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+func (w *rotateWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.f == nil {
+		return nil
+	}
+	err := w.f.Close()
+	w.f = nil
+	return err
+}
+
 // openFor 打开 now 当天的日志文件,跨天/启动时续用当天已存在的最新序号。
 func (w *rotateWriter) openFor(now time.Time) error {
 	day := now.Format(dayLayout)
