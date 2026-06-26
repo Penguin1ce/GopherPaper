@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	trpcStore *mvstore.VectorStore
+	trpcStore vectorstore.VectorStore
 	trpcEmb   trpcembedder.Embedder
 	trpcDim   int
 )
@@ -115,19 +115,71 @@ func Close() error {
 	return trpcStore.Close()
 }
 
-// UpsertChunks 批量写入 chunk(逐条 Add,只规整一次),返回写入的 id。
+// UpsertChunks 批量写入 chunk,返回实际写入的唯一 id。
+// trpc Milvus Add 是 insert,这里先向量化、再按稳定主键删除旧记录、最后插入,保证重复解析幂等。
 func UpsertChunks(ctx context.Context, chunks []Chunk) ([]string, error) {
+	if len(chunks) == 0 {
+		return []string{}, nil
+	}
+	if trpcStore == nil || trpcEmb == nil {
+		return nil, fmt.Errorf("knowledge: trpc store 未初始化")
+	}
+	upserts, ids, err := prepareUpserts(ctx, chunks)
+	if err != nil {
+		return ids, err
+	}
+	if len(ids) == 0 {
+		return ids, nil
+	}
+	if err := trpcStore.DeleteByFilter(ctx, vectorstore.WithDeleteDocumentIDs(ids)); err != nil {
+		return ids, fmt.Errorf("knowledge: 删除旧 chunks 失败: %w", err)
+	}
+	for _, upsert := range upserts {
+		if err := trpcStore.Add(ctx, upsert.doc, upsert.vec); err != nil {
+			return ids, fmt.Errorf("knowledge: trpc 写入失败: %w", err)
+		}
+	}
+	return ids, nil
+}
+
+type chunkUpsert struct {
+	doc *document.Document
+	vec []float64
+}
+
+func prepareUpserts(ctx context.Context, chunks []Chunk) ([]chunkUpsert, []string, error) {
+	normalized := make([]Chunk, 0, len(chunks))
+	index := make(map[string]int, len(chunks))
 	ids := make([]string, 0, len(chunks))
 	for i := range chunks {
 		if err := normalizeChunk(&chunks[i]); err != nil {
-			return ids, err
+			return nil, ids, err
 		}
-		if err := addChunk(ctx, chunks[i]); err != nil {
-			return ids, err
+		if pos, ok := index[chunks[i].ID]; ok {
+			normalized[pos] = chunks[i]
+			continue
 		}
+		index[chunks[i].ID] = len(normalized)
+		normalized = append(normalized, chunks[i])
 		ids = append(ids, chunks[i].ID)
 	}
-	return ids, nil
+	upserts := make([]chunkUpsert, 0, len(normalized))
+	for _, chunk := range normalized {
+		vec, err := trpcEmb.GetEmbedding(ctx, chunk.Content)
+		if err != nil {
+			return upserts, ids, fmt.Errorf("knowledge: trpc 向量化失败: %w", err)
+		}
+		upsert := chunkUpsert{
+			doc: &document.Document{
+				ID:       chunk.ID,
+				Content:  chunk.Content,
+				Metadata: chunkMetadata(chunk),
+			},
+			vec: vec,
+		}
+		upserts = append(upserts, upsert)
+	}
+	return upserts, ids, nil
 }
 
 // Search 按多租户可见性混合检索:科研基础库全员可见,私有库仅本人可见;docID 非空时限定到该论文。

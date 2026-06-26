@@ -89,6 +89,12 @@ func runPipeline(ctx context.Context, task parseTask) {
 	if !paperPresentForPipeline(ctx, task, "upsert_chunks") {
 		return
 	}
+	// 重解析先清掉该论文旧 chunk,避免内容变化后旧切分残留成孤儿(UpsertChunks 仅按本批主键删)。
+	// 首次解析时无旧数据,删除是 no-op。
+	if err := knowledge.DeletePaperChunks(ctx, task.OwnerID, task.PaperID); err != nil {
+		fail(ctx, task, "清理旧 chunks 失败", err)
+		return
+	}
 	if _, err := knowledge.UpsertChunks(ctx, chunks); err != nil {
 		fail(ctx, task, "写入向量库失败", err)
 		return
