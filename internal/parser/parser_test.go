@@ -99,3 +99,92 @@ func TestParse_EndToEnd(t *testing.T) {
 		t.Fatalf("页数应为 3，实际 %d", doc.PageCount)
 	}
 }
+
+func TestMapBlocks_CurrentMinerUContentListFormat(t *testing.T) {
+	doc := mapBlocks([]contentBlock{
+		{Type: "text", Text: "Introduction", TextLevel: 1, PageIdx: 0},
+		{Type: "text", Text: "This paper studies X.", PageIdx: 0},
+		{Type: "image", ImgPath: "images/fig1.png", ImageCaption: []string{"Figure 1: arch"}, ImageFootnote: []string{"image note"}, PageIdx: 1},
+		{Type: "table", TableCaption: []string{"Table 1: results"}, TableFootnote: []string{"table note"}, PageIdx: 1},
+		{Type: "text", Text: "References", TextLevel: 1, PageIdx: 2},
+		{Type: "text", Text: "[1] Some cited work.", PageIdx: 2},
+	}, map[string][]byte{"fig1.png": []byte("png")})
+
+	if len(doc.Sections) != 2 {
+		t.Fatalf("章节数应为 2，实际 %d", len(doc.Sections))
+	}
+	if doc.Sections[0].Title != "Introduction" || doc.Sections[0].Level != 1 {
+		t.Fatalf("标题映射错误 %+v", doc.Sections[0])
+	}
+	if len(doc.Paragraphs) != 1 || doc.Paragraphs[0].SectionPath != "Introduction" {
+		t.Fatalf("正文段落映射错误 %+v", doc.Paragraphs)
+	}
+	if len(doc.Figures) != 2 {
+		t.Fatalf("图表数应为 2，实际 %d", len(doc.Figures))
+	}
+	if doc.Figures[0].Caption != "Figure 1: arch image note" || string(doc.Figures[0].ImgData) != "png" {
+		t.Fatalf("图片说明或字节映射错误 %+v", doc.Figures[0])
+	}
+	if doc.Figures[1].Caption != "Table 1: results table note" {
+		t.Fatalf("表格说明映射错误 %+v", doc.Figures[1])
+	}
+	if len(doc.References) != 1 {
+		t.Fatalf("参考文献应为 1 条，实际 %d", len(doc.References))
+	}
+}
+
+func TestReadArtifacts_ModelJSONReferences(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	content, err := zw.Create("paper_content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := content.Write([]byte(`[{"type":"text","text":"body","page_idx":0}]`)); err != nil {
+		t.Fatal(err)
+	}
+	model, err := zw.Create("paper_model.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := model.Write([]byte(`{"pdf_info":[{"para_blocks":[{"blocks":[{"type":"ref_text","lines":[{"spans":[{"type":"text","content":"[1] W. Dai, b-money, 1998."}]}]}]}]}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	blocks, images, refs, err := readArtifacts(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := mapBlocks(blocks, images)
+	doc.References = mergeReferences(doc.References, refs)
+
+	if len(doc.References) != 1 || doc.References[0] != "[1] W. Dai, b-money, 1998." {
+		t.Fatalf("ref_text 引用映射错误 %+v", doc.References)
+	}
+}
+
+func TestReadArtifacts_CaptionStringOrArray(t *testing.T) {
+	zipBytes := buildZip(t, []map[string]any{
+		{
+			"type":           "image",
+			"img_path":       "images/fig1.png",
+			"image_caption":  "Figure 1: arch",
+			"image_footnote": []string{"note"},
+			"page_idx":       0,
+		},
+	})
+	blocks, images, refs, err := readArtifacts(zipBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(images) != 0 || len(refs) != 0 {
+		t.Fatalf("测试 zip 不应有图片字节或引用 images=%d refs=%d", len(images), len(refs))
+	}
+	doc := mapBlocks(blocks, images)
+	if len(doc.Figures) != 1 || doc.Figures[0].Caption != "Figure 1: arch note" {
+		t.Fatalf("字符串/数组图注兼容失败 %+v", doc.Figures)
+	}
+}

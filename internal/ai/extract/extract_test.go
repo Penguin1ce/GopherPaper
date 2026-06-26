@@ -105,6 +105,31 @@ func TestBuildWindows_CoversAllSections(t *testing.T) {
 	}
 }
 
+func TestReferenceTitle(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{
+			in:   `[1] W. Dai, "b-money," http://www.weidai.com/bmoney.txt, 1998.`,
+			want: "b-money,",
+		},
+		{
+			in:   `[3] S. Haber, W.S. Stornetta, "How to time-stamp a digital document," In Journal of Cryptology, 1991.`,
+			want: "How to time-stamp a digital document,",
+		},
+		{
+			in:   `[8] W. Feller, An introduction to probability theory and its applications, 1957.`,
+			want: "W. Feller, An introduction to probability theory and its applications, 1957.",
+		},
+	}
+	for _, tc := range cases {
+		if got := referenceTitle(tc.in); got != tc.want {
+			t.Fatalf("referenceTitle(%q)=%q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // TestMergePartials 验证确定性合并:列表并集去重、题目取首个非空、文本取最长。
 func TestMergePartials(t *testing.T) {
 	got := mergePartials([]*core.PaperStructured{

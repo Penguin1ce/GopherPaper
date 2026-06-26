@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"GopherPaper/internal/ai/agentrt"
@@ -28,9 +29,12 @@ const (
 	maxMapWindows = 7
 )
 
+var quotedTitleRe = regexp.MustCompile(`["“]([^"”]{8,200})["”]`)
+
 // Extract 经带工具 chat agent 把解析后的论文抽成结构化信息。ctx 须注入论文 owner。
 // 单窗口直接抽,多窗口走 map-reduce 合并。
 func Extract(ctx context.Context, doc *core.ParsedDoc) (*core.PaperStructured, error) {
+	logParsedAssets(doc)
 	windows := buildWindows(doc)
 	if len(windows) == 0 {
 		return &core.PaperStructured{}, nil
@@ -56,6 +60,91 @@ func Extract(ctx context.Context, doc *core.ParsedDoc) (*core.PaperStructured, e
 		return partials[0], nil
 	}
 	return reducePartials(ctx, partials), nil
+}
+
+func logParsedAssets(doc *core.ParsedDoc) {
+	if doc == nil {
+		return
+	}
+	zlog.Info("论文抽取输入资产",
+		"figures", figureLogItems(doc.Figures),
+		"reference_titles", referenceTitleLogItems(doc.References),
+		"figure_count", len(doc.Figures),
+		"reference_count", len(doc.References),
+	)
+}
+
+func figureLogItems(figs []core.Figure) []string {
+	out := make([]string, 0, len(figs))
+	for i, fig := range figs {
+		caption := summarizeLogText(firstNonEmpty(fig.Caption, fig.Desc), 120)
+		if caption == "" {
+			caption = filepathBase(fig.ImgPath)
+		}
+		if caption == "" {
+			caption = fmt.Sprintf("figure_%d", i+1)
+		}
+		if fig.PageNo > 0 {
+			caption = fmt.Sprintf("p%d %s", fig.PageNo, caption)
+		}
+		out = append(out, caption)
+	}
+	return out
+}
+
+func referenceTitleLogItems(refs []string) []string {
+	out := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		title := referenceTitle(ref)
+		if title == "" {
+			continue
+		}
+		out = append(out, title)
+	}
+	return out
+}
+
+func referenceTitle(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ""
+	}
+	if m := quotedTitleRe.FindStringSubmatch(ref); len(m) == 2 {
+		return summarizeLogText(m[1], 160)
+	}
+	return summarizeLogText(stripReferencePrefix(ref), 160)
+}
+
+func stripReferencePrefix(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if i := strings.Index(ref, "]"); strings.HasPrefix(ref, "[") && i >= 0 && i+1 < len(ref) {
+		ref = strings.TrimSpace(ref[i+1:])
+	}
+	return ref
+}
+
+func summarizeLogText(s string, maxRunes int) string {
+	s = strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+	if maxRunes <= 0 {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= maxRunes {
+		return s
+	}
+	return string(r[:maxRunes]) + "..."
+}
+
+func filepathBase(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	path = strings.TrimRight(path, "/\\")
+	if i := strings.LastIndexAny(path, "/\\"); i >= 0 {
+		return path[i+1:]
+	}
+	return path
 }
 
 // extractWindow 对单个窗口抽取一份只含本窗口有依据字段的 JSON。
