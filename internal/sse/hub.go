@@ -1,8 +1,8 @@
-// Package ws 是按用户分发的服务端推送中心，包级单例，走 SSE(Server-Sent Events)。
+// Package sse 是按用户分发的服务端推送中心，包级单例，走 SSE(Server-Sent Events)。
 // 业务侧只调 PushStatus/PushReport，不关心连接细节；订阅的注册注销由 handler 负责。
 // 选 SSE 不选 WebSocket:前端经 Next 的 fetch 代理同源转发,而 fetch 路由无法完成 WS
 // 升级握手,SSE 则能原样流式透传,免独立 origin 与 nginx Upgrade 规则。
-package ws
+package sse
 
 import (
 	"encoding/json"
@@ -103,7 +103,7 @@ func PushReportProgress(userID, paperID, reportType, phase, detail string) {
 func broadcast(userID, paperID string, msg any) {
 	data, err := json.Marshal(msg)
 	if err != nil {
-		zlog.Warn("ws 消息序列化失败", "user", userID, "paper", paperID, "err", err)
+		zlog.Warn("sse 消息序列化失败", "user", userID, "paper", paperID, "err", err)
 		return
 	}
 	mu.RLock()
@@ -116,7 +116,7 @@ func broadcast(userID, paperID string, msg any) {
 		select {
 		case s.ch <- data:
 		default:
-			zlog.Warn("ws 订阅缓冲已满,丢弃事件", "user", userID, "paper", paperID)
+			zlog.Warn("sse 订阅缓冲已满,丢弃事件", "user", userID, "paper", paperID)
 		}
 	}
 }

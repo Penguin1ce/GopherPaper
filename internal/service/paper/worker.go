@@ -15,7 +15,7 @@ import (
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/parser"
 	"GopherPaper/internal/tenant"
-	"GopherPaper/internal/ws"
+	"GopherPaper/internal/sse"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 	"GopherPaper/pkg/errs"
@@ -393,7 +393,7 @@ func setStatus(ctx context.Context, task parseTask, status constant.PaperStatus,
 	if err := paperdao.UpdateStatus(ctx, task.PaperID, status, detail); err != nil {
 		zlog.Error("更新解析状态失败", "paper_id", task.PaperID, "status", status, "err", err)
 	}
-	ws.PushStatus(task.OwnerID, task.PaperID, string(status), detail)
+	sse.PushStatus(task.OwnerID, task.PaperID, string(status), detail)
 }
 
 func fail(ctx context.Context, task parseTask, msg string, err error) {

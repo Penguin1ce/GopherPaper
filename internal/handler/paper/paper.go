@@ -91,7 +91,7 @@ func Search(c *gin.Context) {
 	response.OK(c, papers)
 }
 
-// Status 查论文解析状态,WebSocket 断线兜底用。
+// Status 查论文解析状态,SSE 断线兜底用。
 // GET /api/v1/papers/:id/status
 func Status(c *gin.Context) {
 	ownerID := tenant.MustStudentID(c.Request.Context())

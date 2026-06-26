@@ -9,7 +9,7 @@ import (
 	graphhandler "GopherPaper/internal/handler/graph"
 	paperhandler "GopherPaper/internal/handler/paper"
 	"GopherPaper/internal/handler/user"
-	wshandler "GopherPaper/internal/handler/ws"
+	ssehandler "GopherPaper/internal/handler/sse"
 	"GopherPaper/internal/middleware"
 	"GopherPaper/internal/response"
 	"GopherPaper/internal/zlog"
@@ -38,7 +38,7 @@ func Init(mode string) *gin.Engine {
 		api.POST("/user/login", user.Login)        // 登录签发 JWT
 
 		// SSE 订阅解析进度，鉴权走 query token(EventSource 带不了头)。
-		api.GET("/events", wshandler.Subscribe)
+		api.GET("/events", ssehandler.Subscribe)
 
 		// 取召回引用的图片，img 标签带不了头，鉴权走 query token。
 		api.GET("/papers/:id/figures/:name", paperhandler.Figure)

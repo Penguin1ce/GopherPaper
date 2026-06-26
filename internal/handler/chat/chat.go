@@ -5,7 +5,6 @@ package chat
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -16,6 +15,7 @@ import (
 	"GopherPaper/internal/credential"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/response"
+	"GopherPaper/internal/sse"
 	chatservice "GopherPaper/internal/service/chat"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
@@ -105,10 +105,7 @@ func SendMessage(c *gin.Context) {
 	started := false
 	emit := func(name string, payload any) {
 		if !started {
-			h := c.Writer.Header()
-			h.Set("Content-Type", "text/event-stream; charset=utf-8")
-			h.Set("Cache-Control", "no-cache")
-			h.Set("X-Accel-Buffering", "no") // 反代不缓冲,事件即发即达
+			sse.WriteHeaders(c)
 			c.Writer.WriteHeader(http.StatusOK)
 			started = true
 		}
@@ -116,8 +113,7 @@ func SendMessage(c *gin.Context) {
 		if err != nil {
 			return
 		}
-		fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", name, b)
-		c.Writer.Flush()
+		sse.WriteEvent(c.Writer, name, string(b))
 	}
 	ctx = core.WithStream(ctx, func(ev core.StreamEvent) {
 		switch ev.Kind {

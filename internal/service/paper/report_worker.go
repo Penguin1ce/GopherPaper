@@ -7,8 +7,8 @@ import (
 	"fmt"
 
 	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/sse"
 	"GopherPaper/internal/tenant"
-	"GopherPaper/internal/ws"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 	"GopherPaper/pkg/errs"
@@ -65,13 +65,13 @@ func startReportWorker(ctx context.Context) error {
 }
 
 // runReportTask 按需生成单类报告:注入 owner 租户后经 ensureReport 抢锁生成并落库。
-// ctx 注入流式处理器,把小囊鼠流水线各阶段事件(规划→撰写→评审)桥到 ws 实时推前端执行计划;
+// ctx 注入流式处理器,把小囊鼠流水线各阶段事件(规划→撰写→评审)桥到 sse 实时推前端执行计划;
 // 已命中缓存或正被并发生成都视为正常,不算失败。
 func runReportTask(ctx context.Context, task reportTask) {
 	ctx = tenant.With(ctx, tenant.Tenant{StudentID: task.OwnerID})
 	ctx = core.WithStream(ctx, func(ev core.StreamEvent) {
 		if ev.Kind == constant.StreamEventPlan {
-			ws.PushReportProgress(task.OwnerID, task.PaperID, string(task.ReportType), ev.Phase, ev.Delta)
+			sse.PushReportProgress(task.OwnerID, task.PaperID, string(task.ReportType), ev.Phase, ev.Delta)
 		}
 	})
 	if _, err := ensureReport(ctx, task.PaperID, task.ReportType); err != nil {
@@ -81,10 +81,10 @@ func runReportTask(ctx context.Context, task reportTask) {
 		}
 		zlog.Error("报告生成失败", "paper_id", task.PaperID, "type", string(task.ReportType), "err", err)
 		// 推一条失败阶段,前端把对应报告卡标记为失败态。
-		ws.PushReportProgress(task.OwnerID, task.PaperID, string(task.ReportType), constant.ReportPhaseFailed, "生成失败")
+		sse.PushReportProgress(task.OwnerID, task.PaperID, string(task.ReportType), constant.ReportPhaseFailed, "生成失败")
 		return
 	}
-	// 就绪即经 ws 通知前端,免轮询直接拉缓存。
-	ws.PushReport(task.OwnerID, task.PaperID, string(task.ReportType))
+	// 就绪即经 sse 通知前端,免轮询直接拉缓存。
+	sse.PushReport(task.OwnerID, task.PaperID, string(task.ReportType))
 	zlog.Info("报告生成完成", "paper_id", task.PaperID, "type", string(task.ReportType))
 }

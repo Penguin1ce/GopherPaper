@@ -1,8 +1,8 @@
 // Package paper 是论文上传与解析入库的业务逻辑，包级函数直接读写 dao/paper、parser、ai、knowledge。
 //
 //	上传 Upload：存文件 + 建 Paper(uploaded) + 投 parse_queue,投递失败兜底后台解析
-//	解析 worker：异步消费 parse_queue,逐步 解析→抽取→分块入库,每步更新状态并经 ws 推送
-//	状态主推走 WebSocket,GetStatus 仅作断线兜底查询
+//	解析 worker：异步消费 parse_queue,逐步 解析→抽取→分块入库,每步更新状态并经 sse 推送
+//	状态主推走 SSE,GetStatus 仅作断线兜底查询
 package paper
 
 import (
