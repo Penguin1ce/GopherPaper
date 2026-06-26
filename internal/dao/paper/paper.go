@@ -48,7 +48,37 @@ func List(ctx context.Context, ownerID string) ([]model.Paper, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dao/paper: 查询论文列表失败: %w", err)
 	}
+	if err := attachKeywords(ctx, papers); err != nil {
+		return nil, err
+	}
 	return papers, nil
+}
+
+// attachKeywords 批量回填论文关键词。关键词在 paper_meta 表，列表不联表故单查回填，供前端做关键词筛选。
+func attachKeywords(ctx context.Context, papers []model.Paper) error {
+	if len(papers) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(papers))
+	for i := range papers {
+		ids = append(ids, papers[i].ID)
+	}
+	var metas []model.PaperMeta
+	err := dao.DB.WithContext(ctx).
+		Select("paper_id", "keywords").
+		Where("paper_id in ?", ids).
+		Find(&metas).Error
+	if err != nil {
+		return fmt.Errorf("dao/paper: 查询关键词失败: %w", err)
+	}
+	kw := make(map[string]model.JSONStrings, len(metas))
+	for _, m := range metas {
+		kw[m.PaperID] = m.Keywords
+	}
+	for i := range papers {
+		papers[i].Keywords = kw[papers[i].ID]
+	}
+	return nil
 }
 
 // Search 在某用户论文里按标题/文件名模糊检索，做历史文献检索。
@@ -61,6 +91,9 @@ func Search(ctx context.Context, ownerID, keyword string) ([]model.Paper, error)
 		Find(&papers).Error
 	if err != nil {
 		return nil, fmt.Errorf("dao/paper: 检索论文失败: %w", err)
+	}
+	if err := attachKeywords(ctx, papers); err != nil {
+		return nil, err
 	}
 	return papers, nil
 }

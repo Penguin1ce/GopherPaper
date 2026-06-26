@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenText, ChevronDown, Loader2, Plus, Send } from "lucide-react";
+import { BookOpenText, ChevronDown, Loader2, Send } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { figureUrl } from "@/lib/gopherpaper/api";
 import { useApp } from "@/lib/gopherpaper/store";
 import type { Message, Reference } from "@/lib/gopherpaper/types";
-import { formatTime, intentLabel, paperTitle, sessionTitle } from "@/lib/gopherpaper/utils";
+import { formatTime, intentLabel, paperTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty, useGuard } from "./app-ui";
 import { Markdown } from "./markdown";
@@ -177,16 +177,7 @@ const PROMPT_HINTS = [
 ];
 
 export function ChatPane() {
-  const {
-    messages,
-    papers,
-    activeSession,
-    activePaper,
-    sending,
-    toolNote,
-    sendMessage,
-    createSession,
-  } = useApp();
+  const { messages, activeSession, activePaper, sending, toolNote, sendMessage } = useApp();
   const guard = useGuard();
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -202,40 +193,10 @@ export function ChatPane() {
     guard(() => sendMessage(q));
   };
 
-  const newSession = () =>
-    guard(async () => {
-      const title = activePaper ? `${paperTitle(activePaper)} 问答` : "新会话";
-      await createSession(title, activePaper?.id);
-    });
-
-  const sessionPaper = activeSession?.paper_id
-    ? papers.find((p) => p.id === activeSession.paper_id) || null
-    : null;
-  const hasSession = Boolean(activeSession);
-  const hasContent = hasSession || messages.length > 0;
-
-  // 论文标题已在右栏头部展示, 这里只给会话上下文, 避免与上方标题重复
-  const sessionScopedToActive =
-    !!sessionPaper && !!activePaper && sessionPaper.id === activePaper.id;
-  const chatContextLabel = !activeSession
-    ? activePaper
-      ? "向当前论文提问, 自动创建会话"
-      : "选择论文或直接提问创建会话"
-    : sessionScopedToActive
-      ? "围绕当前论文的问答"
-      : sessionPaper
-        ? `围绕《${paperTitle(sessionPaper)}》`
-        : sessionTitle(activeSession);
+  const hasContent = Boolean(activeSession) || messages.length > 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mx-auto flex w-full max-w-3xl shrink-0 items-center justify-between gap-3 px-6 pt-4">
-        <span className="min-w-0 truncate text-xs text-muted-foreground">{chatContextLabel}</span>
-        <Button type="button" variant="ghost" size="sm" onClick={newSession}>
-          <Plus className="size-4" />
-          新建
-        </Button>
-      </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto flex max-h-full w-full max-w-3xl flex-col gap-6 px-6 py-5">
           {!hasContent ? (
