@@ -169,3 +169,10 @@ smtp_host = "smtp.example.com"         # SMTP 服务器
 smtp_port = 465                        # SSL 端口
 key = "your-smtp-auth-code"            # 授权码或密码
 recipient_mail = "user@example.com"    # 测试/默认收件邮箱
+
+# Neo4j 知识图谱:论文关系与研究趋势,按用户隔离
+[neo4j]
+uri = "bolt://localhost:7687"
+username = "neo4j"
+password = "gopherpaper"
+database = "" # 留空走默认库 neo4j
