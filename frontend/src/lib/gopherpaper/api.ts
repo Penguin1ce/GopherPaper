@@ -10,6 +10,7 @@ import type {
   Message,
   NameCount,
   Paper,
+  PaperDeleteConfirmPayload,
   PaperDetail,
   RegisterPayload,
   RelatedPaper,
@@ -239,6 +240,7 @@ export interface SendStreamHandlers {
   onDelta?: (text: string, reset?: boolean) => void;
   onTool?: (tool: string, done: boolean) => void;
   onPlan?: (phase: string, content: string) => void;
+  onConfirmDeletePaper?: (payload: PaperDeleteConfirmPayload) => void;
 }
 
 // 解析一帧 SSE(event + data 行),返回事件名与 JSON 载荷,无 data 返回 null。
@@ -304,6 +306,9 @@ export async function sendMessage(
         break;
       case "tool_result":
         stream?.onTool?.(String(payload.tool ?? ""), true);
+        break;
+      case "confirm_delete_paper":
+        stream?.onConfirmDeletePaper?.(parsed.payload as PaperDeleteConfirmPayload);
         break;
       case "done":
         result = parsed.payload as SendMessageResponse;

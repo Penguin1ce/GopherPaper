@@ -42,6 +42,7 @@ func Init(ctx context.Context, client *mq.Client, parseQ, reportQ string, report
 		}
 		return toolkit.IngestedPaper{PaperID: p.ID, Title: p.Title, Status: string(p.Status)}, nil
 	})
+	toolkit.RegisterPaperDelete(Delete)
 	if err := startParseWorker(ctx); err != nil {
 		return err
 	}

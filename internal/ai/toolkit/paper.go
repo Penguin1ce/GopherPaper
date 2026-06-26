@@ -18,6 +18,18 @@ import (
 	"GopherPaper/internal/tenant"
 )
 
+var (
+	getPaperForTool    = paperdao.Get
+	deletePaperForTool func(ctx context.Context, ownerID, paperID string) error
+)
+
+// RegisterPaperDelete registers the service-layer delete implementation.
+// toolkit cannot import service/paper directly because paper ingestion is
+// injected in the opposite direction.
+func RegisterPaperDelete(fn func(ctx context.Context, ownerID, paperID string) error) {
+	deletePaperForTool = fn
+}
+
 // ── list_my_papers ───────────────────────────────────────────
 
 type listPapersInput struct {

@@ -38,6 +38,15 @@ type (
 		Phase   string `json:"phase"`
 		Content string `json:"content"`
 	}
+	// StreamPaperDeleteConfirmPayload 是 confirm_delete_paper 事件载荷。
+	StreamPaperDeleteConfirmPayload struct {
+		PaperID           string `json:"paper_id"`
+		Title             string `json:"title"`
+		FileName          string `json:"file_name,omitempty"`
+		Status            string `json:"status,omitempty"`
+		ConfirmationToken string `json:"confirmation_token"`
+		Message           string `json:"message,omitempty"`
+	}
 	// StreamErrorPayload 是 error 事件载荷。
 	StreamErrorPayload struct {
 		Message string `json:"message"`

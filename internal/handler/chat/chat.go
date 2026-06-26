@@ -96,6 +96,9 @@ func SendMessage(c *gin.Context) {
 	if tok := strings.TrimSpace(c.GetHeader(constant.HeaderLuckinToken)); tok != "" {
 		ctx = credential.With(ctx, constant.CredentialLuckin, tok)
 	}
+	if tok := strings.TrimSpace(c.GetHeader(constant.HeaderPaperDeleteConfirm)); tok != "" {
+		ctx = toolkit.WithPaperDeleteConfirmation(ctx, tok)
+	}
 	studentID := tenant.MustStudentID(ctx)
 
 	// SSE 头在首个事件时才写,此前的错误仍能返回普通 JSON 状态码。
@@ -122,6 +125,8 @@ func SendMessage(c *gin.Context) {
 			emit(ev.Kind, dto.StreamDeltaPayload{Content: ev.Delta, Reset: ev.Reset})
 		case constant.StreamEventPlan:
 			emit(ev.Kind, dto.StreamPlanPayload{Phase: ev.Phase, Content: ev.Delta})
+		case constant.StreamEventConfirmDeletePaper:
+			emit(ev.Kind, ev.Payload)
 		default:
 			// 原始工具名换前端显示名,未配置回退原始名。
 			emit(ev.Kind, dto.StreamToolPayload{Tool: toolkit.DisplayName(ev.Tool)})

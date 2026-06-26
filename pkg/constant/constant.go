@@ -96,6 +96,8 @@ const (
 	AgentPioneer      = "pioneer"        // 工具分组名,也是会话 AgentType 的取值
 	CredentialLuckin  = "luckin"         // 瑞幸凭据 provider 名,对应 mcp 配置的 credential 字段
 	HeaderLuckinToken = "X-Luckin-Token" // 前端随消息携带瑞幸 token 的请求头
+	// HeaderPaperDeleteConfirm 携带小云雀论文删除弹窗回传的一次性确认令牌。
+	HeaderPaperDeleteConfirm = "X-GopherPaper-Delete-Confirm"
 )
 
 // AgentGopher 是小囊鼠 agent 的标识,也是会话 AgentType 与工具分组的取值。
@@ -168,12 +170,13 @@ const PioneerSessionTTL = 7 * 24 * time.Hour
 
 // 发消息 SSE 事件名。生成过程经 SSE 推送:工具调用与文本增量实时上屏,done 收尾带完整消息。
 const (
-	StreamEventToolCall   = "tool_call"   // agent 发起一次工具调用,载荷带工具名
-	StreamEventToolResult = "tool_result" // 工具调用返回,载荷带工具名
-	StreamEventDelta      = "delta"       // 应答文本增量
-	StreamEventPlan       = "plan"        // 先锋者规划/动作阶段文本,载荷带 phase 与增量
-	StreamEventDone       = "done"        // 生成完成,载荷为完整 SendMessageResponse
-	StreamEventError      = "error"       // 生成中途失败,载荷带错误说明
+	StreamEventToolCall           = "tool_call"            // agent 发起一次工具调用,载荷带工具名
+	StreamEventToolResult         = "tool_result"          // 工具调用返回,载荷带工具名
+	StreamEventDelta              = "delta"                // 应答文本增量
+	StreamEventPlan               = "plan"                 // 先锋者规划/动作阶段文本,载荷带 phase 与增量
+	StreamEventConfirmDeletePaper = "confirm_delete_paper" // 请求前端弹出论文删除确认框
+	StreamEventDone               = "done"                 // 生成完成,载荷为完整 SendMessageResponse
+	StreamEventError              = "error"                // 生成中途失败,载荷带错误说明
 )
 
 type KnowledgeScope string
