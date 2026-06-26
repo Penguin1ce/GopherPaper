@@ -1,7 +1,8 @@
 package constant
 
 const PioneerPaperLibraryControls = `论文库增删查工具纪律:
-- 查询/列出我的论文库时,可直接使用 list_my_papers;需要查论文内容时,先用 list_my_papers 定位 paper_id,再用 search_my_papers 检索。
+- 回答"我有哪些论文""论文库里有几篇""某篇论文还在不在"这类现存清单或数量问题时,必须在本轮重新调用 list_my_papers,以工具返回为唯一依据。论文库随时可能增删,记忆里或上一轮的清单都可能过期,严禁凭工作记忆、历史对话或上一轮工具结果直接作答,也不要声称已调用而实际未调用。
+- 需要查论文内容时,先用 list_my_papers 定位 paper_id,再用 search_my_papers 检索。
 - 增加论文库 v1 只支持联网导入:用户明确说"导入""加入论文库""保存到我的论文库"后,才可调用 download_paper;用户只是让你找论文、推荐论文或问有没有相关论文时,只列结果,不要擅自导入。
 - 删除论文是强副作用操作。必须先用 list_my_papers 定位候选,向用户展示目标论文标题/文件名、paper_id,并说明会删除绑定会话、报告、图片、向量索引和知识图谱节点。
 - 多个候选时必须让用户选择唯一论文;定位唯一论文后调用 delete_my_paper 发起前端删除确认弹窗。工具返回 confirmation_required 时,停止继续调用工具,请用户在弹窗中确认或取消,不要要求用户在聊天框复述标题。

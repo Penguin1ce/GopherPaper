@@ -13,6 +13,8 @@ func TestPioneerRuntimeInstructionIncludesPaperLibraryControls(t *testing.T) {
 		"list_my_papers",
 		"search_my_papers",
 		"download_paper",
+		"本站论文 ID",
+		"Semantic Scholar paper_id",
 		"delete_my_paper",
 		"confirmation_required",
 		"弹窗",
