@@ -36,6 +36,7 @@ var planTags = []struct{ tag, phase string }{
 func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) {
 	emit := core.StreamFrom(ctx)
 	sp := newPlanSplitter(emit)
+	tools := core.NewToolDisplayTracker()
 	var lastContent string
 	for ev := range ch {
 		if ev.Error != nil {
@@ -45,7 +46,11 @@ func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) 
 			if emit != nil {
 				for _, c := range ev.Choices {
 					if c.Message.ToolName != "" {
-						emit(core.StreamEvent{Kind: constant.StreamEventToolResult, Tool: c.Message.ToolName})
+						emit(core.StreamEvent{
+							Kind:   constant.StreamEventToolResult,
+							Tool:   tools.ResultLabel(c.Message.ToolID, c.Message.ToolName),
+							ToolID: c.Message.ToolID,
+						})
 					}
 				}
 			}
@@ -64,7 +69,11 @@ func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) 
 			// 非 partial:一个完整助手轮次收尾。
 			if emit != nil {
 				for _, tc := range c.Message.ToolCalls {
-					emit(core.StreamEvent{Kind: constant.StreamEventToolCall, Tool: tc.Function.Name})
+					emit(core.StreamEvent{
+						Kind:   constant.StreamEventToolCall,
+						Tool:   tools.CallLabel(tc),
+						ToolID: tc.ID,
+					})
 				}
 			}
 			if strings.TrimSpace(c.Message.Content) != "" {

@@ -18,6 +18,7 @@ import (
 // 收尾的非 partial 事件,故聚合结果与外发互不重复。
 func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) {
 	emit := StreamFrom(ctx)
+	tools := NewToolDisplayTracker()
 	var sb strings.Builder
 	for ev := range ch {
 		if ev.Error != nil {
@@ -27,7 +28,11 @@ func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) 
 			if emit != nil {
 				for _, c := range ev.Choices {
 					if c.Message.ToolName != "" {
-						emit(StreamEvent{Kind: constant.StreamEventToolResult, Tool: c.Message.ToolName})
+						emit(StreamEvent{
+							Kind:   constant.StreamEventToolResult,
+							Tool:   tools.ResultLabel(c.Message.ToolID, c.Message.ToolName),
+							ToolID: c.Message.ToolID,
+						})
 					}
 				}
 			}
@@ -43,7 +48,11 @@ func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) 
 				}
 				if !ev.IsPartial {
 					for _, tc := range c.Message.ToolCalls {
-						emit(StreamEvent{Kind: constant.StreamEventToolCall, Tool: tc.Function.Name})
+						emit(StreamEvent{
+							Kind:   constant.StreamEventToolCall,
+							Tool:   tools.CallLabel(tc),
+							ToolID: tc.ID,
+						})
 					}
 				}
 			}
