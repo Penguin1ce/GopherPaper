@@ -72,6 +72,7 @@ interface AppContextValue {
   logout: () => void;
   refreshPapers: (query?: string) => Promise<void>;
   uploadPaper: (file: File) => Promise<void>;
+  removePaper: (id: string) => Promise<void>;
   selectPaper: (id: string) => void;
   refreshSessions: () => Promise<void>;
   openSession: (id: string) => Promise<void>;
@@ -555,6 +556,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const removePaper = useCallback(
+    async (id: string) => {
+      const paperIndex = papers.findIndex((p) => p.id === id);
+      const remainingPapers = papers.filter((p) => p.id !== id);
+      const remainingSessions = sessions.filter((s) => s.paper_id !== id);
+      const activeSessionDeleted = sessions.some(
+        (s) => s.id === activeSessionID && s.paper_id === id,
+      );
+
+      await api.deletePaper(id);
+
+      setPapers(remainingPapers);
+      setSessions(remainingSessions);
+      setReportReady((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+
+      if (activePaperID === id) {
+        const nextPaper =
+          remainingPapers[paperIndex] ||
+          remainingPapers[paperIndex - 1] ||
+          remainingPapers[0] ||
+          null;
+        if (nextPaper) {
+          setActivePaperID(nextPaper.id);
+          const paperSessions = sessionsForPaper(remainingSessions, nextPaper.id);
+          if (paperSessions.length > 0) {
+            await openSession(paperSessions[0].id);
+          } else {
+            setActiveSessionID("");
+            setMessages([]);
+          }
+        } else {
+          setActivePaperID("");
+          setActiveSessionID("");
+          setMessages([]);
+        }
+      } else if (activeSessionDeleted) {
+        setActiveSessionID("");
+        setMessages([]);
+      }
+
+      toast("论文已删除");
+    },
+    [activePaperID, activeSessionID, openSession, papers, sessions, toast],
+  );
+
   // 选论文:同一篇保持当前会话不动;切到不同论文则跳到该论文最新会话,
   // 没有会话则清空进入欢迎态(会话因此永远归属当前论文)。
   const selectPaper = useCallback(
@@ -812,6 +862,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     logout,
     refreshPapers,
     uploadPaper,
+    removePaper,
     selectPaper,
     refreshSessions,
     openSession,

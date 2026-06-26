@@ -140,7 +140,7 @@ db = 0
 
 # ── 消息队列(RabbitMQ)：耗时任务异步化 ───────────────────────
 [mq]
-url = "amqp://gopher:gopher@localhost:5672/"
+url = "amqp://gopher:gopher@localhost:5772/"
 parse_queue = "paper.parse"   # PDF 解析入库流水线
 report_queue = "paper.report" # 研读报告预生成扇出队列
 report_concurrency = 6        # 报告消费者并发度,按模型并发配额上调

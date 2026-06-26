@@ -1,6 +1,16 @@
 "use client";
 
-import { FileUp, ListFilter, Loader2, MessagesSquare, RefreshCw, Search, Trash2, X } from "lucide-react";
+import {
+  FileUp,
+  ListFilter,
+  Loader2,
+  MessagesSquare,
+  PanelLeftOpen,
+  RefreshCw,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -8,6 +18,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -41,7 +52,7 @@ function paperProgress(paper: Paper): number {
   return Math.min(100, Math.max(8, (statusStep(paper.status) + 1) * 20));
 }
 
-// 解析中/失败时的细状态条 — 就绪后隐藏, 不与右栏头部重复
+// 解析中/失败时的细状态条 - 就绪后隐藏, 不与右栏头部重复
 function ActiveStatusStrip({ paper }: { paper: Paper }) {
   return (
     <div className="rounded-md border bg-card px-3 py-2">
@@ -228,13 +239,14 @@ function SessionPopover({
   );
 }
 
-export function PaperPane() {
+export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void }) {
   const {
     papers,
     activePaper,
     activePaperID,
     selectPaper,
     uploadPaper,
+    removePaper,
     refreshPapers,
     sessions,
     activeSessionID,
@@ -246,6 +258,8 @@ export function PaperPane() {
   const [picked, setPicked] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Paper | null>(null);
+  const [deletingID, setDeletingID] = useState("");
   const [query, setQuery] = useState("");
   const [activeKw, setActiveKw] = useState<string[]>([]);
 
@@ -277,13 +291,36 @@ export function PaperPane() {
     }).finally(() => setUploading(false));
   };
 
+  const onDelete = () => {
+    if (!deleteTarget || deletingID) return;
+    const id = deleteTarget.id;
+    setDeletingID(id);
+    guard(async () => {
+      await removePaper(id);
+      setDeleteTarget(null);
+    }).finally(() => setDeletingID(""));
+  };
+
   const showStrip = activePaper && activePaper.status !== "ready";
+  const deletingTarget = Boolean(deleteTarget && deletingID === deleteTarget.id);
 
   return (
     <aside className="flex min-h-0 flex-1 flex-col bg-background">
       <div className="space-y-3 px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
+            {onExpandSidebar && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={onExpandSidebar}
+                title="展开侧栏"
+                className="hidden shrink-0 lg:inline-flex"
+              >
+                <PanelLeftOpen className="size-4" />
+              </Button>
+            )}
             <div className="flex items-baseline gap-2">
               <h2 className="text-[15px] font-bold tracking-tight">论文库</h2>
               {papers.length > 0 && (
@@ -362,7 +399,7 @@ export function PaperPane() {
                 <div
                   key={p.id}
                   className={cn(
-                    "group relative h-[5.5rem] w-full rounded-md px-3 py-2.5 transition-colors",
+                    "group/paper relative h-[5.5rem] w-full rounded-md px-3 py-2.5 transition-colors",
                     active
                       ? "bg-card shadow-sm before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-sienna"
                       : "hover:bg-accent/60",
@@ -382,7 +419,7 @@ export function PaperPane() {
                       <StatusBadge status={p.status} />
                     </div>
                   </div>
-                  <div className="pointer-events-none relative z-10 mt-1.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-xs text-muted-foreground">
+                  <div className="pointer-events-none relative z-10 mt-1.5 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 text-xs text-muted-foreground">
                     <span className="pointer-events-none line-clamp-1 min-w-0">
                       {[p.file_name, formatSize(p.size), formatTime(p.updated_at || p.created_at)]
                         .filter(Boolean)
@@ -398,6 +435,26 @@ export function PaperPane() {
                         />
                       </div>
                     )}
+                    <button
+                      type="button"
+                      aria-label={`删除 ${paperTitle(p)}`}
+                      title="删除论文"
+                      disabled={Boolean(deletingID)}
+                      className={cn(
+                        "pointer-events-auto inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 outline-none transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 sm:opacity-0 sm:group-hover/paper:opacity-100 sm:group-focus-within/paper:opacity-100",
+                        deletingID === p.id && "opacity-100 sm:opacity-100",
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget(p);
+                      }}
+                    >
+                      {deletingID === p.id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-3.5" />
+                      )}
+                    </button>
                   </div>
                 </div>
               );
@@ -405,6 +462,41 @@ export function PaperPane() {
           )}
         </div>
       </ScrollArea>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !deletingID) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>删除论文</DialogTitle>
+            <DialogDescription>
+              将删除「{deleteTarget ? paperTitle(deleteTarget) : ""}」及其绑定会话、报告、图片和向量索引。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deletingTarget}
+              onClick={() => setDeleteTarget(null)}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deletingTarget}
+              onClick={onDelete}
+            >
+              {deletingTarget && <Loader2 className="size-4 animate-spin" />}
+              删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
         <DialogContent>

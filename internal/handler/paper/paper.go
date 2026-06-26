@@ -115,6 +115,17 @@ func Detail(c *gin.Context) {
 	response.OK(c, gin.H{"paper": p, "meta": meta, "sections": sections})
 }
 
+// Delete 删除当前用户拥有的论文及其派生数据。
+// DELETE /api/v1/papers/:id
+func Delete(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	if err := paperservice.Delete(c.Request.Context(), ownerID, c.Param("id")); err != nil {
+		writePaperErr(c, err, "删除失败")
+		return
+	}
+	response.OK(c, nil)
+}
+
 // Figure 返回某篇论文的某张图片文件,供前端渲染召回引用的缩略图。
 // 浏览器 img 标签带不了 Authorization 头,鉴权走 query token,过同一套 auth.Parse。
 // GET /api/v1/papers/:id/figures/:name?token=<jwt>

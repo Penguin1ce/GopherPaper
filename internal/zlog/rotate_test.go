@@ -14,6 +14,11 @@ func TestRotateWriter_SizeRollAndCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建 writer 失败 %v", err)
 	}
+	defer func() {
+		if err := w.Close(); err != nil {
+			t.Fatalf("关闭 writer 失败 %v", err)
+		}
+	}()
 	w.maxSize = 100 // 直接设小阈值,免造 100MB
 
 	// 写 5 段各 60 字节,超 100 字节即滚动,应产生 app-<day>.log / .1 / .2 ...
@@ -44,6 +49,11 @@ func TestRotateWriter_DaySplit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建 writer 失败 %v", err)
 	}
+	defer func() {
+		if err := w.Close(); err != nil {
+			t.Fatalf("关闭 writer 失败 %v", err)
+		}
+	}()
 	// 注入时钟:第一天写一条。
 	d1 := time.Date(2026, 6, 22, 10, 0, 0, 0, time.Local)
 	w.now = func() time.Time { return d1 }

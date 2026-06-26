@@ -49,7 +49,7 @@ services:
       RABBITMQ_DEFAULT_USER: gopher
       RABBITMQ_DEFAULT_PASS: gopher
     ports:
-      - "5672:5672"    # AMQP
+      - "5772:5672"    # AMQP
       - "15672:15672"  # 管理界面 http://localhost:15672
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq

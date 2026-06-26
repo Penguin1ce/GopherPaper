@@ -82,6 +82,22 @@ func addChunk(ctx context.Context, chunk Chunk) error {
 // Ready 报告 trpc 知识库是否已初始化。
 func Ready() bool { return trpcStore != nil && trpcEmb != nil }
 
+// DeletePaperChunks removes all private chunks for one uploaded paper.
+func DeletePaperChunks(ctx context.Context, ownerID, paperID string) error {
+	if trpcStore == nil {
+		return fmt.Errorf("knowledge: trpc store 未初始化")
+	}
+	filter := map[string]any{
+		constant.MilvusFieldKnowledgeScope: string(constant.KnowledgeScopePrivate),
+		constant.MilvusFieldStudentID:      ownerID,
+		constant.MilvusFieldDocID:          paperID,
+	}
+	if err := trpcStore.DeleteByFilter(ctx, vectorstore.WithDeleteFilter(filter)); err != nil {
+		return fmt.Errorf("knowledge: 删除论文 chunks 失败: %w", err)
+	}
+	return nil
+}
+
 // Close 关闭 trpc vectorstore 的 Milvus 连接,在服务关停时调用。
 func Close() error {
 	if trpcStore == nil {
