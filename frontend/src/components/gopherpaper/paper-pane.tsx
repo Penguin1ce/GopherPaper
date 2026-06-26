@@ -1,10 +1,9 @@
 "use client";
 
-import { ChevronDown, FileUp, Loader2, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { FileUp, ListFilter, Loader2, MessagesSquare, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -13,12 +12,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/gopherpaper/store";
-import type { Paper } from "@/lib/gopherpaper/types";
+import type { Paper, Session } from "@/lib/gopherpaper/types";
 import {
   formatSize,
   formatTime,
@@ -54,6 +60,174 @@ function ActiveStatusStrip({ paper }: { paper: Paper }) {
   );
 }
 
+interface KeywordItem {
+  name: string;
+  count: number;
+}
+
+function KeywordChip({
+  item,
+  active,
+  onClick,
+}: {
+  item: KeywordItem;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      title={item.name}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-7 min-w-0 items-center gap-1 rounded-full border px-2.5 text-xs transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+        "max-w-full",
+        active
+          ? "border-sienna/40 bg-sienna/10 text-sienna"
+          : "border-border bg-card text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+      )}
+    >
+      <span className="min-w-0 truncate">{item.name}</span>
+      <span
+        className={cn(
+          "shrink-0 font-mono text-[10px]",
+          active ? "text-sienna/70" : "text-muted-foreground/60",
+        )}
+      >
+        {item.count}
+      </span>
+    </button>
+  );
+}
+
+function KeywordFilter({
+  keywords,
+  activeKw,
+  onToggle,
+  onClear,
+}: {
+  keywords: KeywordItem[];
+  activeKw: string[];
+  onToggle: (name: string) => void;
+  onClear: () => void;
+}) {
+  if (keywords.length === 0) return null;
+
+  return (
+    <Popover>
+      <PopoverTrigger
+        className={cn(
+          "inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+          activeKw.length > 0
+            ? "border-sienna/40 bg-sienna/10 text-sienna hover:bg-sienna/15"
+            : "border-border bg-card text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+        )}
+      >
+        <ListFilter className="size-3.5" />
+        {activeKw.length > 0 ? `筛选 ${activeKw.length}` : `关键词 ${keywords.length}`}
+      </PopoverTrigger>
+      <PopoverContent className="w-80 space-y-3 p-3" align="start">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <PopoverTitle>关键词筛选</PopoverTitle>
+            <PopoverDescription>{keywords.length} 个关键词</PopoverDescription>
+          </div>
+          {activeKw.length > 0 && (
+            <Button type="button" variant="ghost" size="xs" onClick={onClear}>
+              清除
+            </Button>
+          )}
+        </div>
+        <div className="max-h-64 overflow-y-auto pr-1">
+          <div className="flex flex-wrap gap-1.5">
+            {keywords.map((item) => (
+              <KeywordChip
+                key={item.name}
+                item={item}
+                active={activeKw.includes(item.name)}
+                onClick={() => onToggle(item.name)}
+              />
+            ))}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function SessionPopover({
+  paperSessions,
+  activeSessionID,
+  onOpenSession,
+  onRemoveSession,
+}: {
+  paperSessions: Session[];
+  activeSessionID: string | null;
+  onOpenSession: (id: string) => void;
+  onRemoveSession: (id: string) => void;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        className="inline-flex h-6 min-w-[3.75rem] shrink-0 items-center justify-center gap-1 rounded-full border border-border bg-background px-2 text-[11px] font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <MessagesSquare className="size-3" />
+        会话{paperSessions.length}
+      </PopoverTrigger>
+      <PopoverContent className="w-72 space-y-2 p-2" align="end">
+        <div className="px-1.5 py-1">
+          <PopoverTitle>论文会话</PopoverTitle>
+          <PopoverDescription>
+            {paperSessions.length > 0 ? "选择一个会话继续阅读" : "这篇论文还没有会话"}
+          </PopoverDescription>
+        </div>
+        {paperSessions.length > 0 && (
+          <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
+            {paperSessions.map((s) => (
+              <div
+                key={s.id}
+                className={cn(
+                  "group/s flex items-center gap-1 rounded-md transition-colors",
+                  s.id === activeSessionID ? "bg-accent/70" : "hover:bg-accent/55",
+                )}
+              >
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 px-2 py-1.5 text-left"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenSession(s.id);
+                  }}
+                >
+                  <span className="block truncate text-xs font-medium">{sessionTitle(s)}</span>
+                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                    {formatTime(s.updated_at || s.created_at)}
+                  </span>
+                </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="opacity-0 group-hover/s:opacity-100"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemoveSession(s.id);
+                  }}
+                  title="删除会话"
+                >
+                  <Trash2 className="size-3" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function PaperPane() {
   const {
     papers,
@@ -74,8 +248,6 @@ export function PaperPane() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeKw, setActiveKw] = useState<string[]>([]);
-  const [showAllKw, setShowAllKw] = useState(false);
-  const KW_LIMIT = 12;
 
   // 当前论文集合里的关键词去重 + 计数, 按出现频次倒序铺成可点标签。
   const keywords = useMemo(() => {
@@ -111,11 +283,19 @@ export function PaperPane() {
     <aside className="flex min-h-0 flex-1 flex-col bg-background">
       <div className="space-y-3 px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-baseline gap-2">
-            <h2 className="text-[15px] font-bold tracking-tight">论文库</h2>
-            {papers.length > 0 && (
-              <span className="font-mono text-xs text-muted-foreground">{papers.length}</span>
-            )}
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex items-baseline gap-2">
+              <h2 className="text-[15px] font-bold tracking-tight">论文库</h2>
+              {papers.length > 0 && (
+                <span className="font-mono text-xs text-muted-foreground">{papers.length}</span>
+              )}
+            </div>
+            <KeywordFilter
+              keywords={keywords}
+              activeKw={activeKw}
+              onToggle={toggleKw}
+              onClear={() => setActiveKw([])}
+            />
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -163,56 +343,6 @@ export function PaperPane() {
           )}
         </form>
 
-        {keywords.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {(showAllKw ? keywords : keywords.slice(0, KW_LIMIT)).map(({ name, count }) => {
-              const on = activeKw.includes(name);
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => toggleKw(name)}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors",
-                    on
-                      ? "border-sienna/40 bg-sienna/10 text-sienna"
-                      : "border-border bg-card text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                  )}
-                >
-                  {name}
-                  <span
-                    className={cn(
-                      "font-mono text-[10px]",
-                      on ? "text-sienna/70" : "text-muted-foreground/60",
-                    )}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-            {keywords.length > KW_LIMIT && (
-              <button
-                type="button"
-                onClick={() => setShowAllKw((v) => !v)}
-                className="inline-flex items-center rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {showAllKw ? "收起" : `更多 ${keywords.length - KW_LIMIT}`}
-              </button>
-            )}
-            {activeKw.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setActiveKw([])}
-                className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <X className="size-3" />
-                清除
-              </button>
-            )}
-          </div>
-        )}
-
         {showStrip && <ActiveStatusStrip paper={activePaper} />}
       </div>
 
@@ -229,72 +359,47 @@ export function PaperPane() {
               const active = p.id === activePaperID;
               const paperSessions = sessionsForPaper(sessions, p.id);
               return (
-                <Collapsible key={p.id} open={active}>
+                <div
+                  key={p.id}
+                  className={cn(
+                    "group relative h-[5.5rem] w-full rounded-md px-3 py-2.5 transition-colors",
+                    active
+                      ? "bg-card shadow-sm before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-sienna"
+                      : "hover:bg-accent/60",
+                  )}
+                >
                   <button
                     type="button"
-                    className={cn(
-                      "group relative block w-full rounded-md px-3 py-2.5 text-left transition-colors",
-                      active
-                        ? "bg-card shadow-sm before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-sienna"
-                        : "hover:bg-accent/60",
-                    )}
+                    aria-label={`选择论文：${paperTitle(p)}`}
+                    className="absolute inset-0 z-0 rounded-md focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                     onClick={() => selectPaper(p.id)}
-                  >
-                    <div className="flex items-start justify-between gap-2.5">
-                      <strong className="line-clamp-2 text-sm font-medium leading-snug">
-                        {paperTitle(p)}
-                      </strong>
+                  />
+                  <div className="pointer-events-none relative z-10 flex items-start justify-between gap-2.5">
+                    <strong className="pointer-events-none line-clamp-2 min-w-0 text-sm font-medium leading-snug">
+                      {paperTitle(p)}
+                    </strong>
+                    <div className="pointer-events-none">
                       <StatusBadge status={p.status} />
                     </div>
-                    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                      <ChevronDown
-                        className={cn(
-                          "size-3 shrink-0 transition-transform",
-                          active ? "" : "-rotate-90",
-                        )}
-                      />
-                      <span className="line-clamp-1">
-                        {[p.file_name, formatSize(p.size), formatTime(p.updated_at || p.created_at)]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </p>
-                  </button>
-                  <CollapsibleContent>
-                    <div className="ml-3.5 mt-1 space-y-0.5 border-l pl-2">
-                      {paperSessions.length === 0 && (
-                        <p className="px-2 py-1.5 text-xs text-muted-foreground">还没有会话</p>
-                      )}
-                      {paperSessions.map((s) => (
-                        <div
-                          key={s.id}
-                          className={cn(
-                            "group/s flex items-center gap-1 rounded-md transition-colors",
-                            s.id === activeSessionID ? "bg-card shadow-sm" : "hover:bg-accent/60",
-                          )}
-                        >
-                          <button
-                            type="button"
-                            className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-xs font-medium"
-                            onClick={() => guard(() => openSession(s.id))}
-                          >
-                            {sessionTitle(s)}
-                          </button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            className="opacity-0 group-hover/s:opacity-100"
-                            onClick={() => guard(() => removeSession(s.id))}
-                            title="删除会话"
-                          >
-                            <Trash2 className="size-3" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
+                  </div>
+                  <div className="pointer-events-none relative z-10 mt-1.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-xs text-muted-foreground">
+                    <span className="pointer-events-none line-clamp-1 min-w-0">
+                      {[p.file_name, formatSize(p.size), formatTime(p.updated_at || p.created_at)]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                    {active && (
+                      <div className="pointer-events-auto">
+                        <SessionPopover
+                          paperSessions={paperSessions}
+                          activeSessionID={activeSessionID}
+                          onOpenSession={(id) => guard(() => openSession(id))}
+                          onRemoveSession={(id) => guard(() => removeSession(id))}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
               );
             })
           )}
