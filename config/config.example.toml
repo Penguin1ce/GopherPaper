@@ -70,6 +70,7 @@ semantic_scholar_api_key = ""          # Semantic Scholar 检索密钥,可选;�
 # 工具显示名映射:原始工具名 → 前端展示名,SSE 推工具调用状态时换用,未配置回退原始名。
 # mcp 工具名带 toolset 名前缀,key 要写完整名,如 my-coffee_queryShopList。
 [tools.tool_names]
+delete_my_paper = "删除我的论文"
 geocode = "地点定位"
 list_my_papers = "我的论文列表"
 web_search = "联网搜索"
@@ -137,6 +138,12 @@ conn_max_lifetime = 3600
 addr = "localhost:6379"
 password = ""
 db = 0
+
+[neo4j]
+uri = "bolt://localhost:7687"
+username = "neo4j"
+password = "gopherpaper"
+database = "neo4j"
 
 # ── 消息队列(RabbitMQ)：耗时任务异步化 ───────────────────────
 [mq]
