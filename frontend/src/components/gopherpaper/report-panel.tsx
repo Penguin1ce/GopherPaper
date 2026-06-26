@@ -157,7 +157,7 @@ export function ReportPanel() {
 
   if (!activePaper) {
     return (
-      <div className="p-4">
+      <div className="px-6 pb-6 pt-8 lg:p-8">
         <Empty title="尚未选择论文" text="在左侧选择一篇论文后生成研读报告。" />
       </div>
     );

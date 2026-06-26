@@ -470,16 +470,19 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
         }}
       >
         <DialogContent>
-          <DialogHeader>
+          <DialogHeader className="min-w-0">
             <DialogTitle>删除论文</DialogTitle>
-            <DialogDescription>
-              将删除「{deleteTarget ? paperTitle(deleteTarget) : ""}」及其绑定会话、报告、图片和向量索引。
+            <DialogDescription className="break-words [overflow-wrap:anywhere]">
+              将删除「
+              <span>{deleteTarget ? paperTitle(deleteTarget) : ""}</span>
+              」及其绑定会话、报告、图片和向量索引。
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="sm:flex-nowrap">
             <Button
               type="button"
               variant="outline"
+              className="w-full sm:w-auto"
               disabled={deletingTarget}
               onClick={() => setDeleteTarget(null)}
             >
@@ -488,6 +491,7 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
             <Button
               type="button"
               variant="destructive"
+              className="w-full sm:w-auto"
               disabled={deletingTarget}
               onClick={onDelete}
             >
@@ -500,14 +504,14 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
 
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
         <DialogContent>
-          <DialogHeader>
+          <DialogHeader className="min-w-0">
             <DialogTitle>上传论文</DialogTitle>
             <DialogDescription>上传 PDF 后自动解析、抽取并进入知识库。</DialogDescription>
           </DialogHeader>
-          <form onSubmit={onUpload} className="space-y-3">
+          <form onSubmit={onUpload} className="min-w-0 space-y-3">
             <label
               className={cn(
-                "flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed bg-muted/30 px-4 py-10 text-center transition hover:border-sienna/50 hover:bg-muted/50",
+                "flex min-w-0 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed bg-muted/30 px-4 py-10 text-center transition hover:border-sienna/50 hover:bg-muted/50",
                 picked && "border-sienna/60 bg-sienna/5",
               )}
               onDragOver={(e) => e.preventDefault()}
@@ -525,10 +529,13 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
                 onChange={(e) => setPicked(e.target.files?.[0] ?? null)}
               />
               <FileUp className="mb-3 size-6 text-muted-foreground" />
-              <strong className="max-w-full truncate text-sm">
+              <strong
+                className="max-w-full break-words text-sm [overflow-wrap:anywhere]"
+                title={picked?.name}
+              >
                 {picked ? picked.name : "选择或拖入 PDF"}
               </strong>
-              <small className="mt-1 text-xs text-muted-foreground">
+              <small className="mt-1 max-w-full break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
                 {picked ? `${formatSize(picked.size)} · 等待上传` : "支持 50MB 以内 PDF"}
               </small>
             </label>
