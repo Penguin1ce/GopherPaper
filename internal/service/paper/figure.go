@@ -75,6 +75,44 @@ func buildFigureChunks(task parseTask, doc *core.ParsedDoc) []knowledge.Chunk {
 	return chunks
 }
 
+// buildTableChunks 把表格建成表格块入库:caption + Markdown 表格做向量化文本,
+// metadata 标 block_type=table 且不带 img_uri——表格走正文检索以文本返回,不返图、不喂 VLM。
+// caption 与表体都空的表无从召回,跳过。
+func buildTableChunks(task parseTask, doc *core.ParsedDoc) []knowledge.Chunk {
+	chunks := make([]knowledge.Chunk, 0, len(doc.Tables))
+	for _, tbl := range doc.Tables {
+		content := tableContent(tbl)
+		if content == "" {
+			continue
+		}
+		chunks = append(chunks, knowledge.Chunk{
+			Content:    content,
+			Scope:      constant.KnowledgeScopePrivate,
+			OwnerID:    task.OwnerID,
+			DocID:      task.PaperID,
+			SourceFile: task.FileName,
+			PageNo:     int64(tbl.PageNo),
+			ChunkIndex: int64(len(chunks)),
+			Metadata: map[string]any{
+				constant.MilvusFieldBlockType: constant.BlockTypeTable,
+			},
+		})
+	}
+	return chunks
+}
+
+// tableContent 把 caption 与 Markdown 表体拼成表格块向量化文本,两者去空合并。
+func tableContent(tbl core.Table) string {
+	parts := make([]string, 0, 2)
+	if c := strings.TrimSpace(tbl.Caption); c != "" {
+		parts = append(parts, c)
+	}
+	if m := strings.TrimSpace(tbl.Markdown); m != "" {
+		parts = append(parts, m)
+	}
+	return strings.Join(parts, "\n")
+}
+
 // figureContent 把 caption 与 vlm 描述拼成图块向量化文本,两者去空合并。
 func figureContent(fig core.Figure) string {
 	parts := make([]string, 0, 2)

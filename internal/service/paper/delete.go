@@ -71,6 +71,14 @@ func Delete(ctx context.Context, ownerID, paperID string) error {
 	}
 	zlog.Info("论文图片目录删除完成", "owner", ownerID, "paper_id", paperID, "path", figurePath)
 
+	mineruPath := mineruDir(paperID)
+	zlog.Info("开始删除论文 MinerU 归档目录", "owner", ownerID, "paper_id", paperID, "path", mineruPath)
+	if err := removeStoredPath(mineruPath, true); err != nil {
+		zlog.Error("删除论文 MinerU 归档目录失败", "owner", ownerID, "paper_id", paperID, "path", mineruPath, "err", err)
+		return err
+	}
+	zlog.Info("论文 MinerU 归档目录删除完成", "owner", ownerID, "paper_id", paperID, "path", mineruPath)
+
 	zlog.Info("开始删除论文数据库记录", "owner", ownerID, "paper_id", paperID)
 	if err := paperdao.Delete(ctx, paperID); err != nil {
 		zlog.Error("删除论文数据库记录失败", "owner", ownerID, "paper_id", paperID, "err", err)

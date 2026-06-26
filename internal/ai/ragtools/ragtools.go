@@ -110,6 +110,6 @@ func FindFigures() tool.Tool {
 	}
 	return function.NewFunctionTool(fn,
 		function.WithName("find_figures"),
-		function.WithDescription("检索与问题相关的论文插图/表格,返回其说明与 figure 占位。作答前应主动调用一次找配图——架构图/流程图/结果曲线/对比表往往最能直观支撑回答;返回了合适的图就用 Markdown ![简短说明](figure://文件名) 把图插入正文对应位置,文件名只能用返回值里的不要编造;确实没有相关图时才不插。"),
+		function.WithDescription("检索与问题相关的论文插图(架构图/流程图/结果曲线等),返回其说明与 figure 占位。返回了合适的图就用 Markdown ![简短说明](figure://文件名) 把图插入正文对应位置,文件名只能用返回值里的不要编造;确实没有相关图时才不插。注意:表格不在此处——表格已由 search_paper 以 Markdown 文本返回,直接把该 Markdown 表格原样写进正文即可,不要再为表格找图或插图。"),
 	)
 }

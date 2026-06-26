@@ -59,6 +59,7 @@ func runPipeline(ctx context.Context, task parseTask) {
 		fail(ctx, task, "解析 PDF 失败", err)
 		return
 	}
+	saveArtifact(task, doc) // 解析一拿到就归档原始产物,后续步骤失败也能据此离线重建
 
 	structured, err := ai.Extract(ctx, doc)
 	if err != nil {
@@ -86,6 +87,7 @@ func runPipeline(ctx context.Context, task parseTask) {
 	chunks := buildMetaChunks(task, structured)
 	chunks = append(chunks, buildChunks(task, doc)...)
 	chunks = append(chunks, buildFigureChunks(task, doc)...)
+	chunks = append(chunks, buildTableChunks(task, doc)...)
 	if !paperPresentForPipeline(ctx, task, "upsert_chunks") {
 		return
 	}

@@ -29,6 +29,7 @@ type contentBlock struct {
 	ImageFootnote stringList `json:"image_footnote"`
 	TableCaption  stringList `json:"table_caption"`
 	TableFootnote stringList `json:"table_footnote"`
+	TableBody     string     `json:"table_body"` // 表格 HTML,MinerU 已结构化识别,转 Markdown 走文本不返图
 }
 
 type stringList []string
@@ -110,6 +111,7 @@ func Parse(ctx context.Context, fileURI string) (*core.ParsedDoc, error) {
 	}
 	doc := mapBlocks(blocks, images)
 	doc.References = mergeReferences(doc.References, detailRefs)
+	doc.Artifact = zipData // 原始产物随 doc 带回,供 worker 解压归档为重建铺垫
 	return doc, nil
 }
 
@@ -212,11 +214,31 @@ func mapBlocks(blocks []contentBlock, images map[string][]byte) *core.ParsedDoc 
 				PageNo:      page,
 				SectionPath: strings.Join(nonEmpty(sectionStack), " / "),
 			})
+		case b.Type == "equation":
+			// 独立编号公式块(text_format=latex,text 形如 $$...\tag{1}$$):
+			// 当正文段落入库,与相邻正文同章节同页便由 buildChunks 合并进同一块,
+			// 公式连同解释它的上下文一起向量化召回,前端 KaTeX 渲染。参考文献区内的跳过。
+			if text := strings.TrimSpace(b.Text); text != "" && !inReferences {
+				doc.Paragraphs = append(doc.Paragraphs, core.Paragraph{
+					Text:        text,
+					PageNo:      page,
+					SectionPath: strings.Join(nonEmpty(sectionStack), " / "),
+				})
+			}
 		case b.Type == "ref_text":
 			if text := strings.TrimSpace(b.Text); text != "" {
 				doc.References = append(doc.References, text)
 			}
-		case b.Type == "image" || b.Type == "table":
+		case b.Type == "table":
+			caption := blockCaption(b)
+			// MinerU 已把表格结构化成 table_body,转 Markdown 走文本入库不返图;
+			// 转换失败(空 body 或解析不出)再退化按图处理。
+			if md := tableToMarkdown(b.TableBody); md != "" {
+				doc.Tables = append(doc.Tables, core.Table{Caption: caption, Markdown: md, PageNo: page})
+				break
+			}
+			fallthrough
+		case b.Type == "image":
 			caption := blockCaption(b)
 			fig := core.Figure{Caption: caption, PageNo: page, ImgPath: b.ImgPath}
 			if b.ImgPath != "" {

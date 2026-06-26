@@ -203,10 +203,11 @@ const (
 	MilvusFieldImgURI         = "img_uri"    // 图片块对应的本地图片路径
 )
 
-// 知识块类型,区分正文文本块与图片块。
+// 知识块类型,区分正文文本块、图片块与表格块。
 const (
 	BlockTypeText  = "text"
 	BlockTypeImage = "image"
+	BlockTypeTable = "table" // 表格块,Content 为 caption + Markdown 表格,不带 img_uri 不返图
 )
 
 // Redis 键前缀与时效。
