@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   ArrowLeft,
+  ChevronDown,
   Coffee,
   FileText,
   Loader2,
@@ -47,14 +48,7 @@ import { cn } from "@/lib/utils";
 import { Empty } from "@/components/gopherpaper/app-ui";
 import { Markdown } from "@/components/gopherpaper/markdown";
 import { WorkspaceFrame, WorkspacePanel } from "@/components/gopherpaper/workspace-frame";
-import {
-  Plan,
-  PlanAction,
-  PlanContent,
-  PlanHeader,
-  PlanTitle,
-  PlanTrigger,
-} from "@/components/ai-elements/plan";
+import { Shimmer } from "@/components/ai-elements/shimmer";
 
 const AUTH_KEY = "gopherpaper.auth";
 const LUCKIN_KEY = "gopherpaper.luckin";
@@ -192,14 +186,66 @@ const PLAN_PHASE_LABEL: Record<string, string> = {
   reasoning: "思考",
 };
 
-// 按阶段上色, 让计划卡从背景里跳出来并一眼区分: 规划=墨蓝, 执行=赭石, 思考=中性灰。
-const PLAN_PHASE_STYLE: Record<string, { card: string; dot: string; title: string }> = {
-  planning: { card: "border-l-primary/70 bg-primary/[0.05]", dot: "bg-primary", title: "text-primary" },
-  replanning: { card: "border-l-primary/70 bg-primary/[0.05]", dot: "bg-primary", title: "text-primary" },
-  action: { card: "border-l-sienna/70 bg-sienna/[0.06]", dot: "bg-sienna", title: "text-sienna" },
-  reasoning: { card: "border-l-muted-foreground/50 bg-muted/50", dot: "bg-muted-foreground", title: "text-foreground/80" },
+// 按阶段上色, 一眼区分: 规划=墨蓝, 执行=赭石, 思考=中性灰。
+const PLAN_PHASE_STYLE: Record<string, { dot: string; title: string }> = {
+  planning: { dot: "bg-primary", title: "text-primary" },
+  replanning: { dot: "bg-primary", title: "text-primary" },
+  action: { dot: "bg-sienna", title: "text-sienna" },
+  reasoning: { dot: "bg-muted-foreground", title: "text-foreground/70" },
 };
 const PLAN_PHASE_FALLBACK = PLAN_PHASE_STYLE.reasoning;
+
+// 时间线节点: 完成步骤折叠成单行预览, 点击展开; 正在执行的步骤自动展开并 shimmer。
+const PlanItem = memo(function PlanItem({
+  step,
+  isLast,
+  live,
+}: {
+  step: PlanStep;
+  isLast: boolean;
+  live: boolean;
+}) {
+  const ps = PLAN_PHASE_STYLE[step.phase] || PLAN_PHASE_FALLBACK;
+  const label = PLAN_PHASE_LABEL[step.phase] || step.phase;
+  const text = step.text.trim();
+  const [open, setOpen] = useState(live);
+  useEffect(() => {
+    if (live) setOpen(true);
+  }, [live]);
+
+  return (
+    <li className="relative pb-3 pl-5 last:pb-0">
+      {!isLast && (
+        <span className="absolute bottom-0 left-[3px] top-3 w-px bg-border" aria-hidden />
+      )}
+      <span
+        className={cn("absolute left-0 top-[5px] size-1.5 rounded-full ring-3 ring-background", ps.dot)}
+        aria-hidden
+      />
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="group flex w-full items-center gap-1.5 text-left"
+      >
+        <span className={cn("font-serif text-xs font-semibold", ps.title)}>
+          {live ? <Shimmer>{label}</Shimmer> : label}
+        </span>
+        <ChevronDown
+          className={cn(
+            "size-3 shrink-0 text-muted-foreground/50 transition-transform group-hover:text-muted-foreground",
+            open && "rotate-180",
+          )}
+          aria-hidden
+        />
+      </button>
+      {open ? (
+        <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{text}</p>
+      ) : (
+        <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground/60">{text}</p>
+      )}
+    </li>
+  );
+});
 
 const PlanRail = memo(function PlanRail({
   steps,
@@ -211,11 +257,11 @@ const PlanRail = memo(function PlanRail({
   pending: boolean;
 }) {
   return (
-    <WorkspacePanel as="aside" className="hidden w-96 flex-col xl:flex">
-      <div className="flex h-16 shrink-0 items-center justify-between border-b px-4">
-        <div>
-          <div className="text-sm font-medium">执行计划</div>
-          <div className="text-xs text-muted-foreground">Plan · Execute</div>
+    <WorkspacePanel as="aside" className="hidden w-80 flex-col xl:flex">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b px-4">
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm font-medium">执行计划</span>
+          <span className="text-xs text-muted-foreground">Plan · Execute</span>
         </div>
         {(live || pending) && (
           <Badge variant="secondary" className="rounded-full font-normal">
@@ -225,51 +271,31 @@ const PlanRail = memo(function PlanRail({
       </div>
       <div className="relative min-h-0 flex-1">
         <ScrollArea className="absolute! inset-0">
-        <div className="p-4">
-          {steps.length === 0 ? (
-            <div className="rounded-lg border border-dashed bg-muted/30 p-6 text-center">
-              <div className="text-sm font-medium">
-                {pending ? "小云雀正在思考…" : "先规划，再分步执行"}
+          <div className="p-4">
+            {steps.length === 0 ? (
+              <div className="rounded-lg border border-dashed bg-muted/30 p-5 text-center">
+                <div className="text-sm font-medium">
+                  {pending ? "小云雀正在思考…" : "先规划，再分步执行"}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {pending
+                    ? "若本轮需要分步执行，规划会在这里展开。"
+                    : "发起任务后，规划与动作会实时展示。"}
+                </p>
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {pending
-                  ? "若本轮需要分步执行，规划会在这里展开。"
-                  : "发起任务后，规划与动作会实时展示。"}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {steps.map((s, i) => {
-                const ps = PLAN_PHASE_STYLE[s.phase] || PLAN_PHASE_FALLBACK;
-                return (
-                  <Plan
+            ) : (
+              <ol className="relative">
+                {steps.map((s, i) => (
+                  <PlanItem
                     key={i}
-                    defaultOpen
-                    isStreaming={live && i === steps.length - 1}
-                    className={cn("border-l-2 shadow-sm", ps.card)}
-                  >
-                    <PlanHeader>
-                      <div className="flex items-center gap-2">
-                        <span className={cn("size-1.5 rounded-full", ps.dot)} aria-hidden />
-                        <PlanTitle className={cn("font-serif text-sm", ps.title)}>
-                          {PLAN_PHASE_LABEL[s.phase] || s.phase}
-                        </PlanTitle>
-                      </div>
-                      <PlanAction>
-                        <PlanTrigger />
-                      </PlanAction>
-                    </PlanHeader>
-                    <PlanContent>
-                      <p className="whitespace-pre-wrap text-sm leading-6 text-foreground/75">
-                        {s.text.trim()}
-                      </p>
-                    </PlanContent>
-                  </Plan>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                    step={s}
+                    isLast={i === steps.length - 1}
+                    live={live && i === steps.length - 1}
+                  />
+                ))}
+              </ol>
+            )}
+          </div>
         </ScrollArea>
       </div>
     </WorkspacePanel>
