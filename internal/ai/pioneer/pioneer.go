@@ -81,7 +81,7 @@ func Chat(ctx context.Context, sessionID, query string) (string, error) {
 		return "", err
 	}
 	ch, err := rt.Run(ctx, userID, sessionID, trpcmodel.NewUserMessage(query),
-		agent.WithInstruction(constant.PioneerInstruction),
+		agent.WithInstruction(constant.PioneerRuntimeInstruction()),
 	)
 	if err != nil {
 		return "", err
