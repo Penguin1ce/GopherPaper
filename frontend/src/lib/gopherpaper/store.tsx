@@ -10,6 +10,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import * as api from "./api";
 import type {
@@ -25,6 +31,11 @@ import type {
 import { chatSessions, isSettled, paperTitle, sessionsForPaper } from "./utils";
 
 const AUTH_KEY = "gopherpaper.auth";
+
+// sessions/messages/papers Query 未就绪时的稳定空数组,避免每次 render 新建 [] 触发下游 memo 失效。
+const EMPTY_SESSIONS: Session[] = [];
+const EMPTY_MESSAGES: Message[] = [];
+const EMPTY_PAPERS: Paper[] = [];
 
 // 工具名 → 执行过程里「检索」步的检索对象文案(左列已是「检索」标签,这里只写对象避免重复);
 // 未列出的工具回退到原始工具名。
@@ -98,14 +109,64 @@ function loadAuth(): PersistedAuth {
   }
 }
 
-export function AppProvider({ children }: { children: ReactNode }) {
+function AppProviderInner({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setTokenState] = useState<string>("");
-  const [papers, setPapers] = useState<Paper[]>([]);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
+  // papers 由 Query 接管:paperSearch 空→listPapers,非空→searchPapers,搜索词进 query key。
+  const [paperSearch, setPaperSearch] = useState("");
+  const papersQuery = useQuery({
+    queryKey: ["papers", paperSearch],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      const list = paperSearch
+        ? await api.searchPapers(paperSearch)
+        : await api.listPapers();
+      return Array.isArray(list) ? list : [];
+    },
+  });
+  const papers = papersQuery.data ?? EMPTY_PAPERS;
+  // setPapers 包成 setQueriesData,对所有 papers 变体(列表+各搜索缓存)套用函数式 updater,
+  // 故 SSE 推送(applyStatusEvent/applyReportReady)与 removePaper 的乐观改写沿用原逻辑。
+  const setPapers = useCallback(
+    (updater: (old: Paper[]) => Paper[]) => {
+      queryClient.setQueriesData<Paper[]>({ queryKey: ["papers"] }, (old) =>
+        old ? updater(old) : old,
+      );
+    },
+    [queryClient],
+  );
+  // sessions 由 Query 接管:listSessions 拉取 + chatSessions 过滤;乐观更新走 setQueryData。
+  const sessionsQuery = useQuery({
+    queryKey: ["sessions"],
+    enabled: Boolean(token),
+    queryFn: async () => chatSessions(await api.listSessions()),
+  });
+  const sessions = sessionsQuery.data ?? EMPTY_SESSIONS;
+  // setSessions 包成 setQueryData,兼容原 useState setter 签名(值或函数式 updater),
+  // 故各处乐观更新调用点(createSession/removeSession/removePaper/logout)无需改写。
+  const setSessions = useCallback(
+    (updater: Session[] | ((old: Session[]) => Session[])) => {
+      queryClient.setQueryData<Session[]>(["sessions"], (old = []) =>
+        typeof updater === "function" ? updater(old) : updater,
+      );
+    },
+    [queryClient],
+  );
   const [activePaperID, setActivePaperID] = useState("");
   const [activeSessionID, setActiveSessionID] = useState("");
+  // messages 由 Query 接管:按 activeSessionID 分缓存,切会话自动拉取/复用。
+  // staleTime 让新建会话预置的空消息与流式写入不被 background refetch 覆盖。
+  const messagesQuery = useQuery({
+    queryKey: ["messages", activeSessionID],
+    enabled: Boolean(activeSessionID),
+    staleTime: 30_000,
+    queryFn: async () => {
+      const msgs = await api.listMessages(activeSessionID);
+      return Array.isArray(msgs) ? msgs : [];
+    },
+  });
+  const messages = messagesQuery.data ?? EMPTY_MESSAGES;
   const [sending, setSending] = useState(false);
   const [toolNote, setToolNote] = useState("");
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -117,10 +178,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   >({});
 
   const wsRef = useRef<EventSource | null>(null);
-  const pollRef = useRef<number | null>(null);
-  const reportPollRef = useRef<number | null>(null);
   const toastSeq = useRef(0);
   const hydratedRef = useRef(false);
+  const mountedRef = useRef(true);
   // papers 的同步镜像,供 applyStatusEvent 在 setPapers 更新函数之外读现状判重,
   // 避免把 toast 等副作用写进 updater(StrictMode 会双调 updater 导致弹两次)。
   const papersRef = useRef<Paper[]>([]);
@@ -133,7 +193,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     reportProgressRef.current = reportProgress;
   }, [reportProgress]);
 
-  api.setToken(token);
+  useEffect(() => {
+    api.setToken(token);
+  }, [token]);
 
   // ---- Toast ----
   const dismissToast = useCallback((id: number) => {
@@ -164,20 +226,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      window.clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }, []);
-
-  const stopReportPoll = useCallback(() => {
-    if (reportPollRef.current) {
-      window.clearInterval(reportPollRef.current);
-      reportPollRef.current = null;
-    }
-  }, []);
-
   const disconnectWs = useCallback(() => {
     if (wsRef.current) {
       const source = wsRef.current;
@@ -190,27 +238,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      disconnectWs();
+    };
+  }, [disconnectWs]);
+
   // notifyServer 为真时先通知后端清登录态与常驻缓存(趁 token 未清,fire-and-forget 不阻塞);
   // 401 被动登出时 token 已失效,传 false 跳过这次注定失败的请求。
   const logout = useCallback((notifyServer = true) => {
     if (notifyServer) void api.logout();
-    stopPolling();
-    stopReportPoll();
     disconnectWs();
     persist(null, "");
-    setPapers([]);
-    setSessions([]);
-    setMessages([]);
+    // 清空所有 Query 缓存(sessions/messages/papers/轮询),与下方业务 state 一并归零。
+    queryClient.clear();
+    setPaperSearch("");
     setActivePaperID("");
     setActiveSessionID("");
     setReportReady({});
     setReportProgress({});
-  }, [disconnectWs, persist, stopPolling, stopReportPoll]);
+  }, [disconnectWs, persist, queryClient]);
 
   // 401 统一登出,被动登出不再回调后端(token 已失效)。
+  const handleUnauthorized = useCallback(() => logout(false), [logout]);
+
   useEffect(() => {
-    api.setUnauthorizedHandler(() => logout(false));
-  }, [logout]);
+    api.setUnauthorizedHandler(handleUnauthorized);
+    return () => api.clearUnauthorizedHandler(handleUnauthorized);
+  }, [handleUnauthorized]);
 
   // ---- WS 推送进度 ----
   const applyStatusEvent = useCallback(
@@ -219,11 +276,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // updater 必须纯,副作用留在这里只触发一次。
       const existing = papersRef.current.find((p) => p.id === paperID);
       if (!existing) {
-        // 列表里还没有(刚上传未刷新),异步补齐。
-        api
-          .listPapers()
-          .then((fresh) => setPapers(Array.isArray(fresh) ? fresh : []))
-          .catch(() => {});
+        // 列表里还没有(刚上传未刷新),失效 papers 缓存重拉补齐。
+        void queryClient.invalidateQueries({ queryKey: ["papers"] });
         return;
       }
       if (existing.status === status) return;
@@ -246,7 +300,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ),
       );
     },
-    [toast],
+    [toast, setPapers, queryClient],
   );
 
   // 报告就绪:记入对应论文,报告面板据此免轮询直接拉缓存;同时把该报告进度收尾(停 live)。
@@ -272,7 +326,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ),
       );
     },
-    [],
+    [setPapers],
   );
 
   // beginReport 在用户点生成时重置该报告的进度为「进行中、空步」,随后由 SSE 阶段事件累积。
@@ -354,139 +408,121 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [applyStatusEvent, applyReportReady, applyReportProgress, disconnectWs],
   );
 
-  // ---- 轮询兜底 ----
-  const startPolling = useCallback(() => {
-    stopPolling();
-    pollRef.current = window.setInterval(async () => {
-      let pending: Paper[] = [];
-      setPapers((list) => {
-        pending = list.filter((p) => !isSettled(p.status));
-        return list;
-      });
-      if (pending.length === 0) {
-        stopPolling();
-        return;
-      }
-      try {
-        const updates = await Promise.all(
-          pending.map((p) => api.paperStatus(p.id)),
-        );
-        // 经 applyStatusEvent 落地,实时通道(SSE)瞬断时轮询也能补「可提问」通知。
-        for (const u of updates) {
-          applyStatusEvent(u.id, u.status, u.fail_reason);
-        }
-      } catch {
-        // 临时网络/代理错误不应永久停止兜底轮询,下一轮继续查。
-      }
-    }, 4200);
-  }, [stopPolling, applyStatusEvent]);
+  // ---- 轮询兜底(Query refetchInterval 接管手写 setInterval) ----
+  // 实时通道(SSE)瞬断时,轮询补齐「可提问/失败」状态。enabled 仅在有未就绪论文时开,
+  // 论文全部就绪自动停;标签转后台自动暂停(refetchIntervalInBackground 默认 false)。
+  // queryFn 读 papersRef 取最新 pending,避免闭包陈旧;副作用经 applyStatusEvent 落地。
+  const hasPendingPapers = papers.some((p) => !isSettled(p.status));
+  useQuery({
+    queryKey: ["paper-status-poll"],
+    enabled: Boolean(token) && hasPendingPapers,
+    refetchInterval: 4200,
+    queryFn: async () => {
+      const pending = papersRef.current.filter((p) => !isSettled(p.status));
+      if (pending.length === 0) return null;
+      const updates = await Promise.all(
+        pending.map((p) => api.paperStatus(p.id)),
+      );
+      for (const u of updates) applyStatusEvent(u.id, u.status, u.fail_reason);
+      return null;
+    },
+  });
 
-  // 列表变化时按需开/停轮询。
-  useEffect(() => {
-    if (!token) return;
-    if (papers.some((p) => !isSettled(p.status))) {
-      if (!pollRef.current) startPolling();
-    } else {
-      stopPolling();
-    }
-  }, [papers, token, startPolling, stopPolling]);
-
-  // 报告就绪轮询兜底:报告生成要一分多钟,期间 SSE 一旦卡顿/断开,report_ready 事件可能丢失,
-  // 仅靠事件会把界面永远停在「生成中」。只要还有 live 报告就定时 listReports 补位,命中即置就绪并收尾。
-  useEffect(() => {
-    if (!token) return;
-    const hasLive = Object.values(reportProgress).some((m) =>
-      Object.values(m).some((r) => r?.live && !r.failed),
-    );
-    if (!hasLive) {
-      stopReportPoll();
-      return;
-    }
-    if (reportPollRef.current) return; // 已在轮询,避免重复起定时器
-    reportPollRef.current = window.setInterval(async () => {
-      // 闭包里读 ref 镜像取当前仍在生成的论文,避免读到起定时器那刻的陈旧集合。
+  // 报告就绪轮询兜底:报告生成要一分多钟,期间 SSE 一旦卡顿/断开 report_ready 事件可能丢失,
+  // 仅靠事件会把界面永远停在「生成中」。只要还有 live 报告就由 Query 定时 listReports 补位,
+  // 命中即置就绪并收尾。enabled 随 live 报告存在与否自动开停,后台标签自动暂停。
+  // queryFn 读 reportProgressRef 取当前仍在生成的论文,避免闭包陈旧。
+  const hasLiveReport = Object.values(reportProgress).some((m) =>
+    Object.values(m).some((r) => r?.live && !r.failed),
+  );
+  useQuery({
+    queryKey: ["report-ready-poll"],
+    enabled: Boolean(token) && hasLiveReport,
+    refetchInterval: 5000,
+    queryFn: async () => {
       const livePaperIds = Object.entries(reportProgressRef.current)
         .filter(([, m]) => Object.values(m).some((r) => r?.live && !r.failed))
         .map(([pid]) => pid);
-      if (livePaperIds.length === 0) {
-        stopReportPoll();
-        return;
-      }
-      try {
-        await Promise.all(
-          livePaperIds.map(async (pid) => {
-            const types = await api.listReports(pid);
-            for (const t of types) {
-              // 该类报告本地还标 live 却已落库,说明事件丢了,补一次就绪(applyReportReady 内会收尾 live)。
-              if (reportProgressRef.current[pid]?.[t]?.live) applyReportReady(pid, t);
-            }
-          }),
-        );
-      } catch {
-        // 临时网络/代理错误不停轮询,下一轮继续补。
-      }
-    }, 5000);
-  }, [token, reportProgress, stopReportPoll, applyReportReady]);
+      if (livePaperIds.length === 0) return null;
+      await Promise.all(
+        livePaperIds.map(async (pid) => {
+          const types = await api.listReports(pid);
+          // 该类报告本地还标 live 却已落库,说明事件丢了,补一次就绪(applyReportReady 内会收尾 live)。
+          for (const t of types) {
+            if (reportProgressRef.current[pid]?.[t]?.live) applyReportReady(pid, t);
+          }
+        }),
+      );
+      return null;
+    },
+  });
 
-  // 后台标签挂起 SSE 与轮询:每条 EventSource 长期占一条 HTTP/1.1 连接(同源仅 ~6 条),
+  // 后台标签挂起 SSE:每条 EventSource 长期占一条 HTTP/1.1 连接(同源仅 ~6 条),
   // 多开标签会顶满连接池阻塞导航与接口。切到后台即 close 释放配额,回前台再重连补状态。
+  // 兜底轮询由 Query 在后台自动暂停(refetchIntervalInBackground 默认 false),回前台
+  // 主动 invalidate 触发立即补一次,复刻原「回前台即补状态」。
   useEffect(() => {
     if (typeof document === "undefined") return;
     const onVisibility = () => {
       if (document.hidden) {
         disconnectWs();
-        stopPolling();
       } else if (token) {
         connectWs(token);
-        // 后台期间可能漏掉解析进度,有未就绪论文就重启兜底轮询补回。
-        if (papersRef.current.some((p) => !isSettled(p.status))) startPolling();
+        void queryClient.invalidateQueries({ queryKey: ["paper-status-poll"] });
+        void queryClient.invalidateQueries({ queryKey: ["report-ready-poll"] });
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [token, connectWs, disconnectWs, startPolling, stopPolling]);
+  }, [token, connectWs, disconnectWs, queryClient]);
 
   // ---- 数据加载 ----
+  // 设搜索词切换 papers query key(空→全列表,非空→搜索);invalidate 让同词刷新也强制重拉。
   const refreshPapers = useCallback(
     async (query = "") => {
-      const list = query.trim()
-        ? await api.searchPapers(query.trim())
-        : await api.listPapers();
-      setPapers(Array.isArray(list) ? list : []);
+      const q = query.trim();
+      setPaperSearch(q);
+      await queryClient.invalidateQueries({ queryKey: ["papers", q] });
     },
-    [],
+    [queryClient],
   );
 
+  // 失效 sessions 缓存触发重拉(发消息后刷新标题/排序);Query 自动管在飞与卸载。
   const refreshSessions = useCallback(async () => {
-    const list = await api.listSessions();
-    setSessions(chatSessions(Array.isArray(list) ? list : []));
-  }, []);
+    await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+  }, [queryClient]);
 
   const openSession = useCallback(
     async (id: string) => {
       setActiveSessionID(id);
-      setSessions((list) => {
-        const s = list.find((x) => x.id === id);
-        if (s?.paper_id) setActivePaperID(s.paper_id);
-        return list;
-      });
-      const msgs = await api.listMessages(id);
-      setMessages(Array.isArray(msgs) ? msgs : []);
+      // 从 sessions 缓存读最新一份,定位该会话所属论文(避免闭包陈旧);
+      // messages 由 ["messages", id] query 随 activeSessionID 切换自动拉取。
+      const list = queryClient.getQueryData<Session[]>(["sessions"]) ?? [];
+      const s = list.find((x) => x.id === id);
+      if (s?.paper_id) setActivePaperID(s.paper_id);
     },
-    [],
+    [queryClient],
   );
 
   const bootstrapSession = useCallback(
     async (jwt: string) => {
       connectWs(jwt);
-      const [pl, sl] = await Promise.all([
-        api.listPapers(),
-        api.listSessions(),
+      // sessions 经 fetchQuery 拉取并写入缓存(useQuery 随即反映,无需 setSessions);
+      // 返回值供初始化时选中首篇论文的最新会话。
+      const [paperList, sessionList] = await Promise.all([
+        queryClient.fetchQuery({
+          queryKey: ["papers", ""],
+          queryFn: async () => {
+            const l = await api.listPapers();
+            return Array.isArray(l) ? l : [];
+          },
+        }),
+        queryClient.fetchQuery({
+          queryKey: ["sessions"],
+          queryFn: async () => chatSessions(await api.listSessions()),
+        }),
       ]);
-      const paperList = Array.isArray(pl) ? pl : [];
-      const sessionList = chatSessions(Array.isArray(sl) ? sl : []);
-      setPapers(paperList);
-      setSessions(sessionList);
+      if (!mountedRef.current) return;
       if (paperList.length > 0) {
         const first = paperList[0];
         setActivePaperID(first.id);
@@ -496,7 +532,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await openSession(sessionList[0].id);
       }
     },
-    [connectWs, openSession],
+    [connectWs, openSession, queryClient],
   );
 
   useEffect(() => {
@@ -543,17 +579,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (file: File) => {
       const paper = await api.uploadPaper(file);
       if (paper?.id) {
-        setPapers((list) => [
+        // 回到全列表并乐观置顶新论文(搜索态下上传也立即可见)。
+        setPaperSearch("");
+        queryClient.setQueryData<Paper[]>(["papers", ""], (old = []) => [
           paper,
-          ...list.filter((p) => p.id !== paper.id),
+          ...old.filter((p) => p.id !== paper.id),
         ]);
-        // 新论文还没有会话,切过去并进入欢迎态。
+        // 新论文还没有会话,切过去并进入欢迎态(messages 随 activeSessionID="" 自动清空)。
         setActivePaperID(paper.id);
         setActiveSessionID("");
-        setMessages([]);
       }
     },
-    [],
+    [queryClient],
   );
 
   const removePaper = useCallback(
@@ -567,7 +604,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       await api.deletePaper(id);
 
-      setPapers(remainingPapers);
+      setPapers((list) => list.filter((p) => p.id !== id));
       setSessions(remainingSessions);
       setReportReady((prev) => {
         const next = { ...prev };
@@ -588,21 +625,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
             await openSession(paperSessions[0].id);
           } else {
             setActiveSessionID("");
-            setMessages([]);
           }
         } else {
           setActivePaperID("");
           setActiveSessionID("");
-          setMessages([]);
         }
       } else if (activeSessionDeleted) {
         setActiveSessionID("");
-        setMessages([]);
       }
 
       toast("论文已删除");
     },
-    [activePaperID, activeSessionID, openSession, papers, sessions, toast],
+    [activePaperID, activeSessionID, openSession, papers, sessions, toast, setSessions, setPapers],
   );
 
   // 选论文:同一篇保持当前会话不动;切到不同论文则跳到该论文最新会话,
@@ -616,7 +650,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         openSession(list[0].id);
       } else {
         setActiveSessionID("");
-        setMessages([]);
       }
     },
     [activePaperID, sessions, openSession],
@@ -631,26 +664,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ]);
       setActiveSessionID(session.id);
       if (session.paper_id) setActivePaperID(session.paper_id);
-      setMessages([]);
+      // 新会话必空:预置空消息缓存,免一次无谓 listMessages,也避开与后续流式写入的竞争。
+      queryClient.setQueryData<Message[]>(["messages", session.id], []);
       return session;
     },
-    [],
+    [setSessions, queryClient],
   );
 
   const removeSession = useCallback(
     async (id: string) => {
       await api.deleteSession(id);
       setSessions((list) => list.filter((s) => s.id !== id));
-      setActiveSessionID((cur) => {
-        if (cur === id) {
-          setMessages([]);
-          return "";
-        }
-        return cur;
-      });
+      setActiveSessionID((cur) => (cur === id ? "" : cur));
       toast("会话已删除");
     },
-    [toast],
+    [toast, setSessions],
   );
 
   const sendMessage = useCallback(
@@ -666,6 +694,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const session = await createSession(title, paper?.id);
           sessionID = session.id;
         }
+        // 取消该会话在飞的 listMessages,避免乐观写入被随后到达的 fetch 结果覆盖(官方乐观更新模式)。
+        await queryClient.cancelQueries({ queryKey: ["messages", sessionID] });
+        // 流式写入定位到该会话的 messages 缓存(sessionID 可能是刚新建的,与 activeSessionID 一致)。
+        const setMsg = (fn: (list: Message[]) => Message[]) =>
+          queryClient.setQueryData<Message[]>(["messages", sessionID], (old = []) => fn(old));
         const userMsg: Message = {
           id: `local-${Date.now()}`,
           session_id: sessionID,
@@ -673,7 +706,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           content: query,
           created_at: new Date().toISOString(),
         };
-        setMessages((list) => [...list, userMsg]);
+        setMsg((list) => [...list, userMsg]);
 
         // SSE 流式占位:首个文本增量到达时上屏一条 streaming 助教消息,
         // done 后整体替换为最终消息;工具阶段由输入框上方的状态气泡呈现,不进消息流。
@@ -682,7 +715,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const patch = (fn: (m: Message) => Message) => {
           if (!shown) {
             shown = true;
-            setMessages((list) => [
+            setMsg((list) => [
               ...list,
               fn({
                 id: placeholderID,
@@ -695,7 +728,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ]);
             return;
           }
-          setMessages((list) =>
+          setMsg((list) =>
             list.map((m) => (m.id === placeholderID ? fn(m) : m)),
           );
         };
@@ -780,16 +813,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (data.meta) assistant.meta = data.meta;
             // 把本轮累积的执行过程挂到最终消息,供答后折叠回看;瞬态不入库,刷新即失。
             if (planSteps.length) assistant.plan = planSteps;
-            setMessages((list) => [
+            setMsg((list) => [
               ...list.filter((m) => m.id !== placeholderID),
               assistant,
             ]);
           } else {
-            setMessages((list) => list.filter((m) => m.id !== placeholderID));
+            setMsg((list) => list.filter((m) => m.id !== placeholderID));
           }
         } catch (e) {
           cancelFlush();
-          setMessages((list) => list.filter((m) => m.id !== placeholderID));
+          setMsg((list) => list.filter((m) => m.id !== placeholderID));
           throw e;
         }
         await refreshSessions();
@@ -798,37 +831,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setToolNote("");
       }
     },
-    [activePaperID, activeSessionID, createSession, papers, refreshSessions],
+    [activePaperID, activeSessionID, createSession, papers, refreshSessions, queryClient],
   );
-
-  // 启动时若已有 token 自动恢复。
-  useEffect(() => {
-    if (!token) return;
-    connectWs(token);
-    Promise.all([api.listPapers(), api.listSessions()])
-      .then(([pl, sl]) => {
-        const paperList = Array.isArray(pl) ? pl : [];
-        const sessionList = chatSessions(Array.isArray(sl) ? sl : []);
-        setPapers(paperList);
-        setSessions(sessionList);
-        if (paperList.length > 0) {
-          const first = paperList[0];
-          setActivePaperID((cur) => cur || first.id);
-          const list = sessionsForPaper(sessionList, first.id);
-          if (list.length > 0) openSession(list[0].id);
-        } else if (sessionList.length > 0) {
-          openSession(sessionList[0].id);
-        }
-      })
-      .catch((err) => toast(err?.message || "加载失败", "error"));
-    return () => {
-      disconnectWs();
-      stopPolling();
-      stopReportPoll();
-    };
-    // 仅在挂载时跑一次恢复流程。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const activePaper = useMemo(
     () => papers.find((p) => p.id === activePaperID) || null,
@@ -839,40 +843,93 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [sessions, activeSessionID],
   );
 
-  const value: AppContextValue = {
-    user,
-    authed: Boolean(token),
-    papers,
-    sessions,
-    messages,
-    activePaperID,
-    activeSessionID,
-    sending,
-    toolNote,
-    toasts,
-    activePaper,
-    activeSession,
-    reportReady,
-    reportProgress,
-    toast,
-    dismissToast,
-    login,
-    registerAndLogin,
-    sendCode,
-    logout,
-    refreshPapers,
-    uploadPaper,
-    removePaper,
-    selectPaper,
-    refreshSessions,
-    openSession,
-    createSession,
-    removeSession,
-    sendMessage,
-    beginReport,
-  };
+  const value: AppContextValue = useMemo(
+    () => ({
+      user,
+      authed: Boolean(token),
+      papers,
+      sessions,
+      messages,
+      activePaperID,
+      activeSessionID,
+      sending,
+      toolNote,
+      toasts,
+      activePaper,
+      activeSession,
+      reportReady,
+      reportProgress,
+      toast,
+      dismissToast,
+      login,
+      registerAndLogin,
+      sendCode,
+      logout,
+      refreshPapers,
+      uploadPaper,
+      removePaper,
+      selectPaper,
+      refreshSessions,
+      openSession,
+      createSession,
+      removeSession,
+      sendMessage,
+      beginReport,
+    }),
+    [
+      user,
+      token,
+      papers,
+      sessions,
+      messages,
+      activePaperID,
+      activeSessionID,
+      sending,
+      toolNote,
+      toasts,
+      activePaper,
+      activeSession,
+      reportReady,
+      reportProgress,
+      toast,
+      dismissToast,
+      login,
+      registerAndLogin,
+      sendCode,
+      logout,
+      refreshPapers,
+      uploadPaper,
+      removePaper,
+      selectPaper,
+      refreshSessions,
+      openSession,
+      createSession,
+      removeSession,
+      sendMessage,
+      beginReport,
+    ],
+  );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+}
+
+// 包级单例 QueryClient 不可取(SSR/多实例会串数据),按 Provider 实例建一次。
+// 服务端数据由 SSE 推送驱动刷新,故关掉窗口聚焦自动重拉,避免和推送重复;
+// poll 类 query 自带 refetchInterval,后台标签自动暂停。
+export function AppProvider({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { refetchOnWindowFocus: false, retry: 1 },
+        },
+      }),
+  );
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppProviderInner>{children}</AppProviderInner>
+    </QueryClientProvider>
+  );
 }
 
 export function useApp(): AppContextValue {

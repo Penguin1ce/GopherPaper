@@ -56,8 +56,12 @@ export function translate(id: string, text: string) {
   );
 }
 
-export function setUnauthorizedHandler(fn: () => void) {
+export function setUnauthorizedHandler(fn: (() => void) | null) {
   onUnauthorized = fn;
+}
+
+export function clearUnauthorizedHandler(fn: () => void) {
+  if (onUnauthorized === fn) onUnauthorized = null;
 }
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -361,12 +365,10 @@ export interface ReportProgressEvent {
 
 type WsMessage = PaperStatusEvent | ReportReadyEvent | ReportProgressEvent;
 
-// sseBase 给长连 SSE 选基址:优先直连后端,绕开 Next 的 fetch 代理。
-// 经代理转发时,dev 下浏览器关掉 EventSource(切页/重连)req.signal 不可靠触发,上游 Go
-// 连接不回收,堆满同源 ~6 条 HTTP/1.1 连接池后整个前端卡死。原生 EventSource 直连 Go 断开
-// 即可靠回收,且占用的是后端源(:8080)的连接池,不再挤占 Next 源 /api 请求的配额。
-// NEXT_PUBLIC_SSE_ORIGIN 显式指定后端源(如反代分离部署);未设且 dev 时按当前主机推 :8080;
-// 否则(prod 同源)回退走 Next 代理。
+// sseBase 给长连 SSE 选基址:开发期固定直连 Go 后端,绕开 Next/Nginx 所在页面源。
+// EventSource 长期占用 HTTP/1.1 连接;如果和页面路由、HMR、普通 API 同源,快速切页时容易顶满
+// 浏览器同源连接池。普通 API 仍走 API_BASE,只有 SSE 分流到 :8080。
+// NEXT_PUBLIC_SSE_ORIGIN 可显式指定后端源;未设且 dev 时按当前主机推 :8080。
 function sseBase(): string {
   const origin = process.env.NEXT_PUBLIC_SSE_ORIGIN;
   if (origin) return `${origin.replace(/\/+$/, "")}/api/v1`;

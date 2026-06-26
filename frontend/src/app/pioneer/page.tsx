@@ -352,6 +352,14 @@ export default function PioneerPage() {
   const [luckin, setLuckin] = useState<LuckinCred | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<PaperDeleteConfirmPayload | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     setToken(loadToken());
@@ -366,31 +374,38 @@ export default function PioneerPage() {
     bottomRef.current?.scrollIntoView({ behavior: "instant" });
   }, [messages, sending, toolNote]);
 
-  const fail = (e: unknown) =>
+  const fail = useCallback((e: unknown) => {
+    if (!mountedRef.current) return;
     setError(e instanceof Error ? e.message : "请求失败，请稍后再试");
+  }, []);
 
   const openSession = useCallback(async (id: string) => {
     setActiveID(id);
     setError("");
     try {
       const msgs = await api.listMessages(id);
-      setMessages(Array.isArray(msgs) ? msgs : []);
+      if (mountedRef.current) setMessages(Array.isArray(msgs) ? msgs : []);
     } catch (e) {
       fail(e);
     }
-  }, []);
+  }, [fail]);
 
   useEffect(() => {
     if (!token) return;
+    let cancelled = false;
     api
       .listSessions()
       .then((list) => {
+        if (cancelled || !mountedRef.current) return;
         const mine = (Array.isArray(list) ? list : []).filter((s) => s.agent_type === AGENT_TYPE);
         setSessions(mine);
         if (mine.length > 0) void openSession(mine[0].id);
       })
       .catch(fail);
-  }, [token, openSession]);
+    return () => {
+      cancelled = true;
+    };
+  }, [token, openSession, fail]);
 
   const startNewSession = () => {
     setActiveID("");
@@ -426,6 +441,7 @@ export default function PioneerPage() {
       const title = visibleText.length > 24 ? `${visibleText.slice(0, 24)}…` : visibleText;
       try {
         const s = await api.createSession(title, undefined, AGENT_TYPE);
+        if (!mountedRef.current) return;
         setSessions((list) => [s, ...list]);
         setActiveID(s.id);
         sid = s.id;
@@ -450,6 +466,7 @@ export default function PioneerPage() {
     const placeholderID = `stream-${Date.now()}`;
     let shown = false;
     const patch = (fn: (m: Message) => Message) => {
+      if (!mountedRef.current) return;
       if (!shown) {
         shown = true;
         setMessages((list) => [
@@ -482,6 +499,7 @@ export default function PioneerPage() {
     let planRafID: number | null = null;
     const flushPlan = () => {
       planRafID = null;
+      if (!mountedRef.current) return;
       setStreamPlan(planSteps.map((s) => ({ ...s })));
     };
     const cancelFlush = () => {
@@ -496,6 +514,7 @@ export default function PioneerPage() {
       if (luckin?.token) headers[LUCKIN_HEADER] = luckin.token;
       const data = await api.sendMessage(sid, q, headers, {
         onDelta: (text, reset) => {
+          if (!mountedRef.current) return;
           // 新一轮答案开始:丢弃上一轮已流式正文,气泡只展示末轮。
           if (reset) {
             pending = "";
@@ -505,16 +524,23 @@ export default function PioneerPage() {
           if (rafID === null) rafID = requestAnimationFrame(flush);
         },
         onPlan: (phase, content) => {
+          if (!mountedRef.current) return;
           const last = planSteps[planSteps.length - 1];
           if (last && last.phase === phase) last.text += content;
           else planSteps.push({ phase, text: content });
           if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
         },
-        onTool: (tool, done) =>
-          setToolNote(done ? `${tool} 已返回，正在继续…` : `正在调用 ${tool} …`),
-        onConfirmDeletePaper: (payload) => setDeleteConfirm(payload),
+        onTool: (tool, done) => {
+          if (mountedRef.current) {
+            setToolNote(done ? `${tool} 已返回，正在继续…` : `正在调用 ${tool} …`);
+          }
+        },
+        onConfirmDeletePaper: (payload) => {
+          if (mountedRef.current) setDeleteConfirm(payload);
+        },
       });
       cancelFlush();
+      if (!mountedRef.current) return;
       setStreamPlan([]);
       setMessages((list) => [
         ...list.filter((m) => m.id !== placeholderID),
@@ -526,10 +552,12 @@ export default function PioneerPage() {
       ]);
     } catch (e) {
       cancelFlush();
+      if (!mountedRef.current) return;
       setStreamPlan([]);
       setMessages((list) => list.filter((m) => m.id !== placeholderID));
       fail(e);
     } finally {
+      if (!mountedRef.current) return;
       setSending(false);
       setToolNote("");
     }

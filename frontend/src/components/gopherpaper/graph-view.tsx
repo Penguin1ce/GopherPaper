@@ -165,9 +165,34 @@ export function GraphView() {
   // 总览/趋势/关键词随登录态加载一次。
   useEffect(() => {
     if (!authed) return;
-    api.graphOverview().then(setOverview).catch(() => setOverview(null));
-    api.graphTrends(8).then(setTrends).catch(() => setTrends(null));
-    api.graphKeywords(24).then(setKeywords).catch(() => setKeywords([]));
+    let cancelled = false;
+    api
+      .graphOverview()
+      .then((value) => {
+        if (!cancelled) setOverview(value);
+      })
+      .catch(() => {
+        if (!cancelled) setOverview(null);
+      });
+    api
+      .graphTrends(8)
+      .then((value) => {
+        if (!cancelled) setTrends(value);
+      })
+      .catch(() => {
+        if (!cancelled) setTrends(null);
+      });
+    api
+      .graphKeywords(24)
+      .then((value) => {
+        if (!cancelled) setKeywords(value);
+      })
+      .catch(() => {
+        if (!cancelled) setKeywords([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [authed]);
 
   // 相关论文随选中论文变化加载。
@@ -176,12 +201,22 @@ export function GraphView() {
       setRelated([]);
       return;
     }
+    let cancelled = false;
     setLoadingRelated(true);
     api
       .relatedPapers(activePaperID, 12)
-      .then((r) => setRelated(Array.isArray(r) ? r : []))
-      .catch(() => setRelated([]))
-      .finally(() => setLoadingRelated(false));
+      .then((r) => {
+        if (!cancelled) setRelated(Array.isArray(r) ? r : []);
+      })
+      .catch(() => {
+        if (!cancelled) setRelated([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRelated(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [authed, activePaperID]);
 
   const centerPaper = useMemo(

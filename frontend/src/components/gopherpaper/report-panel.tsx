@@ -53,12 +53,19 @@ export function ReportPanel() {
   const [awaiting, setAwaiting] = useState<ReportType | null>(null);
   const autoLoadedRef = useRef<string | null>(null);
   const articleRef = useRef<HTMLDivElement | null>(null);
+  const mountedRef = useRef(true);
   // 当前论文 ID 的 ref 镜像:异步结果回来时据此校验仍是这篇论文才落地,避免切走后覆盖,
   // 也避免把 active/loading 放进 effect 依赖(那会让 setActive/setLoading 触发 effect 自我清理)。
   const activePaperRef = useRef(activePaperID);
   useEffect(() => {
     activePaperRef.current = activePaperID;
   }, [activePaperID]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const readySet = useMemo(
     () => reportReady[activePaperID] || {},
     [reportReady, activePaperID],
@@ -82,24 +89,28 @@ export function ReportPanel() {
     if (!firstReady) return;
     const type = firstReady.type;
     const paper = activePaperID;
+    let cancelled = false;
     autoLoadedRef.current = paper;
     setActive(type);
     setLoading(true);
     api
       .generateReport(paper, type)
       .then((res) => {
-        if (activePaperRef.current !== paper) return;
+        if (cancelled || activePaperRef.current !== paper) return;
         setReport(res);
         setLoading(false);
       })
       .catch((err) => {
-        if (activePaperRef.current !== paper) return;
+        if (cancelled || activePaperRef.current !== paper) return;
         if (err instanceof api.ApiError && err.status === 202) {
           setAwaiting(type);
           return;
         }
         setLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [activePaperID, readySet]);
 
   // awaiting:点了未就绪报告拿到 202 后,等 report_ready 让 readySet 更新,再拉一次缓存落地。
@@ -107,20 +118,24 @@ export function ReportPanel() {
     if (!awaiting || !activePaperID || !readySet[awaiting]) return;
     const paper = activePaperID;
     const type = awaiting;
+    let cancelled = false;
     api
       .generateReport(paper, type)
       .then((res) => {
-        if (activePaperRef.current !== paper) return;
+        if (cancelled || activePaperRef.current !== paper) return;
         setReport(res);
         setAwaiting(null);
         setLoading(false);
       })
       .catch((err) => {
-        if (activePaperRef.current !== paper) return;
+        if (cancelled || activePaperRef.current !== paper) return;
         toast((err as Error)?.message || "生成失败", "error");
         setAwaiting(null);
         setLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [awaiting, activePaperID, readySet, toast]);
 
   const generate = async (type: ReportType) => {
@@ -135,9 +150,11 @@ export function ReportPanel() {
     if (!readySet[type]) beginReport(activePaperID, type);
     try {
       const res = await api.generateReport(activePaperID, type);
+      if (!mountedRef.current) return;
       setReport(res);
       setLoading(false);
     } catch (err) {
+      if (!mountedRef.current) return;
       if (err instanceof api.ApiError && err.status === 202) {
         setAwaiting(type);
         return;

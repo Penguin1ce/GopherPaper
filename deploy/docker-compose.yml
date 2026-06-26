@@ -1,11 +1,29 @@
 # GopherPaper 科研文献智能解析与知识服务系统 —— 基础设施一键部署
 #   docker compose -f deploy/docker-compose.yml up -d
 #
-# 包含：MySQL / Redis / RabbitMQ / Milvus(standalone, 依赖 etcd + MinIO)
+# 包含：Nginx / MySQL / Redis / RabbitMQ / Milvus(standalone, 依赖 etcd + MinIO)
 # 注意：Ollama不在此 compose 内，按需本地起或单独容器化。
 name: gopherpaper
 
 services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: gopher-nginx
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    # Go 后端和 Next 前端仍按本地开发方式运行在宿主机时，
+    # 容器内通过 host.docker.internal 访问宿主机端口。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/nginx-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   mysql:
     image: mysql:8.0
     container_name: gopher-mysql

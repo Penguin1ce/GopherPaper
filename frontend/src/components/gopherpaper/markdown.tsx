@@ -8,6 +8,9 @@ import ReactMarkdown, {
 } from "react-markdown";
 import { QRCodeSVG } from "qrcode.react";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -225,7 +228,8 @@ export function Markdown({
   return (
     <div className={cn("gp-markdown", compact && "gp-markdown-compact")}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
         components={components}
         urlTransform={(url) =>
           url.startsWith(FIGURE_SCHEME) || (richLinks && isAllowedRichURL(url))

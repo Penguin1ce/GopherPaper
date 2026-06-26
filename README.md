@@ -19,6 +19,7 @@
 ```bash
 # 1. 基础设施
 docker compose -f deploy/docker-compose.yml up -d
+#   Nginx 统一入口:       http://localhost:8081
 #   Milvus 可视化 Attu: http://localhost:8000
 #   RabbitMQ 管理台:    http://localhost:15672 (gopher/gopher)
 # 2. 配置：填入大模型 API key、MinerU API token、SMTP 授权码等
@@ -31,14 +32,18 @@ go run cmd/server/main.go
 cd frontend && npm install && npm run dev
 ```
 
-前端默认运行在 `http://localhost:3000`。开发期 Next 会把 `/api/v1/*`
-代理到 `http://127.0.0.1:8080`,可通过 `GOPHERPAPER_API_ORIGIN` 覆盖。
+前端默认运行在 `http://localhost:3000`。前端的 `/api/v1/*` route handler
+会流式代理到 `http://127.0.0.1:8080`,可通过 `GOPHERPAPER_API_ORIGIN` 覆盖。
+如果使用 compose 内的 Nginx 入口,仍按上面方式启动后端和前端,浏览器访问
+`http://localhost:8081`;Nginx 会把 `/api/v1/*` 和 `/healthz` 转发到宿主机
+`127.0.0.1:8080` 的 Go 后端,其余请求转发到宿主机 `127.0.0.1:3000` 的
+Next 前端,并对 `/api/v1/events` 和聊天消息 SSE 关闭代理缓冲。
 
 具体细节请参考这篇博客[世界的尽头](https://muzimi.org/zh/docs/projects/GopherPaper/Windows%E7%8E%AF%E5%A2%83%E9%85%8D%E7%BD%AE)
 
 ## 核心接口
 
-受保护接口走 `Authorization: Bearer <jwt>`;浏览器直连的 WebSocket、图片与 PDF 文件接口带不了头,鉴权改走 `?token=<jwt>`。
+受保护接口走 `Authorization: Bearer <jwt>`;浏览器直连的 SSE、图片与 PDF 文件接口带不了头,鉴权改走 `?token=<jwt>`。
 
 | 鉴权 | 方法 | 路径 | 说明 |
 | --- | --- | --- | --- |
@@ -46,7 +51,7 @@ cd frontend && npm install && npm run dev
 | 公开 | POST | `/api/v1/user/send-code` | 下发邮箱验证码,body `email` |
 | 公开 | POST | `/api/v1/user/register` | 校验验证码并注册,body `student_id`、`name`、`email`、`class_id`、`password`、`code` |
 | 公开 | POST | `/api/v1/user/login` | 学号密码登录,返回 JWT 与用户信息 |
-| Query Token | GET | `/api/v1/ws?token=<jwt>` | WebSocket 订阅论文解析进度 |
+| Query Token | GET | `/api/v1/events?token=<jwt>` | SSE 订阅论文解析进度 |
 | Query Token | GET | `/api/v1/papers/:id/figures/:name?token=<jwt>` | 取问答召回引用的图片 |
 | Query Token | GET | `/api/v1/papers/:id/file?token=<jwt>` | 取原始 PDF,供精读页 pdf.js 渲染 |
 | JWT | POST | `/api/v1/user/logout` | 注销当前登录,清服务端登录态与用户模型缓存 |
