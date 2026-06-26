@@ -71,6 +71,8 @@ type ToolsConfig struct {
 	Skills []string          `toml:"skills"` // 默认论文助教的本地 skill 目录,作为 FSRepository 的根
 	// PioneerSkills 是小云雀 agent 的本地 skill 目录,与论文助教的 skill 隔离。
 	PioneerSkills []string `toml:"pioneer_skills"`
+	// GopherSkills 是小囊鼠(研读报告 agent)的本地 skill 目录,规范其检索流程,与其余 agent 隔离。
+	GopherSkills []string `toml:"gopher_skills"`
 	// BaiduMapAK 百度地图开放平台密钥,非空时给小云雀挂 geocode 地理编码工具,
 	// 把用户口述的地址/地标解析成经纬度,供瑞幸门店查询等需要坐标的工具使用。
 	BaiduMapAK string `toml:"baidu_map_ak"`

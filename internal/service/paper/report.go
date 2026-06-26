@@ -2,6 +2,7 @@ package paper
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -37,12 +38,38 @@ func Report(ctx context.Context, ownerID, paperID string, t constant.ReportType)
 }
 
 // ReadyReports 列出某篇论文已生成的研读报告类型,仅限本人,供前端进入时回填就绪态。
-// 只读,不触发任何生成。
+// 只读,不触发任何生成。先读 Redis 缓存(生成期前端会 5 秒轮询,避免一直打 MySQL),
+// 未命中再查 DB 并回填缓存;缓存由 SaveReport 主动失效,故不会漏掉新生成的报告。
 func ReadyReports(ctx context.Context, ownerID, paperID string) ([]constant.ReportType, error) {
 	if _, err := owned(ctx, ownerID, paperID); err != nil {
 		return nil, err
 	}
-	return paperdao.ListReportTypes(ctx, paperID)
+	cacheKey := constant.ReportReadyCacheKeyPrefix + paperID
+	if cached, err := dao.Get(ctx, cacheKey); err == nil {
+		var types []constant.ReportType
+		if json.Unmarshal([]byte(cached), &types) == nil {
+			return types, nil
+		}
+		// 缓存内容损坏不致命,落到 DB 重建。
+	}
+	types, err := paperdao.ListReportTypes(ctx, paperID)
+	if err != nil {
+		return nil, err
+	}
+	// 回填缓存(空数组也缓存,区分未缓存与确无报告;写失败不影响本次返回)。
+	if blob, mErr := json.Marshal(types); mErr == nil {
+		if sErr := dao.SetTTL(ctx, cacheKey, blob, constant.ReportReadyCacheTTL); sErr != nil {
+			zlog.Error("就绪报告缓存写入失败", "paper_id", paperID, "err", sErr)
+		}
+	}
+	return types, nil
+}
+
+// invalidateReadyCache 失效某篇论文的就绪报告缓存,写入新报告后调用,下次查询从 DB 重建。
+func invalidateReadyCache(ctx context.Context, paperID string) {
+	if _, err := dao.Del(context.WithoutCancel(ctx), constant.ReportReadyCacheKeyPrefix+paperID); err != nil {
+		zlog.Error("就绪报告缓存失效失败", "paper_id", paperID, "err", err)
+	}
 }
 
 // ensureReport 保证某类报告存在并返回:命中缓存即复用,否则抢 Redis 锁后生成并落库。
@@ -84,6 +111,9 @@ func ensureReport(ctx context.Context, paperID string, t constant.ReportType) (*
 	// 落库失败不影响本次返回,锁释放后下次点击再生成即可。
 	if err := paperdao.SaveReport(ctx, rec); err != nil {
 		zlog.Error("研读报告落库失败", "paper_id", paperID, "type", string(t), "err", err)
+	} else {
+		// 落库成功才失效就绪缓存,让轮询/重开下一次查询看到这条新报告。
+		invalidateReadyCache(ctx, paperID)
 	}
 	return reply, nil
 }

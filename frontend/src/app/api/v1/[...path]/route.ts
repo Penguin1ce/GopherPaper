@@ -32,9 +32,22 @@ async function proxy(req: NextRequest, path: string[]): Promise<Response> {
     // 流式转发请求体(上传大文件也不整块进内存);带 body 必须声明 duplex
     body: hasBody ? req.body : undefined,
     duplex: hasBody ? "half" : undefined,
+    // 把客户端断开透传给上游:SSE(/events)是长连,浏览器关掉 EventSource(切页/重连/
+    // 后台挂起)时若不中断上游,Go 侧连接会一直挂着,堆到顶满同源 ~6 条 HTTP/1.1 连接池后
+    // 阻塞后续所有请求,表现为整个前端「卡死」。
+    signal: req.signal,
   };
 
-  const upstream = await fetch(target, init);
+  let upstream: Response;
+  try {
+    upstream = await fetch(target, init);
+  } catch (err) {
+    // 客户端主动断开导致的 abort 不是错误,静默收尾(499 客户端已关闭连接)。
+    if (req.signal.aborted || (err as Error)?.name === "AbortError") {
+      return new Response(null, { status: 499 });
+    }
+    throw err;
+  }
 
   const respHeaders = new Headers();
   upstream.headers.forEach((value, key) => {

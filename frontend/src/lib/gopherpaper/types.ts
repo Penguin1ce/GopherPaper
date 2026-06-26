@@ -89,6 +89,13 @@ export interface PlanStep {
   text: string;
 }
 
+// ReportRun 是某篇论文某类研读报告一次生成的实时进度:执行计划步 + 是否进行中 + 是否失败。
+export interface ReportRun {
+  steps: PlanStep[];
+  live: boolean;
+  failed: boolean;
+}
+
 // Reply.Meta["sources"] 透出的出处结构。
 export interface Reference {
   source_file?: string;

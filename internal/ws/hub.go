@@ -37,11 +37,21 @@ type StatusMessage struct {
 	Detail  string `json:"detail,omitempty"`
 }
 
-// ReportMessage 是研读报告后台预生成完成的就绪通知,前端据此免轮询直接拉缓存。
+// ReportMessage 是研读报告生成完成的就绪通知,前端据此免轮询直接拉缓存。
 type ReportMessage struct {
 	Type       string `json:"type"` // 固定 "report_ready"
 	PaperID    string `json:"paper_id"`
 	ReportType string `json:"report_type"`
+}
+
+// ReportProgressMessage 是研读报告生成过程的阶段进度,前端据此在报告卡上显示执行计划
+// (规划→撰写→评审)与失败态。Phase 取 constant.ReportPhase*。
+type ReportProgressMessage struct {
+	Type       string `json:"type"` // 固定 "report_progress"
+	PaperID    string `json:"paper_id"`
+	ReportType string `json:"report_type"`
+	Phase      string `json:"phase"`
+	Detail     string `json:"detail,omitempty"`
 }
 
 // Add 登记某用户的一条订阅并返回它,handler 退出时须 Remove。
@@ -80,6 +90,13 @@ func PushStatus(userID, paperID, status, detail string) {
 // PushReport 向某用户所有在线订阅广播某类研读报告已就绪。
 func PushReport(userID, paperID, reportType string) {
 	broadcast(userID, paperID, ReportMessage{Type: "report_ready", PaperID: paperID, ReportType: reportType})
+}
+
+// PushReportProgress 向某用户广播某类研读报告的生成阶段进度,供前端报告卡显示执行计划与失败态。
+func PushReportProgress(userID, paperID, reportType, phase, detail string) {
+	broadcast(userID, paperID, ReportProgressMessage{
+		Type: "report_progress", PaperID: paperID, ReportType: reportType, Phase: phase, Detail: detail,
+	})
 }
 
 // broadcast 把消息序列化后非阻塞地发给某用户的全部在线订阅,快照集合后逐条发,避免持锁写。

@@ -5,7 +5,7 @@
 //
 // 按 (userID, maxIter) 懒建并缓存 runner:模型取 aimodel 的 chat 模型,工具迭代上限按意图预算
 // (summary/method 不同),故复合键缓存。历史走 WithInjectedContextMessages 注入、不持久化
-// (SoR 仍是 history 包),runner 配 noop session;出处由工具写进 ctx 收集器,见 tools.go。
+// (SoR 仍是 history 包),runner 配 noop session;检索工具与出处收集见 ai/ragtools 叶子包。
 package ragagent
 
 import (
@@ -19,10 +19,10 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/planner/react"
 	"trpc.group/trpc-go/trpc-agent-go/runner"
 	sessnoop "trpc.group/trpc-go/trpc-agent-go/session/noop"
-	"trpc.group/trpc-go/trpc-agent-go/tool"
 
 	"GopherPaper/internal/ai/core"
 	"GopherPaper/internal/ai/planstream"
+	"GopherPaper/internal/ai/ragtools"
 	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/tenant"
 )
@@ -93,7 +93,7 @@ func runnerForUser(userID string, maxIter int) (runner.Runner, error) {
 			llmagent.WithPlanner(react.New()),
 			// 工具迭代硬上限:防 agent 在检索循环里失控,软预算另在 prompt 引导。
 			llmagent.WithMaxToolIterations(maxIter),
-			llmagent.WithTools([]tool.Tool{newSearchPaperTool(), newFindFiguresTool()}),
+			llmagent.WithTools(ragtools.All()),
 		}
 		ent.rt = runner.NewRunner(appName, llmagent.New(agentName, opts...),
 			runner.WithSessionService(sessnoop.NewService()))

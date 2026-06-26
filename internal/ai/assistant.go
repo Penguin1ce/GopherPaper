@@ -19,9 +19,9 @@ import (
 	"GopherPaper/internal/ai/core"
 	extractflow "GopherPaper/internal/ai/extract"
 	figureflow "GopherPaper/internal/ai/figure"
+	gopherflow "GopherPaper/internal/ai/gopher"
 	pioneerflow "GopherPaper/internal/ai/pioneer"
 	ragagentflow "GopherPaper/internal/ai/ragagent"
-	reportflow "GopherPaper/internal/ai/report"
 	"GopherPaper/internal/ai/retrieval"
 	translateflow "GopherPaper/internal/ai/translate"
 	"GopherPaper/internal/aimodel"
@@ -63,6 +63,7 @@ func EvictUser(userID string) {
 	pioneerflow.EvictUser(userID)
 	agentrt.EvictUser(userID)
 	ragagentflow.EvictUser(userID)
+	gopherflow.EvictUser(userID)
 	aimodel.EvictUser(userID)
 }
 
@@ -108,9 +109,10 @@ func Translate(ctx context.Context, text string) (string, error) {
 }
 
 // GenerateReport 围绕某篇论文按类型生成研读报告,由前端按钮触发,不经分类器。
+// 经小囊鼠的多 agent 流水线(规划→撰写→评审)生成,取代旧的一次性 report 链路。
 // ctx 须注入论文 owner 供检索隔离与模型选取。
 func GenerateReport(ctx context.Context, paperID string, t constant.ReportType) (*core.Reply, error) {
-	return reportflow.Generate(ctx, &core.ReportInput{
+	return gopherflow.Generate(ctx, &core.ReportInput{
 		PaperID:    paperID,
 		ReportType: t,
 	})
