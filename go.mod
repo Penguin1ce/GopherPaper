@@ -9,6 +9,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/milvus-io/milvus/client/v2 v2.6.1
+	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
 	github.com/rabbitmq/amqp091-go v1.11.0
 	github.com/redis/go-redis/v9 v9.20.0
 	golang.org/x/crypto v0.48.0

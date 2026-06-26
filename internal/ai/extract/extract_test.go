@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -24,6 +25,36 @@ func TestParseStructured_Fenced(t *testing.T) {
 	}
 	if len(s.Innovations) != 1 {
 		t.Fatalf("innovations 错误 %+v", s.Innovations)
+	}
+}
+
+// TestParseStructured_LaTeX 验证字段里夹带 LaTeX(单反斜杠非法转义)也能解析。
+func TestParseStructured_LaTeX(t *testing.T) {
+	content := `{"title":"X","results":"证明了目标约束函数$\mathcal{L}_{tar}(x_t)$的样本复杂度界","keywords":["RAG"]}`
+	s, err := parseStructured(content)
+	if err != nil {
+		t.Fatalf("解析失败 %v", err)
+	}
+	if !strings.Contains(s.Results, `\mathcal{L}_{tar}(x_t)`) {
+		t.Fatalf("results LaTeX 丢失 %q", s.Results)
+	}
+	if len(s.Keywords) != 1 || s.Keywords[0] != "RAG" {
+		t.Fatalf("keywords 错误 %+v", s.Keywords)
+	}
+}
+
+// TestRepairJSONEscapes 验证合法转义保留、非法转义修复、字符串外反斜杠不碰。
+func TestRepairJSONEscapes(t *testing.T) {
+	// 合法 \n \t \uXXXX 与转义引号保留;LaTeX \mathcal \underline 修成字面反斜杠。
+	in := `{"a":"换行\n制表\t引号\"星星公式\mathcal下\underline"}`
+	got := repairJSONEscapes(in)
+	var m map[string]string
+	if err := json.Unmarshal([]byte(got), &m); err != nil {
+		t.Fatalf("修复后仍非法 %v\n%s", err, got)
+	}
+	want := "换行\n制表\t引号\"星星公式\\mathcal下\\underline"
+	if m["a"] != want {
+		t.Fatalf("修复结果错误\n got=%q\nwant=%q", m["a"], want)
 	}
 }
 
@@ -91,5 +122,30 @@ func TestMergePartials(t *testing.T) {
 	}
 	if strings.Join(got.Keywords, ",") != "VLA,safety" {
 		t.Fatalf("keywords 并集去重错误 %+v", got.Keywords)
+	}
+}
+
+func TestMergePartials_YearVenue(t *testing.T) {
+	// year 取首个非 0,venue 取首个非空,缺失片段不应覆盖已有值。
+	got := mergePartials([]*core.PaperStructured{
+		{Title: "A", PublishYear: 0, Venue: ""},
+		{Title: "A", PublishYear: 2023, Venue: "NeurIPS"},
+		{Title: "A", PublishYear: 2022, Venue: "ICML"},
+	})
+	if got.PublishYear != 2023 {
+		t.Fatalf("publish_year 应取首个非 0 = 2023, got %d", got.PublishYear)
+	}
+	if got.Venue != "NeurIPS" {
+		t.Fatalf("venue 应取首个非空 = NeurIPS, got %q", got.Venue)
+	}
+}
+
+func TestBackfillStructured_YearVenue(t *testing.T) {
+	// primary 缺 year/venue 时用 fallback 补,已有则保留。
+	primary := &core.PaperStructured{Title: "A", PublishYear: 0, Venue: ""}
+	fallback := &core.PaperStructured{Title: "A", PublishYear: 2021, Venue: "CVPR"}
+	got := backfillStructured(primary, fallback)
+	if got.PublishYear != 2021 || got.Venue != "CVPR" {
+		t.Fatalf("回填错误: year=%d venue=%q", got.PublishYear, got.Venue)
 	}
 }

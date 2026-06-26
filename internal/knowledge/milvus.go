@@ -98,6 +98,15 @@ func DeletePaperChunks(ctx context.Context, ownerID, paperID string) error {
 	return nil
 }
 
+// Embed 用同一 Qwen3-Embedding embedder 把任意文本向量化,供知识图谱算论文语义相似度复用,
+// 与入库 chunk 走同一向量空间。embedder 未就绪返回错误。
+func Embed(ctx context.Context, text string) ([]float64, error) {
+	if trpcEmb == nil {
+		return nil, fmt.Errorf("knowledge: embedder 未初始化")
+	}
+	return trpcEmb.GetEmbedding(ctx, text)
+}
+
 // Close 关闭 trpc vectorstore 的 Milvus 连接,在服务关停时调用。
 func Close() error {
 	if trpcStore == nil {

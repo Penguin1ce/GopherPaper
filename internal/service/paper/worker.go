@@ -9,6 +9,7 @@ import (
 	"GopherPaper/internal/ai"
 	"GopherPaper/internal/ai/core"
 	paperdao "GopherPaper/internal/dao/paper"
+	"GopherPaper/internal/graph"
 	"GopherPaper/internal/knowledge"
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/parser"
@@ -80,6 +81,10 @@ func runPipeline(ctx context.Context, task parseTask) {
 	}
 	setStatus(ctx, task, constant.PaperIndexed, "")
 
+	// 写入知识图谱:论文与作者/关键词/机构/参考文献的关系,供关系发现与趋势分析。
+	// best-effort,失败只记日志不阻断论文就绪(图谱是增强能力)。
+	upsertGraph(ctx, task, structured, doc)
+
 	setStatus(ctx, task, constant.PaperReady, "")
 	zlog.Info("论文解析入库完成", "paper_id", task.PaperID, "chunks", len(chunks))
 
@@ -93,6 +98,8 @@ func saveStructured(ctx context.Context, paperID string, s *core.PaperStructured
 		PaperID:           paperID,
 		Authors:           s.Authors,
 		Affiliations:      s.Affiliations,
+		PublishYear:       s.PublishYear,
+		Venue:             s.Venue,
 		Abstract:          s.Abstract,
 		Keywords:          s.Keywords,
 		ResearchQuestions: s.ResearchQuestions,
@@ -110,6 +117,94 @@ func saveStructured(ctx context.Context, paperID string, s *core.PaperStructured
 		return err
 	}
 	return paperdao.UpdateInfo(ctx, paperID, s.Title, doc.PageCount)
+}
+
+// upsertGraph 把论文及其作者/关键词/机构/会议与参考文献写入知识图谱,best-effort。
+func upsertGraph(ctx context.Context, task parseTask, s *core.PaperStructured, doc *core.ParsedDoc) {
+	if err := graph.UpsertPaper(ctx, graph.PaperGraph{
+		Owner:        task.OwnerID,
+		ID:           task.PaperID,
+		Title:        graphTitle(ctx, task, s),
+		Year:         s.PublishYear,
+		Venue:        s.Venue,
+		Authors:      s.Authors,
+		Keywords:     s.Keywords,
+		Affiliations: s.Affiliations,
+		Embedding:    paperEmbedding(ctx, s),
+	}); err != nil {
+		zlog.Error("图谱写入论文失败,降级", "paper_id", task.PaperID, "err", err)
+	}
+	if err := graph.UpsertCitations(ctx, task.OwnerID, task.PaperID, doc.References); err != nil {
+		zlog.Error("图谱写入引用失败,降级", "paper_id", task.PaperID, "err", err)
+	}
+}
+
+// graphTitle 取写入图谱的论文标题:优先抽取标题,空则回退到已落库标题(上传时按文件名兜底),
+// 再空回退到论文 ID,保证图谱节点不出现空 title。与 BackfillGraph 的回退口径一致。
+func graphTitle(ctx context.Context, task parseTask, s *core.PaperStructured) string {
+	if t := strings.TrimSpace(s.Title); t != "" {
+		return t
+	}
+	if p, err := paperdao.Get(ctx, task.PaperID); err == nil {
+		if t := strings.TrimSpace(p.Title); t != "" {
+			return t
+		}
+	}
+	return task.PaperID
+}
+
+// paperEmbedding 用论文结构化语义摘要算向量供图谱相似边,失败或为空返回 nil(降级不建相似边)。
+func paperEmbedding(ctx context.Context, s *core.PaperStructured) []float64 {
+	text := graphSemanticText(s)
+	if text == "" {
+		return nil
+	}
+	vec, err := knowledge.Embed(ctx, text)
+	if err != nil {
+		zlog.Error("论文向量化失败,跳过相似边", "err", err)
+		return nil
+	}
+	return vec
+}
+
+// graphSemanticText 汇集能稳定表达论文主题的信息,用于同领域论文的语义连边。
+// 只放主题、问题、方法和贡献,不放作者/机构/年份,避免非内容字段拉近距离。
+func graphSemanticText(s *core.PaperStructured) string {
+	if s == nil {
+		return ""
+	}
+	var b strings.Builder
+	writeText := func(label, value string, maxRunes int) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if maxRunes > 0 {
+			r := []rune(value)
+			if len(r) > maxRunes {
+				value = string(r[:maxRunes])
+			}
+		}
+		fmt.Fprintf(&b, "%s: %s\n", label, value)
+	}
+	writeList := func(label string, values []string, limit int) {
+		values = compactStrings(values)
+		if limit > 0 && len(values) > limit {
+			values = values[:limit]
+		}
+		if len(values) == 0 {
+			return
+		}
+		fmt.Fprintf(&b, "%s: %s\n", label, strings.Join(values, "；"))
+	}
+
+	writeText("标题", s.Title, 300)
+	writeText("摘要", s.Abstract, 1800)
+	writeList("关键词", s.Keywords, 16)
+	writeList("研究问题", s.ResearchQuestions, 8)
+	writeText("方法", s.Methods, 1200)
+	writeList("创新点", s.Innovations, 8)
+	return strings.TrimSpace(b.String())
 }
 
 // toSections 把解析出的章节转成落库模型。

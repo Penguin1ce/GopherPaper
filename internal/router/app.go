@@ -6,6 +6,7 @@ import (
 
 	"GopherPaper/internal/handler"
 	chathandler "GopherPaper/internal/handler/chat"
+	graphhandler "GopherPaper/internal/handler/graph"
 	paperhandler "GopherPaper/internal/handler/paper"
 	"GopherPaper/internal/handler/user"
 	wshandler "GopherPaper/internal/handler/ws"
@@ -62,6 +63,12 @@ func Init(mode string) *gin.Engine {
 			authed.GET("/papers/:id/reports", paperhandler.Reports)      // 列出已生成的研读报告类型
 			authed.POST("/papers/:id/report", paperhandler.Report)       // 生成研读报告
 			authed.POST("/papers/:id/translate", paperhandler.Translate) // 精读页逐段翻译
+
+			// 知识图谱：论文关系发现与研究趋势,按用户隔离。
+			authed.GET("/graph/overview", graphhandler.Overview)            // 图谱规模总览
+			authed.GET("/graph/trends", graphhandler.Trends)               // 研究趋势:年度论文数与关键词热度
+			authed.GET("/graph/keywords", graphhandler.Keywords)           // 热门关键词
+			authed.GET("/graph/papers/:id/related", graphhandler.Related)  // 与某篇论文相关的论文
 
 			// 会话与多轮论文问答。
 			authed.POST("/sessions", chathandler.CreateSession)            // 新建会话，可绑定论文

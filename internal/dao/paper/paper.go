@@ -54,6 +54,16 @@ func List(ctx context.Context, ownerID string) ([]model.Paper, error) {
 	return papers, nil
 }
 
+// ListByStatus 列出某状态的全部论文,跨用户,供知识图谱回填等离线任务用。
+func ListByStatus(ctx context.Context, status constant.PaperStatus) ([]model.Paper, error) {
+	var papers []model.Paper
+	err := dao.DB.WithContext(ctx).Where("status = ?", status).Find(&papers).Error
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 按状态查询论文失败: %w", err)
+	}
+	return papers, nil
+}
+
 // attachKeywords 批量回填论文关键词。关键词在 paper_meta 表，列表不联表故单查回填，供前端做关键词筛选。
 func attachKeywords(ctx context.Context, papers []model.Paper) error {
 	if len(papers) == 0 {

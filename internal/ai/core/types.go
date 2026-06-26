@@ -52,6 +52,8 @@ type PaperStructured struct {
 	Title             string   `json:"title"`
 	Authors           []string `json:"authors"`
 	Affiliations      []string `json:"affiliations"`
+	PublishYear       int      `json:"publish_year"`
+	Venue             string   `json:"venue"`
 	Abstract          string   `json:"abstract"`
 	Keywords          []string `json:"keywords"`
 	ResearchQuestions []string `json:"research_questions"`

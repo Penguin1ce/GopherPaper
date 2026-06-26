@@ -89,7 +89,7 @@ type Paper struct {
 	FailReason string               `gorm:"size:512" json:"fail_reason,omitempty"`
 	PageCount  int                  `json:"page_count"`
 	Category   string               `gorm:"size:64;index" json:"category,omitempty"`
-	Progress   int                  `json:"progress"` // 阅读进度 0-100
+	Progress   int                  `json:"progress"`                    // 阅读进度 0-100
 	Keywords   JSONStrings          `gorm:"-" json:"keywords,omitempty"` // 非表列 从 paper_meta 回填供前端筛选
 	CreatedAt  time.Time            `json:"created_at"`
 	UpdatedAt  time.Time            `json:"updated_at"`
@@ -114,6 +114,8 @@ type PaperMeta struct {
 	PaperID           string      `gorm:"size:36;primaryKey" json:"paper_id"`
 	Authors           JSONStrings `gorm:"type:text" json:"authors"`
 	Affiliations      JSONStrings `gorm:"type:text" json:"affiliations"`
+	PublishYear       int         `json:"publish_year"`
+	Venue             string      `gorm:"size:256" json:"venue"`
 	Abstract          string      `gorm:"type:text" json:"abstract"`
 	Keywords          JSONStrings `gorm:"type:text" json:"keywords"`
 	ResearchQuestions JSONStrings `gorm:"type:text" json:"research_questions"`

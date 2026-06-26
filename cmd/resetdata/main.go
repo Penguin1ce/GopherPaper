@@ -13,6 +13,7 @@ import (
 
 	mysqlcfg "github.com/go-sql-driver/mysql"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/redis/go-redis/v9"
 
 	"GopherPaper/internal/config"
@@ -24,6 +25,7 @@ type opts struct {
 	mysql      bool
 	redis      bool
 	milvus     bool
+	neo4j      bool
 	papers     bool
 	mysqlMode  string
 	paperDir   string
@@ -36,6 +38,7 @@ func main() {
 	flag.BoolVar(&o.mysql, "mysql", true, "reset MySQL")
 	flag.BoolVar(&o.redis, "redis", true, "reset Redis")
 	flag.BoolVar(&o.milvus, "milvus", true, "reset Milvus")
+	flag.BoolVar(&o.neo4j, "neo4j", true, "reset Neo4j knowledge graph")
 	flag.BoolVar(&o.papers, "papers", true, "reset local uploaded paper files")
 	flag.StringVar(&o.mysqlMode, "mysql-mode", "drop", "drop or truncate")
 	flag.StringVar(&o.paperDir, "paper-dir", "data/papers", "local uploaded paper directory")
@@ -80,6 +83,11 @@ func run(o opts) error {
 			return err
 		}
 	}
+	if o.neo4j {
+		if err := resetNeo4j(ctx, cfg.Neo4j); err != nil {
+			return err
+		}
+	}
 	if o.papers {
 		if err := resetPaperFiles(o.paperDir); err != nil {
 			return err
@@ -100,6 +108,9 @@ func printPlan(cfg *config.Config, o opts) {
 	}
 	if o.milvus {
 		fmt.Printf("milvus: %s collection=%s\n", cfg.Milvus.Address, cfg.Milvus.Collection)
+	}
+	if o.neo4j {
+		fmt.Printf("neo4j: %s db=%s\n", cfg.Neo4j.URI, neo4jDBName(cfg.Neo4j.Database))
 	}
 	if o.papers {
 		fmt.Printf("papers: %s\n", o.paperDir)
@@ -215,6 +226,30 @@ func resetMilvus(ctx context.Context, cfg config.MilvusConfig) error {
 	return nil
 }
 
+// resetNeo4j 清空知识图谱:只删本项目用到的标签节点(连带关系),不动其它数据库里的图。
+func resetNeo4j(ctx context.Context, cfg config.Neo4jConfig) error {
+	driver, err := neo4j.NewDriverWithContext(cfg.URI, neo4j.BasicAuth(cfg.Username, cfg.Password, ""))
+	if err != nil {
+		return fmt.Errorf("neo4j connect: %w", err)
+	}
+	defer driver.Close(ctx)
+	if err := driver.VerifyConnectivity(ctx); err != nil {
+		return fmt.Errorf("neo4j ping: %w", err)
+	}
+
+	opts := []neo4j.ExecuteQueryConfigurationOption{}
+	if db := strings.TrimSpace(cfg.Database); db != "" {
+		opts = append(opts, neo4j.ExecuteQueryWithDatabase(db))
+	}
+	const cypher = `MATCH (n) WHERE n:Paper OR n:Author OR n:Keyword OR n:Affiliation OR n:Venue OR n:Reference DETACH DELETE n`
+	res, err := neo4j.ExecuteQuery(ctx, driver, cypher, nil, neo4j.EagerResultTransformer, opts...)
+	if err != nil {
+		return fmt.Errorf("neo4j reset: %w", err)
+	}
+	fmt.Printf("neo4j: delete %d nodes\n", res.Summary.Counters().NodesDeleted())
+	return nil
+}
+
 func resetPaperFiles(dir string) error {
 	target, err := projectScopedDir(dir)
 	if err != nil {
@@ -270,6 +305,14 @@ func describeDSN(dsn string) string {
 		return "configured mysql dsn"
 	}
 	return fmt.Sprintf("%s@%s(%s)/%s", cfg.User, cfg.Net, cfg.Addr, cfg.DBName)
+}
+
+// neo4jDBName 给计划打印兜底库名,留空时走 Neo4j 默认库 neo4j。
+func neo4jDBName(db string) string {
+	if d := strings.TrimSpace(db); d != "" {
+		return d
+	}
+	return "neo4j (default)"
 }
 
 func quoteMySQLIdent(s string) string {

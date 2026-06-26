@@ -156,3 +156,49 @@ export interface Envelope<T> {
   message: string;
   data?: T;
 }
+
+// ---- 知识图谱(Neo4j)----
+
+// GraphStats 是当前用户图谱的规模总览,对应 /graph/overview。
+export interface GraphStats {
+  papers: number;
+  authors: number;
+  keywords: number;
+  citations: number;
+  min_year: number;
+  max_year: number;
+}
+
+// YearCount 是某年的论文数,用于年度趋势。
+export interface YearCount {
+  year: number;
+  count: number;
+}
+
+// KeywordYearCount 是某关键词在某年的出现次数,用于关键词热度演化。
+export interface KeywordYearCount {
+  keyword: string;
+  year: number;
+  count: number;
+}
+
+// NameCount 是名称与计数,用于热门关键词。
+export interface NameCount {
+  name: string;
+  count: number;
+}
+
+// GraphTrends 对应 /graph/trends。
+export interface GraphTrends {
+  by_year: YearCount[];
+  keyword_trend: KeywordYearCount[];
+}
+
+// RelatedPaper 是与某篇论文相关的论文,vias 标关系类型 author/keyword/cocitation/cites。
+export interface RelatedPaper {
+  id: string;
+  title: string;
+  year: number;
+  score: number;
+  vias: string[];
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Coffee, LogOut, NotebookText, PanelLeftClose, Plus } from "lucide-react";
+import { Coffee, LogOut, Network, NotebookText, PanelLeftClose, Plus } from "lucide-react";
 import Link from "next/link";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -64,6 +64,13 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
         >
           <NotebookText className="size-4" />
           研读报告 · 小囊鼠
+        </Link>
+        <Link
+          className={buttonVariants({ variant: "outline", className: "h-10 w-full justify-start" })}
+          href="/graph"
+        >
+          <Network className="size-4" />
+          知识图谱 · 论文关系
         </Link>
         <Link
           className={buttonVariants({ variant: "outline", className: "h-10 w-full justify-start" })}

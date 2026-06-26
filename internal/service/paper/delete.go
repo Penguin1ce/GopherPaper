@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	paperdao "GopherPaper/internal/dao/paper"
+	"GopherPaper/internal/graph"
 	"GopherPaper/internal/knowledge"
 	chatservice "GopherPaper/internal/service/chat"
 	"GopherPaper/internal/zlog"
@@ -37,6 +38,16 @@ func Delete(ctx context.Context, ownerID, paperID string) error {
 		return err
 	}
 	zlog.Info("论文向量 chunks 删除完成", "owner", ownerID, "paper_id", paperID)
+
+	zlog.Info("开始删除论文知识图谱节点", "owner", ownerID, "paper_id", paperID)
+	if err := graph.DeletePaper(ctx, ownerID, paperID); err != nil {
+		zlog.Error("删除论文知识图谱节点失败", "owner", ownerID, "paper_id", paperID, "err", err)
+		return err
+	}
+	zlog.Info("论文知识图谱节点删除完成", "owner", ownerID, "paper_id", paperID)
+
+	// 清掉论文就绪报告的 Redis 缓存(report:ready:<paperID>),best-effort,不阻断删除。
+	invalidateReadyCache(ctx, paperID)
 
 	zlog.Info("开始删除论文绑定会话", "owner", ownerID, "paper_id", paperID)
 	if err := chatservice.DeleteSessionsForPaper(ctx, ownerID, paperID); err != nil {

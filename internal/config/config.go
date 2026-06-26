@@ -23,6 +23,7 @@ type Config struct {
 	Parser    ParserConfig `toml:"parser"`
 	MySQL     MySQLConfig  `toml:"mysql"`
 	Redis     RedisConfig  `toml:"redis"`
+	Neo4j     Neo4jConfig  `toml:"neo4j"`
 	MQ        MQConfig     `toml:"mq"`
 	JWT       JWTConfig    `toml:"jwt"`
 	Mail      MailConfig   `toml:"mail"`
@@ -153,6 +154,14 @@ type RedisConfig struct {
 	Addr     string `toml:"addr"` // host:port
 	Password string `toml:"password"`
 	DB       int    `toml:"db"`
+}
+
+// Neo4jConfig 知识图谱：论文与作者/关键词/机构/参考文献的关系图,按用户隔离。
+type Neo4jConfig struct {
+	URI      string `toml:"uri"`      // bolt://host:port
+	Username string `toml:"username"` // 默认 neo4j
+	Password string `toml:"password"`
+	Database string `toml:"database"` // 留空走默认库 neo4j
 }
 
 // MQConfig 消息队列，默认 RabbitMQ，用于 PDF 解析与研读报告预生成异步化。

@@ -4,11 +4,15 @@
 import type {
   ChatResponse,
   Envelope,
+  GraphStats,
+  GraphTrends,
   LoginResponse,
   Message,
+  NameCount,
   Paper,
   PaperDetail,
   RegisterPayload,
+  RelatedPaper,
   ReportType,
   SendMessageResponse,
   Session,
@@ -178,6 +182,26 @@ export async function uploadPaper(file: File): Promise<Paper> {
     body: formData,
   });
   return readEnvelope<Paper>(res);
+}
+
+// ---- 知识图谱 ----
+
+export function graphOverview() {
+  return request<GraphStats>("/graph/overview");
+}
+
+export function graphTrends(keywordTop = 8) {
+  return request<GraphTrends>(`/graph/trends?keyword_top=${keywordTop}`);
+}
+
+export function graphKeywords(top = 20) {
+  return request<NameCount[]>(`/graph/keywords?top=${top}`);
+}
+
+export function relatedPapers(id: string, limit = 10) {
+  return request<RelatedPaper[]>(
+    `/graph/papers/${encodeURIComponent(id)}/related?limit=${limit}`,
+  );
 }
 
 // ---- 会话与消息 ----

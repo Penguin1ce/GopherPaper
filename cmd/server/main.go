@@ -18,6 +18,7 @@ import (
 	"GopherPaper/internal/auth"
 	"GopherPaper/internal/config"
 	"GopherPaper/internal/dao"
+	"GopherPaper/internal/graph"
 	"GopherPaper/internal/history"
 	"GopherPaper/internal/knowledge"
 	"GopherPaper/internal/model"
@@ -31,15 +32,16 @@ import (
 
 func main() {
 	cfgPath := flag.String("c", "config/config.toml", "配置文件路径")
+	backfillGraph := flag.Bool("backfill-graph", false, "把存量已就绪论文回填进知识图谱后退出")
 	flag.Parse()
 
-	if err := run(*cfgPath); err != nil {
+	if err := run(*cfgPath, *backfillGraph); err != nil {
 		zlog.Error("服务启动失败", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(cfgPath string) error {
+func run(cfgPath string, backfillGraph bool) error {
 	// 1. 配置 + 日志
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -72,6 +74,13 @@ func run(cfgPath string) error {
 	defer dao.RDB.Close()
 	zlog.Info("Redis 已连接")
 
+	// 知识图谱：Neo4j 存论文关系图,支撑关系发现与研究趋势,按用户隔离
+	if err := graph.Init(cfg.Neo4j); err != nil {
+		return err
+	}
+	defer graph.Close()
+	zlog.Info("Neo4j 知识图谱已就绪")
+
 	mqClient, err := mq.New(cfg.MQ)
 	if err != nil {
 		return err
@@ -93,6 +102,16 @@ func run(cfgPath string) error {
 	}
 	defer knowledge.Close()
 	zlog.Info("Milvus 知识库已就绪")
+
+	// 一次性回填:把存量已就绪论文写进图谱后退出,不拉起后续服务。
+	// 须在 knowledge.Init 之后:回填要经 embedder 算论文向量建语义相似边。
+	if backfillGraph {
+		if err := paperservice.BackfillGraph(ctx); err != nil {
+			return err
+		}
+		zlog.Info("知识图谱回填结束,退出")
+		return nil
+	}
 
 	// 5. PDF 解析：MinerU 在线 API 客户端
 	parser.Init(cfg.Parser)

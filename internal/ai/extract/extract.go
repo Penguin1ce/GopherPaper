@@ -210,6 +210,10 @@ func mergePartials(ps []*core.PaperStructured) *core.PaperStructured {
 			continue
 		}
 		out.Title = firstNonEmpty(out.Title, p.Title)
+		out.Venue = firstNonEmpty(out.Venue, p.Venue)
+		if out.PublishYear == 0 {
+			out.PublishYear = p.PublishYear
+		}
 		out.Abstract = firstNonEmpty(out.Abstract, p.Abstract)
 		out.Methods = longer(out.Methods, p.Methods)
 		out.Experiments = longer(out.Experiments, p.Experiments)
@@ -231,6 +235,10 @@ func backfillStructured(primary, fallback *core.PaperStructured) *core.PaperStru
 		return fallback
 	}
 	primary.Title = firstNonEmpty(primary.Title, fallback.Title)
+	primary.Venue = firstNonEmpty(primary.Venue, fallback.Venue)
+	if primary.PublishYear == 0 {
+		primary.PublishYear = fallback.PublishYear
+	}
 	primary.Abstract = firstNonEmpty(primary.Abstract, fallback.Abstract)
 	primary.Methods = firstNonEmpty(primary.Methods, fallback.Methods)
 	primary.Experiments = firstNonEmpty(primary.Experiments, fallback.Experiments)
@@ -282,16 +290,84 @@ func unionStrings(a, b []string) []string {
 }
 
 // parseStructured 容错解析模型返回的 JSON，剥离可能的代码围栏。
+// 模型常把 LaTeX 公式(如 $\mathcal{L}$)原样写进字段,单反斜杠在 JSON 里是非法转义,
+// 故首解析失败时修复字符串内的非法转义再重试。
 func parseStructured(content string) (*core.PaperStructured, error) {
 	raw := stripFence(content)
 	if strings.TrimSpace(raw) == "" {
 		return nil, fmt.Errorf("extract: 模型返回空内容")
 	}
 	var s core.PaperStructured
-	if err := json.Unmarshal([]byte(raw), &s); err != nil {
+	if err := json.Unmarshal([]byte(raw), &s); err == nil {
+		return &s, nil
+	}
+	repaired := repairJSONEscapes(raw)
+	if err := json.Unmarshal([]byte(repaired), &s); err != nil {
 		return nil, fmt.Errorf("extract: 解析抽取结果失败: %w (content_len=%d, raw=%q)", err, len(content), snippet(raw, 300))
 	}
 	return &s, nil
+}
+
+// repairJSONEscapes 把 JSON 字符串内的非法反斜杠转义改成字面反斜杠(\\),修复模型直出的 LaTeX。
+// 只在字符串字面量内动手,合法转义(含 \uXXXX)原样保留,结构外的反斜杠不碰。
+func repairJSONEscapes(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 16)
+	inString := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !inString {
+			b.WriteByte(c)
+			if c == '"' {
+				inString = true
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			b.WriteByte(c)
+			inString = false
+		case '\\':
+			if i+1 < len(s) && isValidEscapeAt(s, i+1) {
+				if s[i+1] == 'u' {
+					b.WriteString(s[i : i+6])
+					i += 5
+				} else {
+					b.WriteByte(c)
+					b.WriteByte(s[i+1])
+					i++
+				}
+			} else {
+				b.WriteString(`\\`)
+			}
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// isValidEscapeAt 判断 s[i] 是否是合法 JSON 转义字符(\u 须后接 4 位十六进制)。
+func isValidEscapeAt(s string, i int) bool {
+	switch s[i] {
+	case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
+		return true
+	case 'u':
+		if i+5 >= len(s) {
+			return false
+		}
+		for j := i + 1; j <= i+4; j++ {
+			if !isHex(s[j]) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func isHex(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
 }
 
 // snippet 截取前 n 个字符,用于报错回显模型返回。

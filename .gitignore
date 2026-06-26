@@ -29,6 +29,7 @@ log/
 
 # 本地 Go 构建产物。
 /server
+/resetdata
 
 ARCHITECTURE.md
 

@@ -134,6 +134,23 @@ services:
       milvus:
         condition: service_healthy
 
+  neo4j:
+    image: neo4j:5
+    container_name: gopher-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/gopherpaper
+    ports:
+      - "7474:7474" # HTTP Browser
+      - "7687:7687" # Bolt
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   mysql_data:
   redis_data:
@@ -141,3 +158,4 @@ volumes:
   etcd_data:
   minio_data:
   milvus_data:
+  neo4j_data:

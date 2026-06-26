@@ -186,7 +186,7 @@ const PlanRail = memo(function PlanRail({
   pending: boolean;
 }) {
   return (
-    <aside className="hidden min-h-0 w-96 border-l bg-background xl:flex xl:flex-col">
+    <aside className="hidden h-full min-h-0 w-96 border-l bg-background xl:flex xl:flex-col">
       <div className="flex h-14 shrink-0 items-center justify-between border-b px-4">
         <div>
           <div className="text-sm font-medium">执行计划</div>
@@ -198,7 +198,8 @@ const PlanRail = memo(function PlanRail({
           </Badge>
         )}
       </div>
-      <ScrollArea className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
+        <ScrollArea className="absolute! inset-0">
         <div className="p-4">
           {steps.length === 0 ? (
             <div className="rounded-lg border border-dashed bg-muted/30 p-6 text-center">
@@ -244,7 +245,8 @@ const PlanRail = memo(function PlanRail({
             </div>
           )}
         </div>
-      </ScrollArea>
+        </ScrollArea>
+      </div>
     </aside>
   );
 });
@@ -518,8 +520,8 @@ export default function PioneerPage() {
   const railPending = sending && streamPlan.length === 0;
 
   return (
-    <main className="flex h-dvh min-h-[640px] overflow-hidden bg-muted/40">
-      <aside className="hidden min-h-0 w-80 flex-col border-r bg-background lg:flex">
+    <main className="flex h-dvh overflow-hidden bg-muted/40">
+      <aside className="hidden h-full min-h-0 w-80 flex-col border-r bg-background lg:flex">
         <div className="space-y-4 p-4">
           <div className="flex items-center gap-3">
             <Link
@@ -539,7 +541,8 @@ export default function PioneerPage() {
             新会话
           </Button>
         </div>
-        <ScrollArea className="min-h-0 flex-1 px-3">
+        <div className="relative min-h-0 flex-1">
+        <ScrollArea className="absolute! inset-0 px-3">
           <div className="space-y-1 pb-4">
             {sessions.length === 0 ? (
               <p className="rounded-lg border border-dashed bg-muted/30 p-4 text-center text-sm text-muted-foreground">
@@ -580,12 +583,13 @@ export default function PioneerPage() {
             )}
           </div>
         </ScrollArea>
+        </div>
         <div className="border-t p-3">
           <LuckinCard cred={luckin} onChange={setLuckin} />
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col bg-background">
+      <section className="flex h-full min-w-0 flex-1 flex-col bg-background">
         <header className="flex h-14 shrink-0 items-center justify-between border-b px-4">
           <div className="min-w-0">
             <div className="truncate text-sm font-medium">
@@ -598,8 +602,9 @@ export default function PioneerPage() {
             新建
           </Button>
         </header>
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="flex max-h-full flex-col gap-5 p-4">
+        <div className="relative min-h-0 flex-1">
+        <ScrollArea className="absolute! inset-0">
+          <div className="flex flex-col gap-5 p-4">
             {messages.length === 0 && !sending ? (
               <div className="mx-auto flex min-h-[24rem] w-full max-w-xl flex-col justify-center gap-4">
                 <div className="rounded-lg border border-dashed bg-muted/30 p-8 text-center">
@@ -634,6 +639,7 @@ export default function PioneerPage() {
             <div ref={bottomRef} />
           </div>
         </ScrollArea>
+        </div>
         {error && (
           <div className="border-t bg-destructive/10 px-4 py-2 text-sm text-destructive">
             {error}
