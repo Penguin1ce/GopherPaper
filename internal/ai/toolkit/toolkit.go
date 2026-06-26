@@ -69,8 +69,19 @@ func Init(c config.ToolsConfig) error {
 	// arXiv 学术检索给小云雀:无 key,无条件登记;返回的 pdf_url 与 download_paper 闭环。
 	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newArxivTool())
 	// Semantic Scholar 学术检索给小云雀:key 可选,无条件登记(留空走公共额度);带引用数适合找经典文献。
-	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newSemanticScholarTool(c.SemanticScholarAPIKey))
-	zlog.Info("学术检索工具已登记", "agent", constant.AgentPioneer, "s2_key", c.SemanticScholarAPIKey != "")
+	// 顺链三件套(相似推荐/被引/参考文献)与 search 共用 key,以 search 结果的 paper_id 顺藤摸瓜。
+	// 配了中转代理基址就改走代理(更宽额度 + Bearer 鉴权),绕开官方 search 端点约 1 req/s 的死限。
+	if c.SemanticScholarBaseURL != "" {
+		setS2Endpoints(c.SemanticScholarBaseURL)
+	}
+	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer],
+		newSemanticScholarTool(c.SemanticScholarAPIKey),
+		newS2RecommendTool(c.SemanticScholarAPIKey),
+		newS2CitationsTool(c.SemanticScholarAPIKey),
+		newS2ReferencesTool(c.SemanticScholarAPIKey),
+	)
+	zlog.Info("学术检索工具已登记", "agent", constant.AgentPioneer,
+		"s2_key", c.SemanticScholarAPIKey != "", "s2_proxy", c.SemanticScholarBaseURL != "")
 	// Tavily 联网搜索给小云雀:补足模型知识截止后的实时信息。
 	if c.TavilyAPIKey != "" {
 		funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newTavilyTool(c.TavilyAPIKey))

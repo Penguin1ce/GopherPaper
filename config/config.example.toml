@@ -65,7 +65,8 @@ gopher_skills = ["skills/gopher"]      # 小囊鼠研读报告 agent 的检索�
 baidu_map_ak = ""                      # 百度地图开放平台 AK,非空时给小云雀挂 geocode 地理编码工具
 baidu_map_sk = ""                      # AK 开了 SN 校验时填对应 SK,留空表示 AK 走 IP 白名单校验
 tavily_api_key = ""                    # Tavily 联网搜索密钥,非空时给小云雀挂 web_search 工具,补足实时信息
-semantic_scholar_api_key = ""          # Semantic Scholar 检索密钥,可选;留空走公共额度(限流紧),配置后走专属额度更稳
+semantic_scholar_api_key = ""          # Semantic Scholar 检索密钥,可选;官方填 s2k- key(x-api-key),走中转代理填 sk- 令牌(Bearer)
+semantic_scholar_base_url = ""          # Semantic Scholar 中转代理基址(如 https://s2api.ominiai.cn/s2),留空走官方(限流极紧)
 
 # 工具显示名映射:原始工具名 → 前端展示名,SSE 推工具调用状态时换用,未配置回退原始名。
 # mcp 工具名带 toolset 名前缀,key 要写完整名,如 my-coffee_queryShopList。
@@ -76,6 +77,9 @@ list_my_papers = "我的论文列表"
 web_search = "联网搜索"
 search_arxiv = "arXiv 检索"
 search_semantic_scholar = "学术检索"
+recommend_similar_papers = "相似论文推荐"
+get_paper_citations = "查被引论文"
+get_paper_references = "查参考文献"
 download_paper = "下载论文"
 search_my_papers = "检索我的论文"
 my-coffee_queryShopList = "查询瑞幸门店"

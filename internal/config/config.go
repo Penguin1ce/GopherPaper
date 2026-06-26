@@ -85,6 +85,10 @@ type ToolsConfig struct {
 	// SemanticScholarAPIKey Semantic Scholar 检索密钥,可选:留空走公共额度(限流紧),
 	// 配置后 search_semantic_scholar 走专属额度更稳。search_arxiv 无需 key,无条件挂载。
 	SemanticScholarAPIKey string `toml:"semantic_scholar_api_key"`
+	// SemanticScholarBaseURL Semantic Scholar API 基址,留空走官方 https://api.semanticscholar.org
+	// (原生限流极紧,search 端点带 key 也只约 1 req/s)。配中转代理(如 https://s2api.ominiai.cn/s2)
+	// 后改走代理额度并自动以 Authorization: Bearer 注入 key(代理约定),不再用官方的 x-api-key 头。
+	SemanticScholarBaseURL string `toml:"semantic_scholar_base_url"`
 	// ToolNames 工具显示名映射:原始工具名 → 前端展示名,SSE 推送工具状态时换用,
 	// 未配置的工具回退原始名。
 	ToolNames map[string]string `toml:"tool_names"`

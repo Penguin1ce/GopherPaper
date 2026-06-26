@@ -48,17 +48,17 @@ var downloadClient = &http.Client{
 // 故 proceedings.mlr.press 命中 mlr.press、pdfs.semanticscholar.org 命中 semanticscholar.org。
 // 这些站均以开放获取直链 PDF 为主,贴合论文场景且把 SSRF 面收敛到可信域。
 var allowedPaperHosts = []string{
-	"arxiv.org",          // arXiv 预印本
-	"biorxiv.org",        // bioRxiv 生物学预印本
-	"medrxiv.org",        // medRxiv 医学预印本
-	"openreview.net",     // OpenReview 审稿平台
-	"aclanthology.org",   // ACL Anthology 计算语言学
-	"ncbi.nlm.nih.gov",   // PubMed Central 开放全文
-	"mlr.press",          // PMLR 机器学习会议录
-	"nips.cc",            // NeurIPS 早期会议录(papers.nips.cc)
-	"neurips.cc",         // NeurIPS 会议录(proceedings.neurips.cc)
+	"arxiv.org",           // arXiv 预印本
+	"biorxiv.org",         // bioRxiv 生物学预印本
+	"medrxiv.org",         // medRxiv 医学预印本
+	"openreview.net",      // OpenReview 审稿平台
+	"aclanthology.org",    // ACL Anthology 计算语言学
+	"ncbi.nlm.nih.gov",    // PubMed Central 开放全文
+	"mlr.press",           // PMLR 机器学习会议录
+	"nips.cc",             // NeurIPS 早期会议录(papers.nips.cc)
+	"neurips.cc",          // NeurIPS 会议录(proceedings.neurips.cc)
 	"semanticscholar.org", // Semantic Scholar 开放 PDF 镜像
-	"thecvf.com",         // CVF 开放获取(CVPR/ICCV 等)
+	"thecvf.com",          // CVF 开放获取(CVPR/ICCV 等)
 	"ieeexplore.ieee.org", // IEEE Xplore(多为订阅站,直链 PDF 需机构权限才下得到)
 }
 

@@ -4,9 +4,16 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 )
+
+// TestMain 关掉 S2 全进程限速,避免每次请求都按真实 1.1s 间隔等待拖慢测试。
+func TestMain(m *testing.M) {
+	s2MinInterval = 0
+	os.Exit(m.Run())
+}
 
 // s2Sample 两条结果:第一条带 openAccessPdf,第二条无开放 PDF 但有 ArXiv 编号(走回退)。
 const s2Sample = `{"total":2,"data":[
