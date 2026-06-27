@@ -31,7 +31,7 @@ func TestSaveArtifactUnzips(t *testing.T) {
 	dest := t.TempDir()
 	zipData := makeZip(t, map[string]string{
 		"content_list.json": `[{"type":"text"}]`,
-		"images/a.jpg":       "imgbytes",
+		"images/a.jpg":      "imgbytes",
 	})
 	if err := SaveArtifact(dest, zipData); err != nil {
 		t.Fatal(err)

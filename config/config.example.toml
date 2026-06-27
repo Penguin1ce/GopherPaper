@@ -145,12 +145,6 @@ addr = "localhost:6379"
 password = ""
 db = 0
 
-[neo4j]
-uri = "bolt://localhost:7687"
-username = "neo4j"
-password = "gopherpaper"
-database = "neo4j"
-
 # ── 消息队列(RabbitMQ)：耗时任务异步化 ───────────────────────
 [mq]
 url = "amqp://gopher:gopher@localhost:5772/"
@@ -164,6 +158,7 @@ secret = "change-me-to-a-long-random-secret"  # 生产务必替换为强随机�
 issuer = "gopherpaper"
 expire_hours = 240
 
+# 管理员邀请码
 [admin]
 registration_code = "change-me-admin-registration-code"
 
