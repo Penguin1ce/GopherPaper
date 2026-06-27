@@ -28,6 +28,13 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -72,6 +79,11 @@ type AdminOverview = {
   parse_success_rate: number | null;
   vector_count: number | null;
   vector_error?: string;
+  vector_ready_papers: number;
+  vector_indexed_papers: number | null;
+  vector_avg_chunks_per_paper: number | null;
+  vector_coverage_rate: number | null;
+  vector_missing_ready_papers: number | null;
   service_success: number;
   service_failed: number;
   parse_ready: number;
@@ -108,6 +120,13 @@ type PaperList = {
 };
 
 type DateRangeFilter = "" | "today" | "7d" | "month";
+type OverviewPanel = "service" | "parse" | "vector" | null;
+type OverviewAction = "all-papers" | "service-detail" | "parse-failed" | "vector-detail";
+type PaperFilters = {
+  query: string;
+  status: string;
+  date_range: DateRangeFilter;
+};
 
 const DEFAULT_PAPER_PAGE_SIZE = 10;
 
@@ -132,6 +151,11 @@ function normalizePaperList(
     page_size:
       typeof data?.page_size === "number" && data.page_size > 0 ? data.page_size : pageSize,
   };
+}
+
+function calcRate(value: number | null | undefined, total: number | null | undefined) {
+  if (!total || total <= 0 || value == null) return null;
+  return Math.max(0, Math.min(1, value / total));
 }
 
 class AdminApiError extends Error {
@@ -202,11 +226,12 @@ export default function AdminPage() {
   });
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [papers, setPapers] = useState<PaperList>(() => emptyPaperList());
-  const [filters, setFilters] = useState<{
-    query: string;
-    status: string;
-    date_range: DateRangeFilter;
-  }>({ query: "", status: "", date_range: "" });
+  const [filters, setFilters] = useState<PaperFilters>({
+    query: "",
+    status: "",
+    date_range: "",
+  });
+  const [activePanel, setActivePanel] = useState<OverviewPanel>(null);
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -218,6 +243,7 @@ export default function AdminPage() {
   const [deleteTarget, setDeleteTarget] = useState<AdminPaper | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const hydratedRef = useRef(false);
+  const paperSectionRef = useRef<HTMLElement | null>(null);
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const codeNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -269,7 +295,7 @@ export default function AdminPage() {
   );
 
   const loadPapers = useCallback(
-    async (page = papers.page, jwt = token) => {
+    async (page = papers.page, jwt = token, nextFilters = filters) => {
       if (!jwt) return;
       setTableLoading(true);
       try {
@@ -278,9 +304,9 @@ export default function AdminPage() {
           page: String(page),
           page_size: String(pageSize),
         });
-        if (filters.query.trim()) params.set("query", filters.query.trim());
-        if (filters.status) params.set("status", filters.status);
-        if (filters.date_range) params.set("date_range", filters.date_range);
+        if (nextFilters.query.trim()) params.set("query", nextFilters.query.trim());
+        if (nextFilters.status) params.set("status", nextFilters.status);
+        if (nextFilters.date_range) params.set("date_range", nextFilters.date_range);
         const data = await adminRequest<PaperList | null>(`/admin/papers?${params}`, jwt);
         setPapers(normalizePaperList(data, page, pageSize));
       } finally {
@@ -288,6 +314,51 @@ export default function AdminPage() {
       }
     },
     [filters, papers.page, token],
+  );
+
+  const scrollToPaperList = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      paperSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, []);
+
+  const applyPaperFilters = useCallback(
+    async (nextFilters: PaperFilters, notice?: string) => {
+      if (!notice) clearMessage();
+      setFilters(nextFilters);
+      scrollToPaperList();
+      try {
+        await loadPapers(1, token, nextFilters);
+        if (notice) flash("ok", notice);
+      } catch (err) {
+        flash("error", err instanceof Error ? err.message : "查询失败");
+      }
+    },
+    [clearMessage, flash, loadPapers, scrollToPaperList, token],
+  );
+
+  const onOverviewAction = useCallback(
+    (action: OverviewAction) => {
+      switch (action) {
+        case "all-papers":
+          void applyPaperFilters(
+            { query: "", status: "", date_range: "" },
+            "已显示全库论文",
+          );
+          break;
+        case "service-detail":
+          setActivePanel("service");
+          break;
+        case "parse-failed":
+          setActivePanel("parse");
+          void applyPaperFilters({ query: "", status: "failed", date_range: "" });
+          break;
+        case "vector-detail":
+          setActivePanel("vector");
+          break;
+      }
+    },
+    [applyPaperFilters],
   );
 
   const refreshAll = useCallback(
@@ -391,6 +462,7 @@ export default function AdminPage() {
     persistAuth(null);
     setOverview(null);
     setPapers(emptyPaperList());
+    setActivePanel(null);
     flash("ok", "已退出管理员后台");
   };
 
@@ -476,8 +548,8 @@ export default function AdminPage() {
 
         {auth ? (
           <section className="flex flex-1 flex-col gap-5 py-5">
-            <OverviewGrid overview={overview} />
-            <section className="rounded-lg border border-border bg-card">
+            <OverviewGrid overview={overview} onAction={onOverviewAction} />
+            <section ref={paperSectionRef} className="rounded-lg border border-border bg-card">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
                 <div>
                   <h1 className="text-base font-semibold">论文库管理</h1>
@@ -627,6 +699,22 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      <OverviewDetailDialog
+        overview={overview}
+        panel={activePanel}
+        onOpenChange={(open) => {
+          if (!open) setActivePanel(null);
+        }}
+        onFilterReady={() => {
+          setActivePanel(null);
+          void applyPaperFilters({ query: "", status: "ready", date_range: "" });
+        }}
+        onFilterFailed={() => {
+          setActivePanel(null);
+          void applyPaperFilters({ query: "", status: "failed", date_range: "" });
+        }}
+      />
 
       {codeNotice && (
         <div
@@ -898,37 +986,53 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function OverviewGrid({ overview }: { overview: AdminOverview | null }) {
+function OverviewGrid({
+  overview,
+  onAction,
+}: {
+  overview: AdminOverview | null;
+  onAction: (action: OverviewAction) => void;
+}) {
   const stats = [
     {
       label: "论文库数量",
       value: overview ? formatNumber(overview.paper_count) : "—",
       note: "当前全库论文",
       icon: FileSearch,
+      action: "all-papers" as const,
+      actionLabel: "查看全库",
     },
     {
       label: "服务调用次数",
       value: overview ? formatNumber(overview.service_call_count) : "—",
       note: `${overview?.service_success ?? 0} 成功 / ${overview?.service_failed ?? 0} 失败`,
       icon: BarChart3,
+      action: "service-detail" as const,
+      actionLabel: "查看明细",
     },
     {
       label: "服务成功率",
       value: overview ? formatPercent(overview.service_success_rate) : "—",
       note: "核心业务调用",
       icon: CheckCircle2,
+      action: "service-detail" as const,
+      actionLabel: "查看明细",
     },
     {
       label: "解析成功率",
       value: overview ? formatPercent(overview.parse_success_rate) : "—",
       note: `${overview?.parse_ready ?? 0} ready / ${overview?.parse_failed ?? 0} failed`,
       icon: FileCheck2,
+      action: "parse-failed" as const,
+      actionLabel: "筛选失败",
     },
     {
       label: "向量数据库条数",
       value: overview?.vector_count == null ? "—" : formatNumber(overview.vector_count),
       note: overview?.vector_error ? "Milvus 暂不可用" : "可查询有效 chunks",
       icon: Database,
+      action: "vector-detail" as const,
+      actionLabel: "查看状态",
     },
   ];
   return (
@@ -936,17 +1040,271 @@ function OverviewGrid({ overview }: { overview: AdminOverview | null }) {
       {stats.map((item) => {
         const Icon = item.icon;
         return (
-          <article key={item.label} className="rounded-lg border border-border bg-card p-4 shadow-sm">
+          <button
+            key={item.label}
+            type="button"
+            className="group rounded-lg border border-border bg-card p-4 text-left shadow-sm outline-none transition hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => onAction(item.action)}
+          >
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">{item.label}</p>
               <Icon className="size-4 text-primary" />
             </div>
             <strong className="mt-3 block text-2xl font-semibold tracking-tight">{item.value}</strong>
             <span className="mt-1 block text-xs text-muted-foreground">{item.note}</span>
-          </article>
+            <span className="mt-3 inline-flex text-xs font-medium text-primary opacity-70 transition group-hover:opacity-100">
+              {item.actionLabel}
+            </span>
+          </button>
         );
       })}
     </div>
+  );
+}
+
+function OverviewDetailDialog({
+  overview,
+  panel,
+  onOpenChange,
+  onFilterReady,
+  onFilterFailed,
+}: {
+  overview: AdminOverview | null;
+  panel: OverviewPanel;
+  onOpenChange: (open: boolean) => void;
+  onFilterReady: () => void;
+  onFilterFailed: () => void;
+}) {
+  const breakdown = useMemo(() => {
+    return [...(overview?.breakdown ?? [])].sort((a, b) => {
+      if (b.failed !== a.failed) return b.failed - a.failed;
+      return b.total - a.total;
+    });
+  }, [overview?.breakdown]);
+
+  const title =
+    panel === "service"
+      ? "服务调用明细"
+      : panel === "parse"
+        ? "解析状态定位"
+        : "向量库状态";
+  const description =
+    panel === "service"
+      ? "按服务类型拆分调用量、成功数与失败数。"
+      : panel === "parse"
+        ? "优先处理 failed 论文，确认解析链路是否稳定。"
+        : "查看 Milvus 计数是否可用，以及当前可查询 chunk 规模。";
+
+  return (
+    <Dialog open={panel !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[min(calc(100%-2rem),40rem)] gap-0 overflow-hidden p-0 sm:max-w-xl">
+        <DialogHeader className="border-b border-border p-5 pr-12">
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+
+        {panel === "service" && (
+          <div className="max-h-[min(68dvh,38rem)] space-y-4 overflow-y-auto p-5">
+            <div className="grid grid-cols-2 gap-3">
+              <MetricPill
+                label="成功日志"
+                value={formatNumber(overview?.service_success ?? 0)}
+                note={formatPercent(calcRate(overview?.service_success, overview?.service_call_count))}
+                tone="success"
+              />
+              <MetricPill
+                label="失败日志"
+                value={formatNumber(overview?.service_failed ?? 0)}
+                note={formatPercent(calcRate(overview?.service_failed, overview?.service_call_count))}
+                tone="danger"
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {breakdown.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground sm:col-span-2">
+                  暂无服务调用记录。
+                </p>
+              ) : (
+                breakdown.map((item) => (
+                  <ServiceBreakdownRow key={item.service_type} item={item} />
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {panel === "parse" && (
+          <div className="space-y-4 p-5">
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-left text-emerald-800 outline-none transition hover:bg-emerald-100 focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={onFilterReady}
+              >
+                <span className="text-xs font-medium">ready</span>
+                <strong className="mt-2 block text-2xl">{formatNumber(overview?.parse_ready ?? 0)}</strong>
+                <span className="mt-1 block text-xs">查看解析完成论文</span>
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-red-200 bg-red-50 p-4 text-left text-red-800 outline-none transition hover:bg-red-100 focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={onFilterFailed}
+              >
+                <span className="text-xs font-medium">failed</span>
+                <strong className="mt-2 block text-2xl">{formatNumber(overview?.parse_failed ?? 0)}</strong>
+                <span className="mt-1 block text-xs">查看失败原因</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {panel === "vector" && (
+          <div className="space-y-4 p-5">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <VectorMetricCard
+                label="可查询有效 chunks"
+                value={overview?.vector_count == null ? "—" : formatNumber(overview.vector_count)}
+                note="Milvus 实时计数"
+              />
+              <VectorMetricCard
+                label="平均 chunks / ready 论文"
+                value={
+                  overview?.vector_avg_chunks_per_paper == null
+                    ? "—"
+                    : formatDecimal(overview.vector_avg_chunks_per_paper)
+                }
+                note="包含尚未入库的 ready 论文"
+              />
+              <VectorMetricCard
+                label="已索引论文"
+                value={
+                  overview?.vector_indexed_papers == null
+                    ? "—"
+                    : formatNumber(overview.vector_indexed_papers)
+                }
+                note={`ready 论文 ${formatNumber(overview?.vector_ready_papers ?? overview?.parse_ready ?? 0)}`}
+              />
+              <VectorMetricCard
+                label="入库覆盖率"
+                value={formatPercent(overview?.vector_coverage_rate ?? null)}
+                note={
+                  overview?.vector_missing_ready_papers
+                    ? `${formatNumber(overview.vector_missing_ready_papers)} 篇 ready 未入库`
+                    : "ready 论文已覆盖"
+                }
+                tone={overview?.vector_missing_ready_papers ? "warning" : "success"}
+              />
+            </div>
+            {overview?.vector_error ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                <p className="font-medium">Milvus 暂不可用</p>
+                <p className="mt-2 break-words font-mono text-xs leading-5">{overview.vector_error}</p>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MetricPill({
+  label,
+  value,
+  note,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  note?: string;
+  tone?: "default" | "success" | "danger";
+}) {
+  const toneClass =
+    tone === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : tone === "danger"
+        ? "border-red-200 bg-red-50 text-red-800"
+        : "border-border bg-muted/40 text-foreground";
+
+  return (
+    <div className={`rounded-xl border p-3 ${toneClass}`}>
+      <p className="text-xs opacity-75">{label}</p>
+      <div className="mt-1 flex items-end justify-between gap-2">
+        <strong className="block text-xl">{value}</strong>
+        {note && <span className="pb-0.5 text-xs opacity-75">{note}</span>}
+      </div>
+    </div>
+  );
+}
+
+function VectorMetricCard({
+  label,
+  value,
+  note,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  note: string;
+  tone?: "default" | "success" | "warning";
+}) {
+  const toneClass =
+    tone === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : tone === "warning"
+        ? "border-amber-200 bg-amber-50 text-amber-800"
+        : "border-border bg-muted/40 text-foreground";
+
+  return (
+    <div className={`rounded-xl border p-4 ${toneClass}`}>
+      <p className="text-sm opacity-75">{label}</p>
+      <strong className="mt-2 block text-2xl font-semibold tracking-tight">{value}</strong>
+      <span className="mt-2 block text-xs opacity-75">{note}</span>
+    </div>
+  );
+}
+
+function ServiceBreakdownRow({
+  item,
+}: {
+  item: AdminOverview["breakdown"][number];
+}) {
+  const successRate = item.total > 0 ? item.success / item.total : null;
+  const failedRate = calcRate(item.failed, item.total);
+  const successWidth = Math.max(0, Math.min(100, (successRate ?? 0) * 100));
+  const failedWidth = Math.max(0, Math.min(100, (failedRate ?? 0) * 100));
+
+  return (
+    <article className="rounded-xl border border-border bg-card p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-medium">{item.service_type || "unknown"}</p>
+          <p className="mt-1 text-xs text-muted-foreground">总调用 {formatNumber(item.total)}</p>
+        </div>
+        <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+          {formatPercent(successRate)}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-lg bg-emerald-50 px-2 py-1.5 text-emerald-800">
+          <span className="block opacity-75">成功</span>
+          <strong className="text-sm">{formatNumber(item.success)}</strong>
+        </div>
+        <div className="rounded-lg bg-red-50 px-2 py-1.5 text-red-800">
+          <span className="block opacity-75">失败</span>
+          <strong className="text-sm">{formatNumber(item.failed)}</strong>
+        </div>
+      </div>
+      <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-muted">
+        <div className="h-full bg-primary" style={{ width: `${successWidth}%` }} />
+        <div className="h-full bg-destructive/70" style={{ width: `${failedWidth}%` }} />
+      </div>
+      {item.failed > 0 && (
+        <p className="mt-2 text-xs text-destructive">
+          失败占比 {formatPercent(failedRate)}，建议优先查看对应服务日志。
+        </p>
+      )}
+    </article>
   );
 }
 
@@ -1049,6 +1407,13 @@ function statusClass(status: string) {
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("zh-CN").format(value);
+}
+
+function formatDecimal(value: number) {
+  return new Intl.NumberFormat("zh-CN", {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 1,
+  }).format(value);
 }
 
 function formatPercent(value: number | null) {

@@ -154,6 +154,7 @@ func Overview(ctx context.Context) (*dto.AdminOverview, error) {
 	if err := dao.DB.WithContext(ctx).Model(&model.Paper{}).Where("status = ?", constant.PaperReady).Count(&out.ParseReady).Error; err != nil {
 		return nil, err
 	}
+	out.VectorReadyPapers = out.ParseReady
 	if err := dao.DB.WithContext(ctx).Model(&model.Paper{}).Where("status = ?", constant.PaperFailed).Count(&out.ParseFailed).Error; err != nil {
 		return nil, err
 	}
@@ -188,8 +189,57 @@ func Overview(ctx context.Context) (*dto.AdminOverview, error) {
 		out.VectorError = err.Error()
 	} else {
 		out.VectorCount = &count
+		if err := fillVectorIndexStats(ctx, out); err != nil {
+			zlog.Warn("admin vector index stats failed", "err", err)
+			out.VectorError = err.Error()
+		}
 	}
 	return out, nil
+}
+
+type readyPaperRef struct {
+	ID      string
+	OwnerID string
+}
+
+func fillVectorIndexStats(ctx context.Context, out *dto.AdminOverview) error {
+	var papers []readyPaperRef
+	if err := dao.DB.WithContext(ctx).Model(&model.Paper{}).
+		Select("id, owner_id").
+		Where("status = ?", constant.PaperReady).
+		Scan(&papers).Error; err != nil {
+		return err
+	}
+	ready := int64(len(papers))
+	out.VectorReadyPapers = ready
+	if ready == 0 {
+		zeroInt := int64(0)
+		zeroRate := float64(0)
+		out.VectorIndexedPapers = &zeroInt
+		out.VectorAvgChunksPerPaper = &zeroRate
+		out.VectorCoverageRate = &zeroRate
+		out.VectorMissingReadyPapers = &zeroInt
+		return nil
+	}
+	var indexed, readyChunks int64
+	for _, p := range papers {
+		n, err := knowledge.CountPaperChunks(ctx, p.OwnerID, p.ID)
+		if err != nil {
+			return err
+		}
+		readyChunks += n
+		if n > 0 {
+			indexed++
+		}
+	}
+	avg := float64(readyChunks) / float64(ready)
+	coverage := float64(indexed) / float64(ready)
+	missing := ready - indexed
+	out.VectorIndexedPapers = &indexed
+	out.VectorAvgChunksPerPaper = &avg
+	out.VectorCoverageRate = &coverage
+	out.VectorMissingReadyPapers = &missing
+	return nil
 }
 
 func ListPapers(ctx context.Context, query, status, dateRange string, page, pageSize int) (*dto.AdminPaperListResponse, error) {

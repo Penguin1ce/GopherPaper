@@ -37,17 +37,22 @@ type AdminServiceBreakdown struct {
 }
 
 type AdminOverview struct {
-	PaperCount         int64                   `json:"paper_count"`
-	ServiceCallCount   int64                   `json:"service_call_count"`
-	ServiceSuccessRate *float64                `json:"service_success_rate"`
-	ParseSuccessRate   *float64                `json:"parse_success_rate"`
-	VectorCount        *int64                  `json:"vector_count"`
-	VectorError        string                  `json:"vector_error,omitempty"`
-	ServiceSuccess     int64                   `json:"service_success"`
-	ServiceFailed      int64                   `json:"service_failed"`
-	ParseReady         int64                   `json:"parse_ready"`
-	ParseFailed        int64                   `json:"parse_failed"`
-	Breakdown          []AdminServiceBreakdown `json:"breakdown"`
+	PaperCount               int64                   `json:"paper_count"`
+	ServiceCallCount         int64                   `json:"service_call_count"`
+	ServiceSuccessRate       *float64                `json:"service_success_rate"`
+	ParseSuccessRate         *float64                `json:"parse_success_rate"`
+	VectorCount              *int64                  `json:"vector_count"`
+	VectorError              string                  `json:"vector_error,omitempty"`
+	VectorReadyPapers        int64                   `json:"vector_ready_papers"`
+	VectorIndexedPapers      *int64                  `json:"vector_indexed_papers"`
+	VectorAvgChunksPerPaper  *float64                `json:"vector_avg_chunks_per_paper"`
+	VectorCoverageRate       *float64                `json:"vector_coverage_rate"`
+	VectorMissingReadyPapers *int64                  `json:"vector_missing_ready_papers"`
+	ServiceSuccess           int64                   `json:"service_success"`
+	ServiceFailed            int64                   `json:"service_failed"`
+	ParseReady               int64                   `json:"parse_ready"`
+	ParseFailed              int64                   `json:"parse_failed"`
+	Breakdown                []AdminServiceBreakdown `json:"breakdown"`
 }
 
 type AdminPaperItem struct {
