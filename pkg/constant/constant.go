@@ -105,10 +105,14 @@ const (
 // 取代论文助教一次性出报告的旧路径。
 const AgentGopher = "gopher"
 
+// ReportPhasePreparing 是报告任务已接收、正在启动小囊鼠流水线的阶段名。
 // ReportPhaseFailed 是研读报告生成失败的阶段名,由报告 worker 推 ws 的 report_progress 事件,
 // 前端据此把对应报告卡标记为失败态。生成中的 规划/检索/思考 阶段由 react planner 经 planstream
 // 直接发出(StreamEventPlan,phase 取 planning/action/reasoning/replanning),与问答链路一致。
-const ReportPhaseFailed = "failed"
+const (
+	ReportPhasePreparing = "preparing"
+	ReportPhaseFailed    = "failed"
+)
 
 // ReportReadyCacheKeyPrefix 是某篇论文已就绪报告类型列表在 Redis 的键前缀,缓存 ReadyReports 结果,
 // 让前端生成期的轮询读 Redis 不打 MySQL;值是报告类型的 JSON 数组(可为空数组,以区分未缓存)。
@@ -118,6 +122,13 @@ const ReportReadyCacheKeyPrefix = "report:ready:"
 // ReportReadyCacheTTL 是就绪列表缓存的存活时间,仅作兜底上界(正常由写报告时主动失效),
 // 防极端情况下缓存与 DB 长期不一致。
 const ReportReadyCacheTTL = 10 * time.Minute
+
+// ReportProgressCacheKeyPrefix 是报告生成进度快照在 Redis 的键前缀,键拼 paperID 与 reportType。
+// SSE 负责实时推送,该快照负责断线、晚订阅和重复点击时恢复执行计划。
+const ReportProgressCacheKeyPrefix = "report:progress:"
+
+// ReportProgressCacheTTL 是报告进度快照的保留时间。成功/失败后短期保留,便于前端补齐最后状态。
+const ReportProgressCacheTTL = 15 * time.Minute
 
 // 知识库相关。
 const (

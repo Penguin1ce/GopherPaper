@@ -71,6 +71,9 @@ func runReportTask(ctx context.Context, task reportTask) {
 	ctx = tenant.With(ctx, tenant.Tenant{StudentID: task.OwnerID})
 	ctx = core.WithStream(ctx, func(ev core.StreamEvent) {
 		if ev.Kind == constant.StreamEventPlan {
+			if err := appendReportProgress(ctx, task.PaperID, task.ReportType, ev.Phase, ev.Delta); err != nil {
+				zlog.Error("报告进度快照追加失败", "paper_id", task.PaperID, "type", string(task.ReportType), "err", err)
+			}
 			sse.PushReportProgress(task.OwnerID, task.PaperID, string(task.ReportType), ev.Phase, ev.Delta)
 		}
 	})
@@ -80,9 +83,15 @@ func runReportTask(ctx context.Context, task reportTask) {
 			return
 		}
 		zlog.Error("报告生成失败", "paper_id", task.PaperID, "type", string(task.ReportType), "err", err)
+		if pErr := failReportProgress(ctx, task.PaperID, task.ReportType, "生成失败"); pErr != nil {
+			zlog.Error("报告失败进度快照写入失败", "paper_id", task.PaperID, "type", string(task.ReportType), "err", pErr)
+		}
 		// 推一条失败阶段,前端把对应报告卡标记为失败态。
 		sse.PushReportProgress(task.OwnerID, task.PaperID, string(task.ReportType), constant.ReportPhaseFailed, "生成失败")
 		return
+	}
+	if err := finishReportProgress(ctx, task.PaperID, task.ReportType); err != nil {
+		zlog.Error("报告完成进度快照收尾失败", "paper_id", task.PaperID, "type", string(task.ReportType), "err", err)
 	}
 	// 就绪即经 sse 通知前端,免轮询直接拉缓存。
 	sse.PushReport(task.OwnerID, task.PaperID, string(task.ReportType))

@@ -215,7 +215,7 @@ func Report(c *gin.Context) {
 // GET /api/v1/papers/:id/reports
 func Reports(c *gin.Context) {
 	ownerID := tenant.MustStudentID(c.Request.Context())
-	types, err := paperservice.ReadyReports(c.Request.Context(), ownerID, c.Param("id"))
+	types, running, err := paperservice.ReportOverview(c.Request.Context(), ownerID, c.Param("id"))
 	if err != nil {
 		writePaperErr(c, err, "查询失败")
 		return
@@ -223,7 +223,10 @@ func Reports(c *gin.Context) {
 	if types == nil {
 		types = []constant.ReportType{}
 	}
-	response.OK(c, gin.H{"ready": types})
+	if running == nil {
+		running = []paperservice.ReportRun{}
+	}
+	response.OK(c, gin.H{"ready": types, "running": running})
 }
 
 // Translate 把精读页选中的英文原文译成中文,前端选区触发,不经分类器、不走 RAG。

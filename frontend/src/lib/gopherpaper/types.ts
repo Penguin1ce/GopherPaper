@@ -97,6 +97,15 @@ export interface ReportRun {
   failed: boolean;
 }
 
+export interface ReportRunStatus extends ReportRun {
+  type: ReportType;
+}
+
+export interface ReportsStatus {
+  ready: ReportType[];
+  running: ReportRunStatus[];
+}
+
 // Reply.Meta["sources"] 透出的出处结构。
 export interface Reference {
   source_file?: string;

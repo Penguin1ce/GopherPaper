@@ -14,6 +14,7 @@ import type {
   PaperDetail,
   RegisterPayload,
   RelatedPaper,
+  ReportsStatus,
   ReportType,
   SendMessageResponse,
   Session,
@@ -170,12 +171,17 @@ export function generateReport(id: string, type: ReportType) {
   });
 }
 
-// listReports 拉取某篇论文已生成的研读报告类型,只读,不触发生成。
-export async function listReports(id: string): Promise<ReportType[]> {
-  const res = await request<{ ready?: ReportType[] }>(
+// reportStatus 拉取某篇论文已生成与生成中的研读报告状态,只读,不触发生成。
+export async function reportStatus(id: string): Promise<ReportsStatus> {
+  const res = await request<Partial<ReportsStatus>>(
     `/papers/${encodeURIComponent(id)}/reports`,
   );
-  return res.ready ?? [];
+  return { ready: res.ready ?? [], running: res.running ?? [] };
+}
+
+// listReports 拉取某篇论文已生成的研读报告类型,只读,不触发生成。
+export async function listReports(id: string): Promise<ReportType[]> {
+  return (await reportStatus(id)).ready;
 }
 
 export async function uploadPaper(file: File): Promise<Paper> {

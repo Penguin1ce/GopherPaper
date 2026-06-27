@@ -19,7 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import * as api from "@/lib/gopherpaper/api";
 import { printReport } from "@/lib/gopherpaper/print";
 import { useApp } from "@/lib/gopherpaper/store";
-import type { ChatResponse, Reference, ReportType } from "@/lib/gopherpaper/types";
+import type { ChatResponse, PlanStep, Reference, ReportType } from "@/lib/gopherpaper/types";
 import { paperTitle } from "@/lib/gopherpaper/utils";
 import { Empty, SkeletonLines } from "./app-ui";
 import { Markdown } from "./markdown";
@@ -42,6 +42,10 @@ const REPORTS: { type: ReportType; label: string; desc: string; icon: LucideIcon
   { type: "result", label: "实验结果", desc: "指标、现象与结论", icon: BarChart3 },
   { type: "innovation", label: "创新与不足", desc: "贡献点与局限", icon: Lightbulb },
   { type: "future", label: "未来建议", desc: "可延展研究方向", icon: Compass },
+];
+
+const REPORT_LOADING_STEPS: PlanStep[] = [
+  { phase: "preparing", text: "小囊鼠已接收生成任务，正在启动研读流水线。" },
 ];
 
 export function ReportPanel() {
@@ -253,9 +257,10 @@ export function ReportPanel() {
             {loading ? (
               <div className="space-y-4">
                 {/* 小囊鼠多 agent 长任务,生成要一分多钟,实时执行计划填补等待:规划→检索→思考。 */}
-                {run && run.steps.length > 0 && (
-                  <ProcessTrace steps={run.steps} live={run.live} />
-                )}
+                <ProcessTrace
+                  steps={run && run.steps.length > 0 ? run.steps : REPORT_LOADING_STEPS}
+                  live={run?.live ?? true}
+                />
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="size-4 animate-spin" />
                   小囊鼠正在研读论文、检索证据并撰写报告，约需一分钟…

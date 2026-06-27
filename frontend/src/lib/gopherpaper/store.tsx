@@ -25,6 +25,7 @@ import type {
   PlanStep,
   RegisterPayload,
   ReportRun,
+  ReportsStatus,
   ReportType,
   Session,
 } from "./types";
@@ -335,7 +336,13 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       ...prev,
       [paperID]: {
         ...prev[paperID],
-        [type]: { steps: [], live: true, failed: false },
+        [type]: {
+          steps: [
+            { phase: "preparing", text: "小囊鼠已接收生成任务，正在启动研读流水线。" },
+          ],
+          live: true,
+          failed: false,
+        },
       },
     }));
   }, []);
@@ -351,9 +358,18 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         const paperMap = prev[paperID] || {};
         const cur = paperMap[type] || { steps: [], live: true, failed: false };
         if (phase === "failed") {
+          const steps = cur.steps.slice();
+          if (detail) {
+            const last = steps[steps.length - 1];
+            if (last && last.phase === phase) {
+              steps[steps.length - 1] = { ...last, text: last.text + detail };
+            } else {
+              steps.push({ phase, text: detail });
+            }
+          }
           return {
             ...prev,
-            [paperID]: { ...paperMap, [type]: { ...cur, live: false, failed: true } },
+            [paperID]: { ...paperMap, [type]: { ...cur, steps, live: false, failed: true } },
           };
         }
         const steps = cur.steps.slice();
@@ -372,25 +388,45 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     [toast],
   );
 
+  // 报告状态快照:从 /reports 拉到 ready + running,用于 SSE 漏帧或重新进入页面时恢复计划栏。
+  const applyReportStatus = useCallback(
+    (paperID: string, status: ReportsStatus) => {
+      const ready = status.ready ?? [];
+      const readySet = new Set<ReportType>(ready);
+      for (const t of ready) applyReportReady(paperID, t);
+      const running = status.running ?? [];
+      if (running.length === 0) return;
+      setReportProgress((prev) => {
+        const paperMap = { ...(prev[paperID] || {}) };
+        for (const run of running) {
+          if (!run.type || (readySet.has(run.type) && !run.failed)) continue;
+          paperMap[run.type] = {
+            steps: run.steps ?? [],
+            live: Boolean(run.live),
+            failed: Boolean(run.failed),
+          };
+        }
+        return { ...prev, [paperID]: paperMap };
+      });
+    },
+    [applyReportReady],
+  );
+
   // 进入某篇论文时回填已落库报告的就绪态,让报告面板免点击自动展示历史报告。
   useEffect(() => {
     if (!token || !activePaperID) return;
     let cancelled = false;
     api
-      .listReports(activePaperID)
-      .then((types) => {
-        if (cancelled || types.length === 0) return;
-        setReportReady((prev) => {
-          const next = { ...(prev[activePaperID] || {}) };
-          for (const t of types) next[t] = true;
-          return { ...prev, [activePaperID]: next };
-        });
+      .reportStatus(activePaperID)
+      .then((status) => {
+        if (cancelled) return;
+        applyReportStatus(activePaperID, status);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [token, activePaperID]);
+  }, [token, activePaperID, applyReportStatus]);
 
   const connectWs = useCallback(
     (jwt: string) => {
@@ -446,11 +482,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       if (livePaperIds.length === 0) return null;
       await Promise.all(
         livePaperIds.map(async (pid) => {
-          const types = await api.listReports(pid);
-          // 该类报告本地还标 live 却已落库,说明事件丢了,补一次就绪(applyReportReady 内会收尾 live)。
-          for (const t of types) {
-            if (reportProgressRef.current[pid]?.[t]?.live) applyReportReady(pid, t);
-          }
+          const status = await api.reportStatus(pid);
+          // 该类报告本地还标 live 却已落库,说明事件丢了,补一次就绪;running 则补齐漏掉的计划片段。
+          applyReportStatus(pid, status);
         }),
       );
       return null;

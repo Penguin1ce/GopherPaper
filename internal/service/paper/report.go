@@ -3,6 +3,7 @@ package paper
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -22,6 +23,20 @@ import (
 // 进程崩溃后到期自动释放，可重新生成。
 const reportLockTTL = 5 * time.Minute
 
+// ReportProgressStep 是报告生成过程中的一个执行计划片段。
+type ReportProgressStep struct {
+	Phase string `json:"phase"`
+	Text  string `json:"text"`
+}
+
+// ReportRun 是某类报告当前生成态的可恢复快照,供前端在 SSE 丢帧/重连后补齐计划栏。
+type ReportRun struct {
+	ReportType constant.ReportType  `json:"type"`
+	Steps      []ReportProgressStep `json:"steps"`
+	Live       bool                 `json:"live"`
+	Failed     bool                 `json:"failed"`
+}
+
 // Report 取某篇论文某类研读报告,仅限本人。
 // 命中持久化缓存直接复用;未命中不在 HTTP 链路同步生成,而是触发一次后台预生成并返回
 // ErrReportGenerating,由前端轮询直到命中缓存,避免把整段生成耗时压在这次请求上。
@@ -35,6 +50,7 @@ func Report(ctx context.Context, ownerID, paperID string, t constant.ReportType)
 		return reply, nil
 	}
 	// 触发后台生成,生成锁在 worker 内保证只写一次,重复投递只会被去重为空操作。
+	queueReportProgress(ctx, paperID, t)
 	enqueueReport(ctx, reportTask{PaperID: paperID, OwnerID: ownerID, ReportType: t})
 	return nil, errs.ErrReportGenerating
 }
@@ -46,6 +62,31 @@ func ReadyReports(ctx context.Context, ownerID, paperID string) ([]constant.Repo
 	if _, err := owned(ctx, ownerID, paperID); err != nil {
 		return nil, err
 	}
+	return readyReportTypes(ctx, paperID)
+}
+
+// ReportOverview 返回某篇论文报告的就绪态与运行态。运行态来自 Redis 锁与进度快照,
+// 用于前端在 SSE 断开、晚订阅或重复点击时恢复小囊鼠的执行计划。
+func ReportOverview(ctx context.Context, ownerID, paperID string) ([]constant.ReportType, []ReportRun, error) {
+	if _, err := owned(ctx, ownerID, paperID); err != nil {
+		return nil, nil, err
+	}
+	ready, err := readyReportTypes(ctx, paperID)
+	if err != nil {
+		return nil, nil, err
+	}
+	readySet := make(map[constant.ReportType]bool, len(ready))
+	for _, t := range ready {
+		readySet[t] = true
+	}
+	running, err := runningReports(ctx, paperID, readySet)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ready, running, nil
+}
+
+func readyReportTypes(ctx context.Context, paperID string) ([]constant.ReportType, error) {
 	cacheKey := constant.ReportReadyCacheKeyPrefix + paperID
 	if cached, err := dao.Get(ctx, cacheKey); err == nil {
 		var types []constant.ReportType
@@ -67,6 +108,44 @@ func ReadyReports(ctx context.Context, ownerID, paperID string) ([]constant.Repo
 	return types, nil
 }
 
+func runningReports(ctx context.Context, paperID string, readySet map[constant.ReportType]bool) ([]ReportRun, error) {
+	runs := make([]ReportRun, 0)
+	for _, t := range constant.AllReportTypes() {
+		if readySet[t] {
+			continue
+		}
+		locked, err := dao.Exists(ctx, reportLockKey(paperID, t))
+		if err != nil {
+			return nil, fmt.Errorf("service/paper: 查询报告锁失败: %w", err)
+		}
+		run, ok, err := loadReportProgress(ctx, paperID, t)
+		if err != nil {
+			return nil, err
+		}
+		if !ok && !locked {
+			continue
+		}
+		if !ok {
+			run = newReportRun(t, "小囊鼠已接收生成任务,正在恢复执行进度。")
+		}
+		run.ReportType = t
+		if locked {
+			run.Live = true
+			run.Failed = false
+		}
+		if len(run.Steps) == 0 {
+			run.Steps = []ReportProgressStep{{
+				Phase: constant.ReportPhasePreparing,
+				Text:  "小囊鼠已接收生成任务,正在启动研读流水线。",
+			}}
+		}
+		if run.Live || run.Failed || locked {
+			runs = append(runs, run)
+		}
+	}
+	return runs, nil
+}
+
 // invalidateReadyCache 失效某篇论文的就绪报告缓存,写入新报告后调用,下次查询从 DB 重建。
 func invalidateReadyCache(ctx context.Context, paperID string) {
 	if _, err := dao.Del(context.WithoutCancel(ctx), constant.ReportReadyCacheKeyPrefix+paperID); err != nil {
@@ -84,7 +163,7 @@ func ensureReport(ctx context.Context, paperID string, t constant.ReportType) (*
 		return reply, nil
 	}
 
-	lockKey := fmt.Sprintf("report:lock:%s:%s", paperID, t)
+	lockKey := reportLockKey(paperID, t)
 	got, err := dao.SetNX(ctx, lockKey, "1", reportLockTTL)
 	if err != nil {
 		return nil, fmt.Errorf("service/paper: 申请报告锁失败: %w", err)
@@ -109,6 +188,10 @@ func ensureReport(ctx context.Context, paperID string, t constant.ReportType) (*
 	defer func() {
 		metrics.Record(ctx, metrics.ServiceReport, ownerID, paperID, "", metricSuccess, time.Since(start), metricErr)
 	}()
+
+	if err := startReportProgress(ctx, paperID, t); err != nil {
+		zlog.Error("报告进度快照初始化失败", "paper_id", paperID, "type", string(t), "err", err)
+	}
 
 	reply, err := ai.GenerateReport(ctx, paperID, t)
 	if err != nil {
@@ -140,4 +223,120 @@ func cachedReport(ctx context.Context, paperID string, t constant.ReportType) (*
 		return nil, false, err
 	}
 	return &core.Reply{Content: cached.Content, Meta: cached.Meta}, true, nil
+}
+
+func reportLockKey(paperID string, t constant.ReportType) string {
+	return fmt.Sprintf("report:lock:%s:%s", paperID, t)
+}
+
+func reportProgressKey(paperID string, t constant.ReportType) string {
+	return fmt.Sprintf("%s%s:%s", constant.ReportProgressCacheKeyPrefix, paperID, t)
+}
+
+func newReportRun(t constant.ReportType, text string) ReportRun {
+	return ReportRun{
+		ReportType: t,
+		Steps: []ReportProgressStep{{
+			Phase: constant.ReportPhasePreparing,
+			Text:  text,
+		}},
+		Live:   true,
+		Failed: false,
+	}
+}
+
+func startReportProgress(ctx context.Context, paperID string, t constant.ReportType) error {
+	run := newReportRun(t, "小囊鼠已接收生成任务,正在启动研读流水线。")
+	return saveReportProgress(context.WithoutCancel(ctx), paperID, t, run)
+}
+
+func queueReportProgress(ctx context.Context, paperID string, t constant.ReportType) {
+	locked, err := dao.Exists(ctx, reportLockKey(paperID, t))
+	if err != nil {
+		zlog.Error("报告生成锁查询失败", "paper_id", paperID, "type", string(t), "err", err)
+		return
+	}
+	if locked {
+		return
+	}
+	run := newReportRun(t, "小囊鼠已接收生成请求,正在排队启动研读流水线。")
+	if err := saveReportProgress(context.WithoutCancel(ctx), paperID, t, run); err != nil {
+		zlog.Error("报告排队进度快照写入失败", "paper_id", paperID, "type", string(t), "err", err)
+	}
+}
+
+func appendReportProgress(ctx context.Context, paperID string, t constant.ReportType, phase, detail string) error {
+	if phase == "" && detail == "" {
+		return nil
+	}
+	run, ok, err := loadReportProgress(ctx, paperID, t)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		run = ReportRun{ReportType: t, Live: true, Failed: false}
+	}
+	run.ReportType = t
+	run.Live = true
+	run.Failed = false
+	steps := run.Steps
+	last := len(steps) - 1
+	if last >= 0 && steps[last].Phase == phase {
+		steps[last].Text += detail
+	} else {
+		steps = append(steps, ReportProgressStep{Phase: phase, Text: detail})
+	}
+	run.Steps = steps
+	return saveReportProgress(context.WithoutCancel(ctx), paperID, t, run)
+}
+
+func finishReportProgress(ctx context.Context, paperID string, t constant.ReportType) error {
+	run, ok, err := loadReportProgress(ctx, paperID, t)
+	if err != nil || !ok {
+		return err
+	}
+	run.ReportType = t
+	run.Live = false
+	return saveReportProgress(context.WithoutCancel(ctx), paperID, t, run)
+}
+
+func failReportProgress(ctx context.Context, paperID string, t constant.ReportType, detail string) error {
+	run, ok, err := loadReportProgress(ctx, paperID, t)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		run = ReportRun{ReportType: t}
+	}
+	run.ReportType = t
+	run.Live = false
+	run.Failed = true
+	if detail != "" {
+		run.Steps = append(run.Steps, ReportProgressStep{Phase: constant.ReportPhaseFailed, Text: detail})
+	}
+	return saveReportProgress(context.WithoutCancel(ctx), paperID, t, run)
+}
+
+func loadReportProgress(ctx context.Context, paperID string, t constant.ReportType) (ReportRun, bool, error) {
+	raw, err := dao.Get(ctx, reportProgressKey(paperID, t))
+	if errors.Is(err, dao.ErrCacheMiss) {
+		return ReportRun{}, false, nil
+	}
+	if err != nil {
+		return ReportRun{}, false, fmt.Errorf("service/paper: 读取报告进度快照失败: %w", err)
+	}
+	var run ReportRun
+	if err := json.Unmarshal([]byte(raw), &run); err != nil {
+		return ReportRun{}, false, fmt.Errorf("service/paper: 解析报告进度快照失败: %w", err)
+	}
+	return run, true, nil
+}
+
+func saveReportProgress(ctx context.Context, paperID string, t constant.ReportType, run ReportRun) error {
+	run.ReportType = t
+	blob, err := json.Marshal(run)
+	if err != nil {
+		return fmt.Errorf("service/paper: 序列化报告进度快照失败: %w", err)
+	}
+	return dao.SetTTL(ctx, reportProgressKey(paperID, t), blob, constant.ReportProgressCacheTTL)
 }
