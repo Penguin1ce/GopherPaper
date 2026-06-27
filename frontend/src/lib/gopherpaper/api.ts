@@ -14,10 +14,12 @@ import type {
   Paper,
   PaperDeleteConfirmPayload,
   PaperDetail,
+  PasswordResetCodePayload,
   RegisterPayload,
   RelatedPaper,
   ReportsStatus,
   ReportType,
+  ResetPasswordPayload,
   SendMessageResponse,
   Session,
   UpdateEmailPayload,
@@ -140,6 +142,20 @@ export function sendCode(email: string) {
   return request<null>("/user/send-code", {
     method: "POST",
     body: JSON.stringify({ email }),
+  });
+}
+
+export function sendPasswordResetCode(payload: PasswordResetCodePayload) {
+  return request<null>("/user/password-reset/send-code", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function resetPassword(payload: ResetPasswordPayload) {
+  return request<null>("/user/password-reset", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

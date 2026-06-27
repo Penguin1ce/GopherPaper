@@ -32,6 +32,27 @@ func SendVerifyCode(ctx context.Context, email string) error {
 	return utils.SendMail(email, code)
 }
 
+func SendPasswordResetCode(ctx context.Context, req dto.PasswordResetCodeRequest) error {
+	studentID := strings.TrimSpace(req.StudentID)
+	email := strings.TrimSpace(req.Email)
+	var user model.User
+	err := dao.DB.WithContext(ctx).
+		Select("student_id", "email").
+		Where("student_id = ? AND email = ?", studentID, email).
+		First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("service: 查询找回密码用户失败: %w", err)
+	}
+	code := genCode()
+	if err := dao.SetTTL(ctx, passwordResetKey(studentID, email), code, constant.VerifyCodeTTL); err != nil {
+		return fmt.Errorf("service: 存储找回密码验证码失败: %w", err)
+	}
+	return utils.SendMail(email, code)
+}
+
 // Register 校验邮箱验证码后创建用户，成功即删除验证码。
 func Register(ctx context.Context, req dto.RegisterRequest) error {
 	code, err := dao.Get(ctx, codeKey(req.Email))
@@ -178,6 +199,44 @@ func UpdateEmail(ctx context.Context, studentID string, req dto.UpdateEmailReque
 	return Profile(ctx, studentID)
 }
 
+func ResetPassword(ctx context.Context, req dto.ResetPasswordRequest) error {
+	studentID := strings.TrimSpace(req.StudentID)
+	email := strings.TrimSpace(req.Email)
+	codeKey := passwordResetKey(studentID, email)
+	code, err := dao.Get(ctx, codeKey)
+	if errors.Is(err, dao.ErrCacheMiss) {
+		return errs.ErrCodeExpired
+	}
+	if err != nil {
+		return fmt.Errorf("service: 读取找回密码验证码失败: %w", err)
+	}
+	if code != req.Code {
+		return errs.ErrCodeMismatch
+	}
+
+	var user model.User
+	err = dao.DB.WithContext(ctx).
+		Where("student_id = ? AND email = ?", studentID, email).
+		First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return errs.ErrUserNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("service: 查询找回密码用户失败: %w", err)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("service: 密码加密失败: %w", err)
+	}
+	if err := dao.DB.WithContext(ctx).Model(&user).Update("password_hash", string(hash)).Error; err != nil {
+		return fmt.Errorf("service: 更新密码失败: %w", err)
+	}
+	_, _ = dao.Del(ctx, codeKey)
+	_, _ = dao.Del(ctx, tokenKey(user.Email))
+	return nil
+}
+
 func Logout(ctx context.Context, studentID string) error {
 	var user model.User
 	err := dao.DB.WithContext(ctx).Select("email").Where("student_id = ?", studentID).First(&user).Error
@@ -204,6 +263,10 @@ func genCode() string {
 
 // codeKey 验证码的 Redis 键，拼接完整邮箱。
 func codeKey(email string) string { return constant.RedisKeyVerifyCode + email }
+
+func passwordResetKey(studentID, email string) string {
+	return constant.RedisKeyPasswordReset + strings.TrimSpace(studentID) + ":" + strings.TrimSpace(email)
+}
 
 // tokenKey 登录 token 的 Redis 键，前缀取邮箱 @ 之前部分。
 func tokenKey(email string) string { return constant.RedisKeyUserToken + emailPrefix(email) }

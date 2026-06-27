@@ -230,6 +230,7 @@ const (
 // Redis 键前缀与时效。
 const (
 	RedisKeyVerifyCode      = "verify_code:"       // 普通用户邮箱验证码，键拼接邮箱
+	RedisKeyPasswordReset   = "password_reset:"    // 找回密码验证码，键拼接学号与邮箱
 	RedisKeyAdminVerifyCode = "admin_verify_code:" // 管理员邮箱验证码，键拼接邮箱
 	RedisKeyUserToken       = "jwt:"               // 登录 token，键拼接邮箱前缀
 	RedisKeyParseStatus     = "paper:status:"      // 论文解析状态缓存，键拼接 paperID

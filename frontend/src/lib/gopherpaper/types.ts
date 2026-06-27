@@ -171,6 +171,16 @@ export interface UpdateEmailPayload {
   code: string;
 }
 
+export interface PasswordResetCodePayload {
+  student_id: string;
+  email: string;
+}
+
+export interface ResetPasswordPayload extends PasswordResetCodePayload {
+  code: string;
+  password: string;
+}
+
 export type ReportType =
   | "quickread"
   | "method"

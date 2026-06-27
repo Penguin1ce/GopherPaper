@@ -47,6 +47,8 @@ func Init(mode string) *gin.Engine {
 		api.POST("/user/send-code", user.SendCode) // 下发邮箱验证码
 		api.POST("/user/register", user.Register)  // 校验验证码并注册
 		api.POST("/user/login", user.Login)        // 登录签发 JWT
+		api.POST("/user/password-reset/send-code", user.SendPasswordResetCode)
+		api.POST("/user/password-reset", user.ResetPassword)
 		api.GET("/user/avatar-files/:name", user.AvatarFile)
 		api.POST("/admin/send-code", adminhandler.SendCode)
 		api.POST("/admin/register", adminhandler.Register)

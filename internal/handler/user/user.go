@@ -122,6 +122,45 @@ func Login(c *gin.Context) {
 	})
 }
 
+// SendPasswordResetCode 向绑定邮箱下发找回密码验证码。
+func SendPasswordResetCode(c *gin.Context) {
+	var req dto.PasswordResetCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	if err := userservice.SendPasswordResetCode(c.Request.Context(), req); err != nil {
+		zlog.Error("发送找回密码验证码失败", "student_id", req.StudentID, "email", req.Email, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "验证码发送失败")
+		return
+	}
+	response.OKMsg(c, "如果账号与邮箱匹配，验证码已发送", nil)
+}
+
+// ResetPassword 校验找回密码验证码并更新密码。
+func ResetPassword(c *gin.Context) {
+	var req dto.ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	if err := userservice.ResetPassword(c.Request.Context(), req); err != nil {
+		switch {
+		case errors.Is(err, errs.ErrCodeExpired), errors.Is(err, errs.ErrCodeMismatch):
+			response.Fail(c, http.StatusBadRequest, err.Error())
+		case errors.Is(err, errs.ErrUserNotFound):
+			response.Fail(c, http.StatusBadRequest, "账号与邮箱不匹配")
+		default:
+			zlog.Error("重置密码失败", "student_id", req.StudentID, "email", req.Email, "err", err)
+			response.Fail(c, http.StatusInternalServerError, "重置密码失败")
+		}
+		return
+	}
+	ai.EvictUser(req.StudentID)
+	response.OKMsg(c, "密码已重置，请重新登录", nil)
+}
+
+// Me 返回当前登录用户资料。
 func Me(c *gin.Context) {
 	studentID := tenant.MustStudentID(c.Request.Context())
 	if studentID == "" {
