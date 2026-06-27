@@ -273,7 +273,7 @@ func newSemanticScholarTool(apiKey string) tool.Tool {
 	}
 	return function.NewFunctionTool(fn,
 		function.WithName("search_semantic_scholar"),
-		function.WithDescription("在 Semantic Scholar 上检索论文,带发表会议/期刊(venue)、被引次数、年份与开放获取 pdf_url。支持 year(年份区间)、venue(会议列表)、fields_of_study(学科)、open_access_only 等结构化过滤参数,在服务端精确筛——找顶会论文用 venue、找近期论文用 year,别把会议名/年份塞进 query。要找顶会论文、按影响力找经典文献、跨 arXiv/会议录/期刊找论文时优先用本工具;pdf_url 非空的可直接传给 download_paper 下载并解析入库。结果里的 paper_id 可继续传给 recommend_similar_papers(找相似论文)、get_paper_citations(找后续引用)、get_paper_references(找参考文献)顺藤摸瓜。"),
+		function.WithDescription("在 Semantic Scholar 上检索论文,带发表会议/期刊(venue)、被引次数、年份与开放获取 pdf_url。支持 year(年份区间)、venue(会议列表)、fields_of_study(学科)、open_access_only 等结构化过滤参数,在服务端精确筛——补引用数/相似论文用本工具,别把会议名/年份塞进 query。某会议某年份的录用身份必须先由 search_conference_proceedings / search_openreview_papers 等官方源确认;本工具只作补充,不能单独证明会议录用。pdf_url 非空的可直接传给 download_paper 下载并解析入库。结果里的 paper_id 可继续传给 recommend_similar_papers(找相似论文)、get_paper_citations(找后续引用)、get_paper_references(找参考文献)顺藤摸瓜。"),
 	)
 }
 

@@ -128,7 +128,7 @@ func newDownloadPaperTool() tool.Tool {
 	}
 	return function.NewFunctionTool(fn,
 		function.WithName("download_paper"),
-		function.WithDescription("把一篇论文的 PDF 下载并导入用户的工作台,导入后自动解析入库。须传 PDF 直链(如 https://arxiv.org/pdf/2503.03480),不要传摘要页;支持 arxiv、bioRxiv、medRxiv、OpenReview、ACL Anthology、PMC、PMLR、NeurIPS、CVF、Semantic Scholar 等正规学术开放站,可直接用 search_arxiv / search_semantic_scholar 返回的 pdf_url。"),
+		function.WithDescription("把一篇论文的 PDF 下载并导入用户的工作台,导入后自动解析入库。须传 PDF 直链(如 arXiv /pdf、NeurIPS proceedings 的 -Paper-*.pdf、OpenReview /pdf/*.pdf),不要传摘要页;支持 arxiv、bioRxiv、medRxiv、OpenReview、ACL Anthology、PMC、PMLR、NeurIPS、CVF、Semantic Scholar 等正规学术开放站。用户要导入刚才检索结果中的论文时,优先直接使用该结果已有的 pdf_url;没有 pdf_url 再补查 search_conference_proceedings / search_openreview_papers / search_semantic_scholar / search_arxiv。"),
 	)
 }
 
@@ -163,7 +163,7 @@ func fetchPDF(ctx context.Context, rawURL string) ([]byte, error) {
 		return nil, fmt.Errorf("download_paper: 论文超过 %dMB 体积上限", constant.MaxPaperDownloadBytes>>20)
 	}
 	if !strings.HasPrefix(string(data), "%PDF") {
-		return nil, fmt.Errorf("download_paper: 链接不是可直接下载的 PDF(可能指向 HTML 摘要页),请换 arxiv 的 /pdf/ 直链")
+		return nil, fmt.Errorf("download_paper: 链接不是可直接下载的 PDF(可能指向 HTML 摘要页),请换 arXiv /pdf、NeurIPS proceedings、OpenReview /pdf 等 PDF 直链")
 	}
 	return data, nil
 }

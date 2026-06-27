@@ -68,6 +68,11 @@ func Init(c config.ToolsConfig) error {
 	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newDownloadPaperTool())
 	// arXiv 学术检索给小云雀:无 key,无条件登记;返回的 pdf_url 与 download_paper 闭环。
 	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newArxivTool())
+	// 官方会议论文检索给小云雀:会议+年份类需求先查 proceedings / OpenReview,再用 S2/arXiv 补信息。
+	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer],
+		newConferenceProceedingsTool(),
+		newOpenReviewTool(),
+	)
 	// Semantic Scholar 学术检索给小云雀:key 可选,无条件登记(留空走公共额度);带引用数适合找经典文献。
 	// 顺链三件套(相似推荐/被引/参考文献)与 search 共用 key,以 search 结果的 paper_id 顺藤摸瓜。
 	// 配了中转代理基址就改走代理(更宽额度 + Bearer 鉴权),绕开官方 search 端点约 1 req/s 的死限。

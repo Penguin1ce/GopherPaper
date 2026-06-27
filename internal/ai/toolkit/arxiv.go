@@ -75,7 +75,7 @@ func newArxivTool() tool.Tool {
 	}
 	return function.NewFunctionTool(fn,
 		function.WithName("search_arxiv"),
-		function.WithDescription("在 arXiv 上检索论文,返回标题、作者、摘要、发表时间与可下载的 pdf_url。支持 from_year/to_year(提交时间区间)、categories(学科分类)、sort(recency 按时间从新到旧)等过滤参数,别把年份/分类塞进 query。用户想找某方向/某作者的论文、要最新预印本时调用,找最新用 sort=recency;arXiv 是预印本库,venue 信号弱,要顶会论文优先用 search_semantic_scholar。拿到的 pdf_url 可直接传给 download_paper 下载并解析入库。"),
+		function.WithDescription("在 arXiv 上检索论文,返回标题、作者、摘要、发表时间与可下载的 pdf_url。支持 from_year/to_year(提交时间区间)、categories(学科分类)、sort(recency 按时间从新到旧)等过滤参数,别把年份/分类塞进 query。用户想找某方向/某作者的最新预印本时调用,找最新用 sort=recency;arXiv 是预印本库,venue 信号弱,不能证明会议录用。某会议某年份论文或导入会议论文时,先用 search_conference_proceedings / search_openreview_papers 查官方源,arXiv 只作补充。拿到的 pdf_url 可直接传给 download_paper 下载并解析入库。"),
 	)
 }
 

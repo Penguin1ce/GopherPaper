@@ -20,6 +20,7 @@ related work 的每一段最终都要能回答:**这些前人工作和本文是�
 ## 第二步:按需检索补文献
 
 - 用户已给出要对比的文献就直接用;不全就用 `search_semantic_scholar`(找该方向代表作)+ `search_arxiv`(补最新)+ `search_my_papers`(用户库)补齐。
+- 若用户把 related work 范围限定为"某会议某年份"的论文,先用 `search_conference_proceedings` 或 `search_openreview_papers` 查官方 proceedings / OpenReview 核验录用身份;Semantic Scholar/arXiv 只能补引用数、摘要和 PDF,不能单独证明会议录用。
 - 找到核心对比论文后,先确认有 Semantic Scholar `paper_id`、arXiv 编号或 DOI,再用 `recommend_similar_papers` 补同类方法,用 `get_paper_citations` 找后续改进,用 `get_paper_references` 回溯关键前置工作。
 - 若核心论文来自用户工作台,`list_my_papers` 返回的是本站 UUID,不能直接传给顺链工具。先按论文标题调用 `search_semantic_scholar` 获取外部 `paper_id`,再查被引/参考/相似论文。
 - 检索 query 聚焦到要对比的子方向,不要泛查。
