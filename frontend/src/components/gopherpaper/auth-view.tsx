@@ -26,6 +26,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import { useApp } from "@/lib/gopherpaper/store";
 import { useGuard } from "./app-ui";
 
@@ -677,9 +678,8 @@ function LoginForm({ busy, loginForm, setLoginForm, onLogin }: AuthPanelProps) {
       </div>
       <div className="space-y-2">
         <Label htmlFor="password">密码</Label>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           value={loginForm.password}
           autoComplete="current-password"
           required
@@ -751,9 +751,8 @@ function RegisterForm({ busy, codeBusy, reg, setReg, onRegister, onSendCode }: A
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label htmlFor="reg_password">密码</Label>
-          <Input
+          <PasswordInput
             id="reg_password"
-            type="password"
             value={reg.password}
             autoComplete="new-password"
             minLength={6}
