@@ -146,6 +146,10 @@ const (
 	// MaxChunkRunes 单个知识块正文的字符上限,同标题同页的碎段合并到此为止,超出再切。
 	// bge-m3 支持长文,但块过大召回精度下降,取折中值。
 	MaxChunkRunes = 1000
+	// MaxEmbeddingRunes 送向量化前的硬上限:embedding 模型(Qwen3-Embedding-0.6B)上下文 32K tokens,
+	// 单请求超限会 400 拖垮整篇入库。最坏情况(密集数字/符号表格)约 1 token/rune,故按 ~28K runes 留余量截断
+	// (全文照常落库,向量取前缀)。远高于 MaxChunkRunes,正常块与结构化详情都不受影响,只兜底未切的异常巨块。
+	MaxEmbeddingRunes = 28000
 )
 
 // 带图问答相关。问答时图块走单独一轮检索,不与正文同池竞争。

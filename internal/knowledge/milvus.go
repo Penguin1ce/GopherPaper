@@ -19,6 +19,7 @@ import (
 	mvstore "trpc.group/trpc-go/trpc-agent-go/knowledge/vectorstore/milvus"
 
 	"GopherPaper/internal/config"
+	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 )
 
@@ -240,8 +241,17 @@ func prepareUpserts(ctx context.Context, chunks []Chunk) ([]chunkUpsert, []strin
 	}
 	upserts := make([]chunkUpsert, 0, len(normalized))
 	for _, chunk := range normalized {
-		vec, err := trpcEmb.GetEmbedding(ctx, chunk.Content)
+		vec, err := trpcEmb.GetEmbedding(ctx, embeddingInput(chunk.Content))
 		if err != nil {
+			// 带上块上下文与原始错误(含 SiliconFlow 的 code/message)便于定位 400 真因:
+			// 可能是输入超长,也可能是模型名错、参数非法、维度不符等,光看"向量化失败"无从判断。
+			zlog.Error("chunk 向量化失败",
+				"doc_id", chunk.DocID,
+				"chunk_index", chunk.ChunkIndex,
+				"block_type", chunk.Metadata["block_type"],
+				"runes", len([]rune(chunk.Content)),
+				"preview", contentPreview(chunk.Content, 80),
+				"err", err)
 			return upserts, ids, fmt.Errorf("knowledge: trpc 向量化失败: %w", err)
 		}
 		upsert := chunkUpsert{
@@ -255,6 +265,28 @@ func prepareUpserts(ctx context.Context, chunks []Chunk) ([]chunkUpsert, []strin
 		upserts = append(upserts, upsert)
 	}
 	return upserts, ids, nil
+}
+
+// embeddingInput 把过长块在送向量化前按 runes 截断,避免超出 embedding 服务单请求 token 上限触发 400
+// (跨页大表、结构化详情等异常长块尤甚)。chunk 全文照常落库,仅向量基于前缀——语义主信号集中在前部,
+// 且这样一块异常不会拖垮整篇论文入库。正常块远低于上限,不受影响。
+func embeddingInput(content string) string {
+	runes := []rune(content)
+	if len(runes) <= constant.MaxEmbeddingRunes {
+		return content
+	}
+	zlog.Warn("chunk 超 embedding 输入上限,截断后向量化", "runes", len(runes), "limit", constant.MaxEmbeddingRunes)
+	return string(runes[:constant.MaxEmbeddingRunes])
+}
+
+// contentPreview 取内容前 n 个 runes 作日志预览,折叠换行,便于在报错里认出是哪一块。
+func contentPreview(content string, n int) string {
+	content = strings.Join(strings.Fields(content), " ")
+	runes := []rune(content)
+	if len(runes) <= n {
+		return content
+	}
+	return string(runes[:n]) + "…"
 }
 
 // Search 按多租户可见性混合检索:科研基础库全员可见,私有库仅本人可见;docID 非空时限定到该论文。

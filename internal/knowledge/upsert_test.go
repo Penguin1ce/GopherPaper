@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"trpc.group/trpc-go/trpc-agent-go/knowledge/document"
@@ -111,6 +112,34 @@ func TestUpsertChunksEmptyDoesNotRequireStore(t *testing.T) {
 	}
 	if len(ids) != 0 {
 		t.Fatalf("empty ids len=%d, want 0", len(ids))
+	}
+}
+
+func TestUpsertChunksTruncatesEmbeddingInputForOverlongChunk(t *testing.T) {
+	restore := installTestKnowledgeStore()
+	defer restore()
+
+	emb := trpcEmb.(*fixedEmbedder)
+	full := strings.Repeat("表", constant.MaxEmbeddingRunes+500) // 超 embedding 上限的超长块
+	ids, err := UpsertChunks(context.Background(), []Chunk{{
+		Content: full,
+		Scope:   constant.KnowledgeScopePrivate,
+		OwnerID: "u1",
+		DocID:   "d1",
+	}})
+	if err != nil {
+		t.Fatalf("UpsertChunks 失败 %v", err)
+	}
+	if len(emb.texts) != 1 {
+		t.Fatalf("应只向量化一次,实际 %d", len(emb.texts))
+	}
+	if got := len([]rune(emb.texts[0])); got != constant.MaxEmbeddingRunes {
+		t.Fatalf("送向量化的文本应截断到 %d runes,实际 %d", constant.MaxEmbeddingRunes, got)
+	}
+	store := trpcStore.(*insertOnlyVectorStore)
+	doc := store.docs[ids[0]]
+	if doc == nil || len([]rune(doc.Content)) != len([]rune(full)) {
+		t.Fatalf("落库应保留全文,实际 %+v", doc)
 	}
 }
 
