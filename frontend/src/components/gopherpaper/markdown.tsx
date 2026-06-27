@@ -125,6 +125,76 @@ function normalizeRichMarkdown(value: string): string {
     );
 }
 
+function looksLikeMath(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    /\\[a-zA-Z]+|\\[{}]|[_^=<>+\-*/]|[\d)]\s*[,，]\s*[\d(]/.test(trimmed) ||
+    /^[A-Za-z][A-Za-z0-9']*$/.test(trimmed)
+  );
+}
+
+function normalizeMathBody(value: string): string {
+  return value.replace(
+    /\\(notin|in)\s*\{([^{}]+)\}/g,
+    (_raw, op: string, body: string) => `\\${op} \\{${body}\\}`,
+  );
+}
+
+function normalizeMathText(value: string): string {
+  return value
+    .replace(/\\\$([^$\n]+?)(?:\\\$|\$)/g, (raw, body: string) => {
+      if (!looksLikeMath(body)) return raw;
+      return `$${normalizeMathBody(body)}$`;
+    })
+    .replace(/\$([^$\n]+?)\\\$/g, (raw, body: string) => {
+      if (!looksLikeMath(body)) return raw;
+      return `$${normalizeMathBody(body)}$`;
+    })
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_raw, body: string) => {
+      return `\n\n$$\n${normalizeMathBody(body.trim())}\n$$\n\n`;
+    })
+    .replace(/\\\[([\s\S]+?)\\\]/g, (raw, body: string) => {
+      if (!looksLikeMath(body)) return raw;
+      return `\n\n$$\n${normalizeMathBody(body.trim())}\n$$\n\n`;
+    })
+    .replace(/\\\(([\s\S]+?)\\\)/g, (raw, body: string) => {
+      if (!looksLikeMath(body)) return raw;
+      return `$${normalizeMathBody(body)}$`;
+    })
+    .replace(
+      /(^|[^\\$])\$([^$\n]+?)\$(?!\$)/g,
+      (raw, prefix: string, body: string) => {
+        if (!looksLikeMath(body)) return raw;
+        return `${prefix}$${normalizeMathBody(body)}$`;
+      },
+    );
+}
+
+function normalizeMathMarkdown(value: string): string {
+  let out = "";
+  let pos = 0;
+  while (pos < value.length) {
+    const tickStart = value.indexOf("`", pos);
+    if (tickStart < 0) {
+      out += normalizeMathText(value.slice(pos));
+      break;
+    }
+    out += normalizeMathText(value.slice(pos, tickStart));
+
+    let tickCount = 1;
+    while (value[tickStart + tickCount] === "`") tickCount += 1;
+    const ticks = "`".repeat(tickCount);
+    const tickEnd = value.indexOf(ticks, tickStart + tickCount);
+    if (tickEnd < 0) {
+      out += value.slice(tickStart);
+      break;
+    }
+    out += value.slice(tickStart, tickEnd + tickCount);
+    pos = tickEnd + tickCount;
+  }
+  return out;
+}
+
 function isWeixinURL(value: string): boolean {
   return value.startsWith("weixin://");
 }
@@ -153,6 +223,9 @@ export function Markdown({
   richLinks?: boolean;
   compact?: boolean;
 }) {
+  const normalizedChildren = normalizeMathMarkdown(
+    richLinks ? normalizeRichMarkdown(children ?? "") : children ?? "",
+  );
   const components: Components = {
     pre({ children }) {
       return <CodeBlock>{children}</CodeBlock>;
@@ -237,7 +310,7 @@ export function Markdown({
             : defaultUrlTransform(url)
         }
       >
-        {richLinks ? normalizeRichMarkdown(children ?? "") : children ?? ""}
+        {normalizedChildren}
       </ReactMarkdown>
     </div>
   );
