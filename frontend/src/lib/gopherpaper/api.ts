@@ -3,6 +3,7 @@
 
 import type {
   ChatResponse,
+  EntityGraph,
   Envelope,
   GraphStats,
   GraphTrends,
@@ -207,6 +208,24 @@ export function graphTrends(keywordTop = 8) {
 
 export function graphKeywords(top = 20) {
   return request<NameCount[]>(`/graph/keywords?top=${top}`);
+}
+
+export function graphNetwork() {
+  return request<EntityGraph>("/graph/network");
+}
+
+export function rebuildGraphNetwork() {
+  return request<EntityGraph>("/graph/network/rebuild", { method: "POST" });
+}
+
+export function paperEntityGraph(id: string) {
+  return request<EntityGraph>(`/graph/papers/${encodeURIComponent(id)}`);
+}
+
+export function rebuildPaperEntityGraph(id: string) {
+  return request<EntityGraph>(`/graph/papers/${encodeURIComponent(id)}/rebuild`, {
+    method: "POST",
+  });
 }
 
 export function relatedPapers(id: string, limit = 10) {

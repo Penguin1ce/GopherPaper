@@ -212,6 +212,26 @@ export interface GraphTrends {
   keyword_trend: KeywordYearCount[];
 }
 
+export interface EntityGraphNode {
+  id: string;
+  type: string;
+  label: string;
+  details?: Record<string, string>;
+}
+
+export interface EntityGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  label: string;
+}
+
+export interface EntityGraph {
+  nodes: EntityGraphNode[];
+  edges: EntityGraphEdge[];
+}
+
 // RelatedPaper 是与某篇论文相关的论文,vias 标关系类型 author/keyword/cocitation/cites。
 export interface RelatedPaper {
   id: string;
