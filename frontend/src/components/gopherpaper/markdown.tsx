@@ -195,6 +195,62 @@ function normalizeMathMarkdown(value: string): string {
   return out;
 }
 
+function isFenceLine(line: string): boolean {
+  return /^ {0,3}(```|~~~)/.test(line);
+}
+
+function isDisplayMathBoundary(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed === "$$" || trimmed === "\\]";
+}
+
+function isIndentedProse(line: string): boolean {
+  if (!/^ {4,}\S/.test(line)) return false;
+  const trimmed = line.trim();
+  if (/^([-*+]|\d+\.)\s/.test(trimmed)) return false;
+  if (
+    /^(import|export|const|let|var|function|class|return|if|for|while|switch|try|catch|type|interface|func|package|select|insert|update|delete|create)\b/i.test(
+      trimmed,
+    )
+  ) {
+    return false;
+  }
+  if (/^(\/\/|\/\*|\*\/|<[/!A-Za-z]|[{}[\]();])/.test(trimmed)) return false;
+  return /[\u4e00-\u9fff]|[。；，、：？！]/.test(trimmed);
+}
+
+function normalizeIndentedProseAfterMath(value: string): string {
+  const lines = value.split("\n");
+  let inFence = false;
+  let lastNonBlank = "";
+  let proseBlockAfterMath = false;
+
+  return lines
+    .map((line) => {
+      if (isFenceLine(line)) {
+        inFence = !inFence;
+        lastNonBlank = line.trim();
+        proseBlockAfterMath = false;
+        return line;
+      }
+      if (inFence) return line;
+
+      const trimmed = line.trim();
+      if (!trimmed) {
+        proseBlockAfterMath = false;
+        return line;
+      }
+
+      const shouldDedent =
+        isIndentedProse(line) && (isDisplayMathBoundary(lastNonBlank) || proseBlockAfterMath);
+      const out = shouldDedent ? line.replace(/^ {4,}/, "") : line;
+      lastNonBlank = out.trim();
+      proseBlockAfterMath = shouldDedent;
+      return out;
+    })
+    .join("\n");
+}
+
 function isWeixinURL(value: string): boolean {
   return value.startsWith("weixin://");
 }
@@ -223,8 +279,8 @@ export function Markdown({
   richLinks?: boolean;
   compact?: boolean;
 }) {
-  const normalizedChildren = normalizeMathMarkdown(
-    richLinks ? normalizeRichMarkdown(children ?? "") : children ?? "",
+  const normalizedChildren = normalizeIndentedProseAfterMath(
+    normalizeMathMarkdown(richLinks ? normalizeRichMarkdown(children ?? "") : children ?? ""),
   );
   const components: Components = {
     pre({ children }) {
@@ -261,8 +317,8 @@ export function Markdown({
       }
       if (richLinks && url && isImageURL(url)) {
         return (
-          <a className="my-3 block rounded-lg border bg-background p-2 no-underline" href={url} target="_blank" rel="noopener noreferrer">
-            <img className="max-h-80 w-full rounded-md object-contain" src={url} alt="" loading="lazy" />
+          <a className="my-3 mx-auto block w-fit max-w-full rounded-lg border bg-background p-2 no-underline" href={url} target="_blank" rel="noopener noreferrer">
+            <img className="max-h-80 max-w-full rounded-md" src={url} alt="" loading="lazy" />
             <span className="mt-2 block text-sm font-medium underline underline-offset-4">打开图片</span>
           </a>
         );
@@ -290,12 +346,12 @@ export function Markdown({
         if (!docId) return null;
         const url = figureUrl(docId, name);
         return (
-          <a className="my-3 block rounded-lg border bg-background p-2" href={url} target="_blank" rel="noreferrer">
-            <img className="max-h-96 w-full rounded-md object-contain" src={url} alt={alt ?? ""} loading="lazy" />
+          <a className="my-3 mx-auto block w-fit max-w-full rounded-lg border bg-background p-2" href={url} target="_blank" rel="noreferrer">
+            <img className="max-h-96 max-w-full rounded-md" src={url} alt={alt ?? ""} loading="lazy" />
           </a>
         );
       }
-      return <img className="my-3 rounded-lg border" src={src} alt={alt ?? ""} loading="lazy" />;
+      return <img className="my-3 max-w-full rounded-lg border" src={src} alt={alt ?? ""} loading="lazy" />;
     },
   };
   return (
