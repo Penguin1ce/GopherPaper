@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	paperdao "GopherPaper/internal/dao/paper"
 	"GopherPaper/internal/graph"
@@ -33,7 +34,7 @@ func Delete(ctx context.Context, ownerID, paperID string) error {
 	)
 
 	zlog.Info("开始删除论文向量 chunks", "owner", ownerID, "paper_id", paperID)
-	if err := knowledge.DeletePaperChunks(ctx, ownerID, paperID); err != nil {
+	if err := deletePaperChunksWithVerification(ctx, ownerID, paperID); err != nil {
 		zlog.Error("删除论文向量 chunks 失败", "owner", ownerID, "paper_id", paperID, "err", err)
 		return err
 	}
@@ -86,6 +87,95 @@ func Delete(ctx context.Context, ownerID, paperID string) error {
 	}
 	zlog.Info("论文删除完成", "owner", ownerID, "paper_id", paperID)
 	return nil
+}
+
+func deletePaperChunksWithVerification(ctx context.Context, ownerID, paperID string) error {
+	paperBefore, paperBeforeErr := knowledge.CountPaperChunks(ctx, ownerID, paperID)
+	visibleBefore, visibleBeforeErr := knowledge.VectorCount(ctx)
+	statsBefore, statsBeforeErr := knowledge.VectorCollectionStatsCount(ctx)
+	zlog.Info("paper vector delete metrics before",
+		"owner", ownerID,
+		"paper_id", paperID,
+		"paper_chunks_before", countOrNil(paperBefore, paperBeforeErr),
+		"paper_chunks_before_err", errText(paperBeforeErr),
+		"visible_vectors_before", countOrNil(visibleBefore, visibleBeforeErr),
+		"visible_vectors_before_err", errText(visibleBeforeErr),
+		"collection_stats_before", countOrNil(statsBefore, statsBeforeErr),
+		"collection_stats_before_err", errText(statsBeforeErr),
+	)
+	if paperBeforeErr == nil && paperBefore == 0 {
+		zlog.Warn("paper vector delete matched zero chunks before deletion",
+			"owner", ownerID,
+			"paper_id", paperID,
+		)
+	}
+
+	if err := knowledge.DeletePaperChunks(ctx, ownerID, paperID); err != nil {
+		return err
+	}
+
+	paperAfter, paperAfterErr := waitForPaperChunksDeleted(ctx, ownerID, paperID)
+	visibleAfter, visibleAfterErr := knowledge.VectorCount(ctx)
+	statsAfter, statsAfterErr := knowledge.VectorCollectionStatsCount(ctx)
+	zlog.Info("paper vector delete metrics after",
+		"owner", ownerID,
+		"paper_id", paperID,
+		"paper_chunks_before", countOrNil(paperBefore, paperBeforeErr),
+		"paper_chunks_after", countOrNil(paperAfter, paperAfterErr),
+		"paper_chunks_after_err", errText(paperAfterErr),
+		"visible_vectors_before", countOrNil(visibleBefore, visibleBeforeErr),
+		"visible_vectors_after", countOrNil(visibleAfter, visibleAfterErr),
+		"visible_vectors_after_err", errText(visibleAfterErr),
+		"collection_stats_before", countOrNil(statsBefore, statsBeforeErr),
+		"collection_stats_after", countOrNil(statsAfter, statsAfterErr),
+		"collection_stats_after_err", errText(statsAfterErr),
+	)
+	if paperAfterErr != nil {
+		zlog.Warn("paper vector delete verification failed",
+			"owner", ownerID,
+			"paper_id", paperID,
+			"err", paperAfterErr,
+		)
+		return nil
+	}
+	if paperAfter > 0 {
+		return fmt.Errorf("service/paper: paper vector chunks remain after delete: before=%d after=%d", paperBefore, paperAfter)
+	}
+	return nil
+}
+
+func waitForPaperChunksDeleted(ctx context.Context, ownerID, paperID string) (int64, error) {
+	delays := []time.Duration{0, 200 * time.Millisecond, 500 * time.Millisecond, time.Second}
+	var last int64
+	for _, delay := range delays {
+		if delay > 0 {
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return last, ctx.Err()
+			}
+		}
+		n, err := knowledge.CountPaperChunks(ctx, ownerID, paperID)
+		if err != nil || n == 0 {
+			return n, err
+		}
+		last = n
+	}
+	return last, nil
+}
+
+func countOrNil(n int64, err error) any {
+	if err != nil {
+		return nil
+	}
+	return n
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func removeStoredPath(path string, dir bool) error {

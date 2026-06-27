@@ -81,22 +81,26 @@ func buildFigureChunks(task parseTask, doc *core.ParsedDoc) []knowledge.Chunk {
 func buildTableChunks(task parseTask, doc *core.ParsedDoc) []knowledge.Chunk {
 	chunks := make([]knowledge.Chunk, 0, len(doc.Tables))
 	for _, tbl := range doc.Tables {
-		content := tableContent(tbl)
-		if content == "" {
-			continue
+		parts := tableContentParts(tbl, constant.MaxChunkRunes)
+		for i, content := range parts {
+			if content == "" {
+				continue
+			}
+			chunks = append(chunks, knowledge.Chunk{
+				Content:    content,
+				Scope:      constant.KnowledgeScopePrivate,
+				OwnerID:    task.OwnerID,
+				DocID:      task.PaperID,
+				SourceFile: task.FileName,
+				PageNo:     int64(tbl.PageNo),
+				ChunkIndex: int64(len(chunks)),
+				Metadata: map[string]any{
+					constant.MilvusFieldBlockType: constant.BlockTypeTable,
+					"table_part":                  i + 1,
+					"table_parts":                 len(parts),
+				},
+			})
 		}
-		chunks = append(chunks, knowledge.Chunk{
-			Content:    content,
-			Scope:      constant.KnowledgeScopePrivate,
-			OwnerID:    task.OwnerID,
-			DocID:      task.PaperID,
-			SourceFile: task.FileName,
-			PageNo:     int64(tbl.PageNo),
-			ChunkIndex: int64(len(chunks)),
-			Metadata: map[string]any{
-				constant.MilvusFieldBlockType: constant.BlockTypeTable,
-			},
-		})
 	}
 	return chunks
 }
@@ -111,6 +115,97 @@ func tableContent(tbl core.Table) string {
 		parts = append(parts, m)
 	}
 	return strings.Join(parts, "\n")
+}
+
+func tableContentParts(tbl core.Table, maxRunes int) []string {
+	content := tableContent(tbl)
+	if content == "" {
+		return nil
+	}
+	if maxRunes <= 0 || runeLen(content) <= maxRunes {
+		return []string{content}
+	}
+	caption := strings.TrimSpace(tbl.Caption)
+	body := strings.TrimSpace(tbl.Markdown)
+	if caption == "" || body == "" {
+		return splitLongText(content, maxRunes)
+	}
+	prefix := caption + "\n"
+	bodyLimit := maxRunes - runeLen(prefix)
+	if bodyLimit < maxRunes/4 {
+		return splitLongText(content, maxRunes)
+	}
+	bodyParts := splitLongText(body, bodyLimit)
+	out := make([]string, 0, len(bodyParts))
+	for _, part := range bodyParts {
+		out = append(out, strings.TrimSpace(prefix+part))
+	}
+	return out
+}
+
+func splitLongText(text string, maxRunes int) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	if maxRunes <= 0 || runeLen(text) <= maxRunes {
+		return []string{text}
+	}
+	var parts []string
+	var b strings.Builder
+	curRunes := 0
+	flush := func() {
+		part := strings.TrimSpace(b.String())
+		if part != "" {
+			parts = append(parts, part)
+		}
+		b.Reset()
+		curRunes = 0
+	}
+	for _, line := range strings.Split(text, "\n") {
+		lineRunes := runeLen(line)
+		if lineRunes > maxRunes {
+			flush()
+			parts = append(parts, splitRunes(line, maxRunes)...)
+			continue
+		}
+		sepRunes := 0
+		if curRunes > 0 {
+			sepRunes = 1
+		}
+		if curRunes > 0 && curRunes+sepRunes+lineRunes > maxRunes {
+			flush()
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+			curRunes++
+		}
+		b.WriteString(line)
+		curRunes += lineRunes
+	}
+	flush()
+	return parts
+}
+
+func splitRunes(text string, maxRunes int) []string {
+	runes := []rune(strings.TrimSpace(text))
+	if len(runes) == 0 {
+		return nil
+	}
+	parts := make([]string, 0, (len(runes)+maxRunes-1)/maxRunes)
+	for len(runes) > 0 {
+		n := maxRunes
+		if len(runes) < n {
+			n = len(runes)
+		}
+		parts = append(parts, string(runes[:n]))
+		runes = runes[n:]
+	}
+	return parts
+}
+
+func runeLen(text string) int {
+	return len([]rune(text))
 }
 
 // figureContent 把 caption 与 vlm 描述拼成图块向量化文本,两者去空合并。

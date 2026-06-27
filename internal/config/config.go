@@ -27,6 +27,7 @@ type Config struct {
 	MQ        MQConfig     `toml:"mq"`
 	JWT       JWTConfig    `toml:"jwt"`
 	Mail      MailConfig   `toml:"mail"`
+	Admin     AdminConfig  `toml:"admin"`
 }
 
 // ParserConfig 是 MinerU 在线 API 的连接参数，PDF 解析走异步任务制。
@@ -183,6 +184,10 @@ type MailConfig struct {
 	Port          int    `toml:"smtp_port"`      // SMTP 端口，SSL 一般 465
 	Key           string `toml:"key"`            // 授权码或密码
 	RecipientMail string `toml:"recipient_mail"` // 测试/默认收件邮箱
+}
+
+type AdminConfig struct {
+	RegistrationCode string `toml:"registration_code"`
 }
 
 // JWTConfig JWT 鉴权配置。学生登录后签发 token，请求时带
