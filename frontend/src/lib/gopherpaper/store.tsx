@@ -33,6 +33,7 @@ import type {
   UpdateEmailPayload,
   UpdateProfilePayload,
 } from "./types";
+import { toolStatusText } from "./tool-status";
 import { chatSessions, isSettled, paperTitle, sessionsForPaper } from "./utils";
 
 const AUTH_KEY = "gopherpaper.auth";
@@ -881,7 +882,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
             // 据此合成规划/检索/思考三类步,保证执行过程稳定显示。
             onTool: (tool, done) => {
               if (!done) {
-                setToolNote(`正在调用 ${tool} …`);
+                setToolNote(toolStatusText(tool, done));
                 // 首次工具调用前合成规划步(模型未输出时补全)
                 if (!planSteps.some((s) => s.phase === "planning" || s.phase === "replanning")) {
                   planSteps.push({ phase: "planning", text: "分析问题，制定检索策略" });
@@ -893,7 +894,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
                 }
                 if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
               } else {
-                setToolNote(`${tool} 已返回,正在继续…`);
+                setToolNote(toolStatusText(tool, done));
                 // 工具结果返回后合成思考步
                 const last = planSteps[planSteps.length - 1];
                 if (!last || last.phase !== "reasoning") {

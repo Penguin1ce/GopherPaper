@@ -43,6 +43,7 @@ import type {
   PlanStep,
   Session,
 } from "@/lib/gopherpaper/types";
+import { toolStatusText } from "@/lib/gopherpaper/tool-status";
 import { formatTime, sessionTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty } from "@/components/gopherpaper/app-ui";
@@ -531,7 +532,7 @@ export default function PioneerPage() {
         },
         onTool: (tool, done) => {
           if (mountedRef.current) {
-            setToolNote(done ? `${tool} 已返回，正在继续…` : `正在调用 ${tool} …`);
+            setToolNote(toolStatusText(tool, done));
           }
         },
         onConfirmDeletePaper: (payload) => {
