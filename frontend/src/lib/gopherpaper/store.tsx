@@ -22,11 +22,13 @@ import type {
   AuthUser,
   Message,
   Paper,
+  PasswordResetCodePayload,
   PlanStep,
   RegisterPayload,
   ReportRun,
   ReportsStatus,
   ReportType,
+  ResetPasswordPayload,
   Session,
   UpdateEmailPayload,
   UpdateProfilePayload,
@@ -83,6 +85,8 @@ interface AppContextValue {
   login: (studentID: string, password: string) => Promise<void>;
   registerAndLogin: (payload: RegisterPayload) => Promise<void>;
   sendCode: (email: string) => Promise<void>;
+  sendPasswordResetCode: (payload: PasswordResetCodePayload) => Promise<void>;
+  resetPassword: (payload: ResetPasswordPayload) => Promise<void>;
   logout: (notifyServer?: boolean) => void;
   refreshUser: () => Promise<void>;
   updateProfile: (payload: UpdateProfilePayload) => Promise<void>;
@@ -623,6 +627,22 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     [toast],
   );
 
+  const sendPasswordResetCode = useCallback(
+    async (payload: PasswordResetCodePayload) => {
+      await api.sendPasswordResetCode(payload);
+      toast("如果账号与邮箱匹配，验证码已发送");
+    },
+    [toast],
+  );
+
+  const resetPassword = useCallback(
+    async (payload: ResetPasswordPayload) => {
+      await api.resetPassword(payload);
+      toast("密码已重置，请重新登录");
+    },
+    [toast],
+  );
+
   const refreshUser = useCallback(async () => {
     const profile = await api.me();
     persist(profile, token);
@@ -951,6 +971,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       login,
       registerAndLogin,
       sendCode,
+      sendPasswordResetCode,
+      resetPassword,
       logout,
       refreshUser,
       updateProfile,
@@ -988,6 +1010,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       login,
       registerAndLogin,
       sendCode,
+      sendPasswordResetCode,
+      resetPassword,
       logout,
       refreshUser,
       updateProfile,
