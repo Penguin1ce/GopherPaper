@@ -38,4 +38,9 @@ type LoginResponse struct {
 	StudentID string `json:"student_id"`
 	Name      string `json:"name"`
 	Email     string `json:"email"`
+	AvatarURL string `json:"avatar_url"`
+}
+
+type AvatarResponse struct {
+	AvatarURL string `json:"avatar_url"`
 }
