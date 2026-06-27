@@ -67,7 +67,7 @@ export interface Session {
   updated_at: string;
 }
 
-export type IntentType = "fact" | "summary" | "method" | string;
+export type IntentType = "chitchat" | "summary" | "method" | "pioneer" | string;
 
 export interface Message {
   id: number | string;

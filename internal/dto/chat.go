@@ -55,7 +55,7 @@ type (
 
 // ChatResponse 是问答的统一响应，研读报告也复用。
 type ChatResponse struct {
-	Intent  string         `json:"intent"`  // 命中的问答子类 fact/summary/method
+	Intent  string         `json:"intent"`  // 命中的聊天意图 chitchat/summary/method/pioneer
 	Content string         `json:"content"` // 文本回答
 	Meta    map[string]any `json:"meta,omitempty"`
 }

@@ -1,6 +1,6 @@
 // Package ai 编排论文问答、抽取与报告链路,只做入口路由,不写具体链路逻辑。
 //
-//	问答 Chat: intent 模型分类问答子类(fact/summary/method),chat 模型按子类做 RAG。
+//	问答 Chat: intent 模型分类为 chitchat/summary/method,chat 模型按子类直答或做 RAG。
 //	抽取 Extract、报告 GenerateReport: 显式接口直接调对应链路。
 //
 // 模型与用户身份均由各链路按 ctx 的 tenant 自取(模型按用户单例,缓存在 aimodel),

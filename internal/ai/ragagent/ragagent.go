@@ -1,7 +1,7 @@
 // Package ragagent 是论文助教 summary/method 两类问答的 agentic 生成入口。
 // 与 agentrt(固定单轮生成)不同:这里挂 React planner,让 agent 在一个主循环里自主
 // 规划→检索→反思→决策——用 search_paper / find_figures 工具按需多轮检索、判断召回是否充分,
-// 而非由编排层预检索一次塞进 prompt。fact 类不走这里,仍走 agentrt 的单轮快路径。
+// 而非由编排层预检索一次塞进 prompt。事实定位问题已并入 summary 走这里。
 //
 // 按 (userID, maxIter) 懒建并缓存 runner:模型取 aimodel 的 chat 模型,工具迭代上限按意图预算
 // (summary/method 不同),故复合键缓存。历史走 WithInjectedContextMessages 注入、不持久化

@@ -12,23 +12,23 @@ const (
 )
 
 // IntentType 标识一次论文问答的处理路径。
-// fact/summary/method 是聊天框的问答子类,由意图分类模型选择;
+// chitchat/summary/method 是聊天框的意图子类,由意图分类模型选择;
 // 研读报告是显式动作，由前端按钮带 ReportType 触发，不经分类器。
 type IntentType string
 
 const (
-	IntentFact    IntentType = "fact"    // 定位事实/数据/结论
-	IntentSummary IntentType = "summary" // 概括/解释/综述
-	IntentMethod  IntentType = "method"  // 方法/流程/实验设计解读
+	IntentChitchat IntentType = "chitchat" // 与论文无关的闲聊/寒暄,不走 RAG,直接对话作答
+	IntentSummary  IntentType = "summary"  // 概括/解释/综述,以及论文中的事实/数据/结论定位
+	IntentMethod   IntentType = "method"   // 方法/流程/实验设计解读
 )
 
 // IntentPioneer 标识小云雀会话的应答,小云雀会话不经意图分类器。
 const IntentPioneer IntentType = "pioneer"
 
-// IsChat 判断是否为聊天框可调度的问答子类。
+// IsChat 判断是否为聊天框可调度的意图子类。
 func (t IntentType) IsChat() bool {
 	switch t {
-	case IntentFact, IntentSummary, IntentMethod:
+	case IntentChitchat, IntentSummary, IntentMethod:
 		return true
 	default:
 		return false
@@ -162,8 +162,8 @@ const (
 )
 
 // agentic 问答相关。summary/method 两类走 react planner 自驱循环(规划→检索→反思→决策),
-// 用工具迭代上限做硬性预算防失控:概括类常需多查几轮补全章节,方法类放得更宽。
-// fact 类不走循环,保持单轮直答快路径(见 ai/chat),故无需预算。
+// 用工具迭代上限做硬性预算防失控:事实定位已并入 summary,概括类常需多查几轮补全章节,
+// 方法类放得更宽。chitchat 不走 RAG,故无需预算。
 const (
 	AgenticMaxIterSummary = 5  // summary 类 agentic 循环的工具迭代硬上限,留出一轮给 find_figures 配图
 	AgenticMaxIterMethod  = 6  // method 类工具迭代硬上限,方法/流程常需逐步检索故放宽
@@ -244,24 +244,23 @@ const (
 // VerifyCodeTTL 邮箱验证码有效期。
 const VerifyCodeTTL = 5 * time.Minute
 
-// IntentPrompt 是论文问答的意图分类 system prompt，只在问答子类间分类。
-const IntentPrompt = `你是科研文献问答助手的意图分类器，判断用户提问属于以下哪一类：
-- fact:    询问论文中的具体事实、数据、结论、数值、定义
-- summary: 想要对论文整体或某部分做概括、解释、综述
-- method:  关注研究方法、实验设计、技术流程、步骤细节
+// IntentPrompt 是聊天框的意图分类 system prompt，区分闲聊与两类论文问答。
+const IntentPrompt = `你是科研文献问答助手的意图分类器，判断用户当前消息属于以下哪一类：
+- chitchat: 与论文内容无关的闲聊、问候、感谢、寒暄，或对你身份/能力的提问
+- summary:  围绕论文内容的概括、解释、综述，或定位论文中的事实、数据、结论、数值、定义
+- method:   关注论文的研究方法、实验设计、技术流程、步骤细节
 
 只输出一个 JSON，禁止任何多余文字。格式：
-{{"type":"fact|summary|method"}}
-无法判断时输出 {{"type":"summary"}}。`
+{{"type":"chitchat|summary|method"}}
+涉及论文内容但无法细分时输出 {{"type":"summary"}}。`
 
-// 三类问答 agent 的 system prompt，均带 {context} 检索占位符。
+// ChitchatPrompt 是闲聊直答的 system prompt:不检索论文,作为论文助教友好简洁地回应,
+// 不编造论文内容,合适时把话题引回当前论文。
+const ChitchatPrompt = `你是科研文献阅读助手"小文鸮"。用户当前消息是与论文内容无关的闲聊或寒暄。
+请友好、简洁、自然地回应，不要编造任何论文内容；如果合适，温和地把话题引回到当前论文，邀请用户就论文内容提问。`
+
+// 固定流问答(singleShotRAG 兜底路径)的 system prompt，均带 {context} 检索占位符。
 const (
-	FactPrompt = `你是严谨的科研文献问答助手，负责定位论文中的事实、数据与结论。优先依据下面的「参考资料」作答，资料不足时明确说明，不要编造。
-回答直接准确：先给出确切的事实/数值，再按需补充必要的上下文与解释，并标明依据来自哪一段或哪一页；有相关图表就用 Markdown ![简短说明](figure://文件名) 插入正文佐证。篇幅服从把问题讲清楚的需要，不必凑长度。
-
-参考资料：
-{context}`
-
 	SummaryPrompt = `你是科研文献问答助手，负责概括与解释论文内容。结合下面的「参考资料」，用条理清晰的语言概括要点，避免堆砌细节。
 回答务必简短：抓主线，必要时分点。控制在 800 字以内。
 
@@ -275,16 +274,12 @@ const (
 {context}`
 )
 
-// RAGPromptFor 按问答子类返回 system prompt，未知子类回退到概括。
+// RAGPromptFor 按问答子类返回固定流 system prompt，未知子类回退到概括。
 func RAGPromptFor(t IntentType) string {
-	switch t {
-	case IntentFact:
-		return FactPrompt
-	case IntentMethod:
+	if t == IntentMethod {
 		return MethodPrompt
-	default:
-		return SummaryPrompt
 	}
+	return SummaryPrompt
 }
 
 // agentic 问答的 system prompt:不预填 {context},改由 agent 自主用工具检索。

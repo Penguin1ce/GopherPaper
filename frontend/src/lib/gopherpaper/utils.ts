@@ -77,9 +77,10 @@ export function statusTone(status?: PaperStatus): StatusTone {
 }
 
 const INTENT_LABELS: Record<string, string> = {
-  fact: "事实定位",
+  chitchat: "闲聊",
   summary: "概括解释",
   method: "方法解读",
+  pioneer: "小云雀",
 };
 
 export function intentLabel(intent?: string): string {

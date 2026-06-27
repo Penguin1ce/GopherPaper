@@ -1,10 +1,11 @@
 // chat.go 是 chat 链路:intent 模型分类 + chat 模型参数化 RAG,显式两段编排。
 //
-// 三个问答子类(fact/summary/method)本就共用同一参数化 RAG agent(仅 prompt 不同),
+// chitchat/summary/method 三类由 intent 模型选择:
+// chitchat 直接对话,summary/method 走同一套 agentic RAG。
 // 故不做自主路由,而是显式两段:
 //
-//	1 ClassifyIntent: intent 小模型把自由文本分到问答子类
-//	2 ChatRAG:        chat 模型按子类选 prompt 做 RAG,并调用 retriever
+//	1 ClassifyIntent: intent 小模型把自由文本分到意图子类
+//	2 ChatRAG:        chat 模型按子类直答或做 RAG
 //
 // 二者解耦、两模型分用,忠实 CLAUDE.md「小模型意图识别 + 下游 RAG」的设计。
 // 模型由各段按 ctx 的 tenant 自取,调用方不传模型与身份。
@@ -40,7 +41,7 @@ func Chat(ctx context.Context, history []trpcmodel.Message, query string) (*core
 	return ChatRAG(ctx, query, intent, history)
 }
 
-// ClassifyIntent 用该用户的 intent 小模型把自由文本分到问答子类,无法判断兜底 summary。
+// ClassifyIntent 用该用户的 intent 小模型把自由文本分到意图子类,无法判断兜底 summary。
 func ClassifyIntent(ctx context.Context, query string) constant.IntentType {
 	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
 	if err != nil {
@@ -66,16 +67,38 @@ func ClassifyIntent(ctx context.Context, query string) constant.IntentType {
 	return parseIntent(content)
 }
 
-// ChatRAG 按意图做 RAG,并按子类选生成方式:
-//   - summary/method 走 agentic 循环(ragagent):agent 自主规划→检索→反思→决策,多轮按需检索;
-//   - fact 走单轮快路径:预检索一次拼进 system prompt,单轮生成(事实定位通常一次召回即可,省延迟)。
+// ChatRAG 按意图分流:
+//   - chitchat 走直答快路径:不检索论文,chat 模型带历史直接对话(闲聊无需 RAG,省检索与延迟);
+//   - summary/method(含原 fact 类事实定位)走 agentic 循环(ragagent):agent 自主规划→检索→反思→决策,
+//     多轮按需检索——事实型问题常需跨片段综合,交给 agent 自定检索深度比单轮快路径更稳。
 //
-// history 为多轮上下文,经 agent 注入,夹在 system prompt 与当前 query 之间。两路均把出处收进 Reply.Meta。
+// history 为多轮上下文,经 agent 注入,夹在 system prompt 与当前 query 之间。RAG 路把出处收进 Reply.Meta。
 func ChatRAG(ctx context.Context, query string, intent constant.IntentType, history []trpcmodel.Message) (*core.Reply, error) {
-	if intent != constant.IntentFact {
-		return agenticRAG(ctx, query, intent, history)
+	if intent == constant.IntentChitchat {
+		return chitchatReply(ctx, query, history)
 	}
-	return factRAG(ctx, query, history)
+	return agenticRAG(ctx, query, intent, history)
+}
+
+// chitchatReply 处理闲聊:不检索论文,用 chat 模型带历史直接对话作答。
+func chitchatReply(ctx context.Context, query string, history []trpcmodel.Message) (*core.Reply, error) {
+	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	msgs := make([]trpcmodel.Message, 0, len(history)+2)
+	msgs = append(msgs, trpcmodel.NewSystemMessage(constant.ChitchatPrompt))
+	msgs = append(msgs, history...)
+	msgs = append(msgs, trpcmodel.NewUserMessage(query))
+	req := &trpcmodel.Request{Messages: msgs}
+	if models.ChatMC.MaxTokens > 0 {
+		req.MaxTokens = &models.ChatMC.MaxTokens
+	}
+	content, err := core.GenerateText(ctx, models.Chat, req)
+	if err != nil {
+		return nil, err
+	}
+	return &core.Reply{Content: content, Intent: constant.IntentChitchat}, nil
 }
 
 // agenticRAG 让 agent 在主循环里自主多轮检索作答(summary/method)。
@@ -105,12 +128,8 @@ func policyFor(intent constant.IntentType) ragagent.Policy {
 	return ragagent.Policy{MaxIter: constant.AgenticMaxIterSummary}
 }
 
-// factRAG 是 fact 子类的单轮快路径:预检索正文与图块各一次拼进 system prompt,命中图随 query 发给
-// 多模态 chat 模型,单轮生成并收集出处进 Meta(保持改造前的事实定位行为不变)。
-func factRAG(ctx context.Context, query string, history []trpcmodel.Message) (*core.Reply, error) {
-	return singleShotRAG(ctx, query, history, constant.IntentFact)
-}
-
+// singleShotRAG 是单轮 RAG:预检索正文与图块各一次拼进 system prompt,命中图随 query 发给
+// 多模态 chat 模型,单轮生成并收集出处进 Meta。仅作 agentic 链路输出伪工具调用时的兜底。
 func singleShotRAG(ctx context.Context, query string, history []trpcmodel.Message, intent constant.IntentType) (*core.Reply, error) {
 	owner := tenant.MustStudentID(ctx)
 	paperID := core.PaperIDFrom(ctx)
@@ -210,22 +229,28 @@ func parseIntent(content string) constant.IntentType {
 		Type string `json:"type"`
 	}
 	if err := json.Unmarshal([]byte(extractJSON(content)), &out); err == nil {
-		switch constant.IntentType(out.Type) {
-		case constant.IntentFact:
-			return constant.IntentFact
+		typ := strings.ToLower(strings.TrimSpace(out.Type))
+		switch constant.IntentType(typ) {
+		case constant.IntentChitchat:
+			return constant.IntentChitchat
 		case constant.IntentMethod:
 			return constant.IntentMethod
 		case constant.IntentSummary:
+			return constant.IntentSummary
+		}
+		if typ == "fact" {
 			return constant.IntentSummary
 		}
 	}
 	// JSON 解析失败时退化到关键词匹配。
 	low := strings.ToLower(content)
 	switch {
-	case strings.Contains(low, "fact"):
-		return constant.IntentFact
+	case strings.Contains(low, "chitchat") || strings.Contains(content, "闲聊"):
+		return constant.IntentChitchat
 	case strings.Contains(low, "method"):
 		return constant.IntentMethod
+	case strings.Contains(low, "fact"):
+		return constant.IntentSummary
 	default:
 		return constant.IntentSummary
 	}

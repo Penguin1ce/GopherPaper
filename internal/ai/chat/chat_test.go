@@ -30,7 +30,8 @@ func TestClassifyIntent(t *testing.T) {
 	aimodel.Init(cfg) // 意图模型按 ctx 的 tenant 自取,须先注入配置
 
 	cases := map[string]constant.IntentType{
-		"这篇论文在 DBLP 数据集上的准确率是多少？": constant.IntentFact,
+		"你好，辛苦啦": constant.IntentChitchat,
+		"这篇论文在 DBLP 数据集上的准确率是多少？": constant.IntentSummary,
 		"帮我概括一下这篇论文讲了什么":          constant.IntentSummary,
 		"它用了什么模型结构和实验设计？":         constant.IntentMethod,
 	}
@@ -63,10 +64,26 @@ func TestChat(t *testing.T) {
 	if strings.TrimSpace(reply.Content) == "" {
 		t.Fatal("回答内容为空")
 	}
-	if reply.Intent != constant.IntentFact && reply.Intent != constant.IntentSummary && reply.Intent != constant.IntentMethod {
+	if !reply.Intent.IsChat() {
 		t.Fatalf("回答意图非法: %q", reply.Intent)
 	}
 	t.Logf("trpc chat 切片跑通: intent=%q 内容长度=%d", reply.Intent, len(reply.Content))
+}
+
+func TestParseIntent(t *testing.T) {
+	cases := map[string]constant.IntentType{
+		`{"type":"chitchat"}`: constant.IntentChitchat,
+		`{"type":"summary"}`:  constant.IntentSummary,
+		`{"type":"method"}`:   constant.IntentMethod,
+		`{"type":"fact"}`:     constant.IntentSummary,
+		"闲聊":                  constant.IntentChitchat,
+		"fact":                constant.IntentSummary,
+	}
+	for raw, want := range cases {
+		if got := parseIntent(raw); got != want {
+			t.Errorf("parseIntent(%q) = %q, want %q", raw, got, want)
+		}
+	}
 }
 
 // TestPolicyFor 验证意图到 agentic 工具迭代预算的映射:method 放宽,其余按概括预算。
