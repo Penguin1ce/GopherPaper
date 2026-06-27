@@ -241,7 +241,7 @@ func resetNeo4j(ctx context.Context, cfg config.Neo4jConfig) error {
 	if db := strings.TrimSpace(cfg.Database); db != "" {
 		opts = append(opts, neo4j.ExecuteQueryWithDatabase(db))
 	}
-	const cypher = `MATCH (n) WHERE n:Paper OR n:Author OR n:Keyword OR n:Affiliation OR n:Venue OR n:Reference DETACH DELETE n`
+	const cypher = `MATCH (n) WHERE n:Paper OR n:Author OR n:Keyword OR n:Affiliation OR n:Venue OR n:ResearchQuestion OR n:Method OR n:Experiment OR n:Result OR n:Innovation OR n:Limitation OR n:FutureWork OR n:Reference DETACH DELETE n`
 	res, err := neo4j.ExecuteQuery(ctx, driver, cypher, nil, neo4j.EagerResultTransformer, opts...)
 	if err != nil {
 		return fmt.Errorf("neo4j reset: %w", err)

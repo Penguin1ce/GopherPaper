@@ -81,9 +81,13 @@ func Init(mode string) *gin.Engine {
 			authed.POST("/papers/:id/translate", paperhandler.Translate) // 精读页逐段翻译
 
 			// 知识图谱：论文关系发现与研究趋势,按用户隔离。
-			authed.GET("/graph/overview", graphhandler.Overview)          // 图谱规模总览
-			authed.GET("/graph/trends", graphhandler.Trends)              // 研究趋势:年度论文数与关键词热度
-			authed.GET("/graph/keywords", graphhandler.Keywords)          // 热门关键词
+			authed.GET("/graph/overview", graphhandler.Overview) // 图谱规模总览
+			authed.GET("/graph/trends", graphhandler.Trends)     // 研究趋势:年度论文数与关键词热度
+			authed.GET("/graph/keywords", graphhandler.Keywords) // 热门关键词
+			authed.GET("/graph/network", graphhandler.Network)   // 总览知识图谱
+			authed.POST("/graph/network/rebuild", graphhandler.RebuildNetwork)
+			authed.GET("/graph/papers/:id", graphhandler.PaperGraph) // 单篇论文知识图谱
+			authed.POST("/graph/papers/:id/rebuild", graphhandler.RebuildPaper)
 			authed.GET("/graph/papers/:id/related", graphhandler.Related) // 与某篇论文相关的论文
 
 			// 会话与多轮论文问答。

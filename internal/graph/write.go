@@ -2,47 +2,78 @@ package graph
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"unicode"
 
 	"GopherPaper/pkg/constant"
 )
 
-// PaperGraph 是一篇论文写入图谱的入参,由 worker 从结构化抽取结果组装。
-// 空字段(如无 venue/无作者)会被本包过滤,不会建出空节点。
-// Embedding 为论文标题+摘要的向量,用于跨论文语义相似边;为空则不建相似边。
+// PaperGraph is the write model for one paper-centered graph.
 type PaperGraph struct {
-	Owner        string
-	ID           string
-	Title        string
-	Year         int
-	Venue        string
-	Authors      []string
-	Keywords     []string
-	Affiliations []string
-	Embedding    []float64
+	Owner             string
+	ID                string
+	Title             string
+	Year              int
+	Venue             string
+	Authors           []string
+	Keywords          []string
+	Affiliations      []string
+	ResearchQuestions []string
+	Methods           string
+	Experiments       string
+	Results           string
+	Innovations       []string
+	Limitations       []string
+	FutureWork        []string
+	Embedding         []float64
 }
 
-// upsertPaperCypher 幂等写入论文及其内容关系:先 MERGE 论文节点回填属性(含语义向量),
-// 再清掉旧的内容边(作者/关键词/机构/会议,不动 CITES/SIMILAR_TO)后按入参重建,保证重解析覆盖。
-// 内容节点按归一化键 norm 合并(大小写/空格差异视为同一项),展示名取首次出现的原文。
-const upsertPaperCypher = `
+const upsertPaperBaseCypher = `
 MERGE (p:Paper {owner:$owner, id:$id})
-SET p.title=$title, p.norm_title=$normTitle, p.year=$year, p.venue=$venue, p.embedding=$embedding, p.updated_at=timestamp()
+SET p.title=$title,
+    p.norm_title=$normTitle,
+    p.year=$year,
+    p.venue=$venue,
+    p.embedding=$embedding,
+    p.updated_at=timestamp()
 WITH p
-CALL { WITH p OPTIONAL MATCH (p)-[r:AUTHORED_BY|HAS_KEYWORD|FROM_AFFILIATION|PUBLISHED_IN]->() DELETE r }
-WITH p
-CALL { WITH p UNWIND $authors AS t MERGE (a:Author {owner:$owner, norm:t.norm}) ON CREATE SET a.name=t.name MERGE (p)-[:AUTHORED_BY]->(a) }
-WITH p
-CALL { WITH p UNWIND $keywords AS t MERGE (k:Keyword {owner:$owner, norm:t.norm}) ON CREATE SET k.name=t.name MERGE (p)-[:HAS_KEYWORD]->(k) }
-WITH p
-CALL { WITH p UNWIND $affiliations AS t MERGE (af:Affiliation {owner:$owner, norm:t.norm}) ON CREATE SET af.name=t.name MERGE (p)-[:FROM_AFFILIATION]->(af) }
-WITH p
-CALL { WITH p UNWIND $venues AS t MERGE (v:Venue {owner:$owner, norm:t.norm}) ON CREATE SET v.name=t.name MERGE (p)-[:PUBLISHED_IN]->(v) }
-`
+OPTIONAL MATCH (p)-[r:AUTHORED_BY|HAS_KEYWORD|FROM_AFFILIATION|PUBLISHED_IN|HAS_RESEARCH_QUESTION|USES_METHOD|HAS_EXPERIMENT|HAS_RESULT|HAS_INNOVATION|HAS_LIMITATION|HAS_FUTURE_WORK]->()
+DELETE r
+RETURN p.id AS id`
 
-// UpsertPaper 幂等写入一篇论文及其作者/关键词/机构/会议节点与关系,随后按语义向量重建相似边。
+type entityWriteSpec struct {
+	param string
+	label string
+	rel   string
+}
+
+var metadataEntitySpecs = []entityWriteSpec{
+	{param: "authors", label: "Author", rel: "AUTHORED_BY"},
+	{param: "keywords", label: "Keyword", rel: "HAS_KEYWORD"},
+	{param: "affiliations", label: "Affiliation", rel: "FROM_AFFILIATION"},
+	{param: "venues", label: "Venue", rel: "PUBLISHED_IN"},
+	{param: "researchQuestions", label: "ResearchQuestion", rel: "HAS_RESEARCH_QUESTION"},
+	{param: "methods", label: "Method", rel: "USES_METHOD"},
+	{param: "experiments", label: "Experiment", rel: "HAS_EXPERIMENT"},
+	{param: "results", label: "Result", rel: "HAS_RESULT"},
+	{param: "innovations", label: "Innovation", rel: "HAS_INNOVATION"},
+	{param: "limitations", label: "Limitation", rel: "HAS_LIMITATION"},
+	{param: "futureWork", label: "FutureWork", rel: "HAS_FUTURE_WORK"},
+}
+
+// UpsertPaper writes one paper and its metadata graph, then refreshes outgoing
+// semantic similarity edges when an embedding is available.
 func UpsertPaper(ctx context.Context, p PaperGraph) error {
+	if err := UpsertPaperMetadata(ctx, p); err != nil {
+		return err
+	}
+	return relinkSimilar(ctx, p.Owner, p.ID)
+}
+
+// UpsertPaperMetadata writes only the paper-centered metadata graph. It is used
+// for repair/rebuild flows that read already parsed metadata from MySQL.
+func UpsertPaperMetadata(ctx context.Context, p PaperGraph) error {
 	venues := []string{}
 	if v := strings.TrimSpace(p.Venue); v != "" {
 		venues = []string{v}
@@ -52,31 +83,62 @@ func UpsertPaper(ctx context.Context, p PaperGraph) error {
 		embedding = []float64{}
 	}
 	params := map[string]any{
-		"owner":        p.Owner,
-		"id":           p.ID,
-		"title":        strings.TrimSpace(p.Title),
-		"normTitle":    normalizeTitle(p.Title),
-		"year":         p.Year,
-		"venue":        strings.TrimSpace(p.Venue),
-		"embedding":    embedding,
-		"authors":      cleanTerms(p.Authors),
-		"keywords":     cleanTerms(p.Keywords),
-		"affiliations": cleanTerms(p.Affiliations),
-		"venues":       cleanTerms(venues),
+		"owner":             p.Owner,
+		"id":                p.ID,
+		"title":             strings.TrimSpace(p.Title),
+		"normTitle":         normalizeTitle(p.Title),
+		"year":              p.Year,
+		"venue":             strings.TrimSpace(p.Venue),
+		"embedding":         embedding,
+		"authors":           cleanTerms(p.Authors),
+		"keywords":          cleanTerms(p.Keywords),
+		"affiliations":      cleanTerms(p.Affiliations),
+		"venues":            cleanTerms(venues),
+		"researchQuestions": cleanTerms(p.ResearchQuestions),
+		"methods":           cleanScalarTerm(p.Methods),
+		"experiments":       cleanScalarTerm(p.Experiments),
+		"results":           cleanScalarTerm(p.Results),
+		"innovations":       cleanTerms(p.Innovations),
+		"limitations":       cleanTerms(p.Limitations),
+		"futureWork":        cleanTerms(p.FutureWork),
 	}
-	if _, err := exec(ctx, upsertPaperCypher, params); err != nil {
-		return err
+	if _, err := exec(ctx, upsertPaperBaseCypher, params); err != nil {
+		return fmt.Errorf("upsert paper node: %w", err)
 	}
-	return relinkSimilar(ctx, p.Owner, p.ID)
+	for _, spec := range metadataEntitySpecs {
+		terms, _ := params[spec.param].([]map[string]any)
+		if len(terms) == 0 {
+			continue
+		}
+		if err := upsertMetadataTerms(ctx, p.Owner, p.ID, spec, terms); err != nil {
+			return err
+		}
+	}
+	return CleanupOrphans(ctx, p.Owner)
 }
 
-// relinkSimilarDeleteCypher 清掉本论文发出的相似边,供按当前向量重建。
-// 不删除其他论文指向本论文的边,避免新论文入库时把旧论文已建立的反向相似关系抹掉。
+func upsertMetadataTerms(ctx context.Context, owner, paperID string, spec entityWriteSpec, terms []map[string]any) error {
+	cypher := fmt.Sprintf(`
+MATCH (p:Paper {owner:$owner, id:$id})
+UNWIND $terms AS t
+MERGE (n:%s {owner:$owner, norm:t.norm})
+ON CREATE SET n.name=t.name
+SET n.name=coalesce(n.name, t.name)
+MERGE (p)-[:%s]->(n)
+RETURN count(n) AS count`, spec.label, spec.rel)
+	if _, err := exec(ctx, cypher, map[string]any{
+		"owner": owner,
+		"id":    paperID,
+		"terms": terms,
+	}); err != nil {
+		return fmt.Errorf("upsert %s terms: %w", spec.label, err)
+	}
+	return nil
+}
+
 const relinkSimilarDeleteCypher = `
 MATCH (p:Paper {owner:$owner, id:$id})-[s:SIMILAR_TO]->() DELETE s`
 
-// relinkSimilarCypher 用 Neo4j 原生 vector.similarity.cosine 在存储向量上算相似度,
-// 超阈值取 Top K 建 SIMILAR_TO。在库内一致计算,避免 Go 侧拿新鲜向量与存储漂移导致算偏。
 const relinkSimilarCypher = `
 MATCH (p:Paper {owner:$owner, id:$id})
 WHERE p.embedding IS NOT NULL AND size(p.embedding) > 0
@@ -87,9 +149,6 @@ WHERE sim >= $threshold
 WITH p, q, sim ORDER BY sim DESC LIMIT $topK
 MERGE (p)-[s:SIMILAR_TO]->(q) SET s.score = sim, s.updated_at = timestamp()`
 
-// relinkSimilar 按论文语义向量重建相似边:先清本论文发出的旧边,再与同用户其他论文在库内算 cosine,
-// 超过阈值的取 Top K 建 SIMILAR_TO。本论文无向量时只清旧出边(不参与相似召回)。
-// 关键词字面难重合的同领域论文(如各篇 attention 论文)靠这条边连上。
 func relinkSimilar(ctx context.Context, owner, id string) error {
 	if _, err := exec(ctx, relinkSimilarDeleteCypher, map[string]any{"owner": owner, "id": id}); err != nil {
 		return err
@@ -103,18 +162,28 @@ func relinkSimilar(ctx context.Context, owner, id string) error {
 	return err
 }
 
-// upsertCitationsCypher 幂等写入引用关系:清旧 CITES 后,把每条参考文献建成 Reference 桩节点
-// 并连 CITES(供共被引);再用归一化串包含匹配命中本用户已有论文标题时建论文到论文的直接引用边。
-const upsertCitationsCypher = `
-MATCH (p:Paper {owner:$owner, id:$id})
-CALL { WITH p OPTIONAL MATCH (p)-[c:CITES]->() DELETE c }
-WITH p
-CALL { WITH p UNWIND $refs AS ref MERGE (r:Reference {owner:$owner, key:ref.key}) ON CREATE SET r.raw=ref.raw MERGE (p)-[:CITES]->(r) }
-WITH p
-CALL { WITH p UNWIND $refNorms AS rn MATCH (q:Paper {owner:$owner}) WHERE q.id <> p.id AND q.norm_title <> '' AND rn CONTAINS q.norm_title MERGE (p)-[:CITES]->(q) }
-`
+const deleteCitationsCypher = `
+MATCH (p:Paper {owner:$owner, id:$id})-[c:CITES]->()
+DELETE c`
 
-// UpsertCitations 幂等写入论文的参考文献引用关系。refs 为参考文献原文串。
+const upsertReferenceCitationsCypher = `
+MATCH (p:Paper {owner:$owner, id:$id})
+UNWIND $refs AS ref
+MERGE (r:Reference {owner:$owner, key:ref.key})
+ON CREATE SET r.raw=ref.raw
+SET r.raw=coalesce(r.raw, ref.raw)
+MERGE (p)-[:CITES]->(r)
+RETURN count(r) AS count`
+
+const upsertPaperCitationsCypher = `
+MATCH (p:Paper {owner:$owner, id:$id})
+UNWIND $refNorms AS rn
+MATCH (q:Paper {owner:$owner})
+WHERE q.id <> p.id AND q.norm_title <> '' AND rn CONTAINS q.norm_title
+MERGE (p)-[:CITES]->(q)
+RETURN count(q) AS count`
+
+// UpsertCitations rewrites CITES edges for one paper.
 func UpsertCitations(ctx context.Context, owner, paperID string, refs []string) error {
 	refMaps := make([]map[string]any, 0, len(refs))
 	norms := make([]string, 0, len(refs))
@@ -122,7 +191,6 @@ func UpsertCitations(ctx context.Context, owner, paperID string, refs []string) 
 	for _, raw := range refs {
 		raw = strings.TrimSpace(raw)
 		norm := normalizeTitle(raw)
-		// 太短的条目多为页码/编号噪声,跳过;归一化串做去重键。
 		if len([]rune(norm)) < 10 || seen[norm] {
 			continue
 		}
@@ -133,22 +201,25 @@ func UpsertCitations(ctx context.Context, owner, paperID string, refs []string) 
 		refMaps = append(refMaps, map[string]any{"key": norm, "raw": raw})
 		norms = append(norms, norm)
 	}
-	if len(refMaps) == 0 {
-		// 仍需清掉旧 CITES,传空列表走同一语句即可。
-		refMaps = []map[string]any{}
-		norms = []string{}
+	base := map[string]any{"owner": owner, "id": paperID}
+	if _, err := exec(ctx, deleteCitationsCypher, base); err != nil {
+		return err
 	}
-	params := map[string]any{
-		"owner":    owner,
-		"id":       paperID,
-		"refs":     refMaps,
-		"refNorms": norms,
+	if len(refMaps) > 0 {
+		params := map[string]any{"owner": owner, "id": paperID, "refs": refMaps}
+		if _, err := exec(ctx, upsertReferenceCitationsCypher, params); err != nil {
+			return err
+		}
 	}
-	_, err := exec(ctx, upsertCitationsCypher, params)
-	return err
+	if len(norms) > 0 {
+		params := map[string]any{"owner": owner, "id": paperID, "refNorms": norms}
+		if _, err := exec(ctx, upsertPaperCitationsCypher, params); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// DeletePaper 删除一篇论文节点及其所有关系,再清掉因此孤立的内容/参考节点。
 func DeletePaper(ctx context.Context, owner, paperID string) error {
 	if _, err := exec(ctx, `MATCH (p:Paper {owner:$owner, id:$id}) DETACH DELETE p`,
 		map[string]any{"owner": owner, "id": paperID}); err != nil {
@@ -157,26 +228,23 @@ func DeletePaper(ctx context.Context, owner, paperID string) error {
 	return CleanupOrphans(ctx, owner)
 }
 
-// cleanupOrphansCypher 清掉某用户名下不再被任何论文引用的内容/参考节点。
 const cleanupOrphansCypher = `
 MATCH (n)
-WHERE n.owner=$owner AND (n:Author OR n:Keyword OR n:Affiliation OR n:Venue OR n:Reference) AND NOT (n)--()
+WHERE n.owner=$owner AND (n:Author OR n:Keyword OR n:Affiliation OR n:Venue OR n:ResearchQuestion OR n:Method OR n:Experiment OR n:Result OR n:Innovation OR n:Limitation OR n:FutureWork OR n:Reference) AND NOT (n)--()
 DELETE n`
 
-// CleanupOrphans 清理某用户因删除或归一化键变更而孤立的内容节点,best-effort。
 func CleanupOrphans(ctx context.Context, owner string) error {
 	_, err := exec(ctx, cleanupOrphansCypher, map[string]any{"owner": owner})
 	return err
 }
 
-// term 是内容节点的展示名与归一化键。norm 为合并键,name 为首次出现的展示文本。
-// cleanTerms 去空白与空项,按 norm 去重保持顺序,空 norm 的项丢弃。
 func cleanTerms(in []string) []map[string]any {
 	seen := map[string]bool{}
 	out := make([]map[string]any, 0, len(in))
 	for _, s := range in {
 		s = strings.TrimSpace(s)
-		norm := normalizeTitle(s)
+		s = truncateRunes(s, 800)
+		norm := truncateRunes(normalizeTitle(s), 300)
 		if s == "" || norm == "" || seen[norm] {
 			continue
 		}
@@ -186,7 +254,21 @@ func cleanTerms(in []string) []map[string]any {
 	return out
 }
 
-// normalizeTitle 把标题/参考文献归一化为小写字母数字加单空格的串,用于跨条目稳定匹配与去重。
+func cleanScalarTerm(s string) []map[string]any {
+	return cleanTerms([]string{s})
+}
+
+func truncateRunes(s string, max int) string {
+	if max <= 0 {
+		return s
+	}
+	rs := []rune(s)
+	if len(rs) <= max {
+		return s
+	}
+	return string(rs[:max])
+}
+
 func normalizeTitle(s string) string {
 	var b strings.Builder
 	prevSpace := false
