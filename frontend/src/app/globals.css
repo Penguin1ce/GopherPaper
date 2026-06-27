@@ -233,4 +233,18 @@
   .react-pdf__Page canvas {
     @apply h-auto max-w-full;
   }
+
+  .gp-password-input input::-ms-reveal,
+  .gp-password-input input::-ms-clear {
+    display: none !important;
+    height: 0;
+    width: 0;
+  }
+
+  .gp-password-input input::-webkit-contacts-auto-fill-button,
+  .gp-password-input input::-webkit-credentials-auto-fill-button {
+    display: none !important;
+    pointer-events: none;
+    visibility: hidden;
+  }
 }

@@ -164,6 +164,9 @@ secret = "change-me-to-a-long-random-secret"  # 生产务必替换为强随机�
 issuer = "gopherpaper"
 expire_hours = 240
 
+[admin]
+registration_code = "change-me-admin-registration-code"
+
 # ── SMTP 邮件：发送验证码等 ──────────────────────────────────
 [mail]
 server_mail = "noreply@example.com"    # 发件邮箱

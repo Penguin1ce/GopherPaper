@@ -25,8 +25,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
   Popover,
   PopoverContent,
@@ -155,9 +155,8 @@ function LuckinCard({
         </div>
         <div className="space-y-2">
           <Label htmlFor="luckin-token">MCP token</Label>
-          <Input
+          <PasswordInput
             id="luckin-token"
-            type="password"
             value={input}
             placeholder={cred ? "粘贴新的瑞幸 MCP token" : "粘贴瑞幸 MCP token"}
             onChange={(e) => setInput(e.target.value)}

@@ -26,6 +26,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import { useApp } from "@/lib/gopherpaper/store";
 import { useGuard } from "./app-ui";
 
@@ -783,9 +784,8 @@ function LoginForm({ busy, loginForm, setLoginForm, setMode, onLogin }: AuthPane
             忘记密码？
           </button>
         </div>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           value={loginForm.password}
           autoComplete="current-password"
           required
@@ -859,9 +859,8 @@ function ResetPasswordForm({
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label htmlFor="reset_password">新密码</Label>
-          <Input
+          <PasswordInput
             id="reset_password"
-            type="password"
             value={resetForm.password}
             autoComplete="new-password"
             minLength={6}
@@ -871,9 +870,8 @@ function ResetPasswordForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="reset_confirm">确认密码</Label>
-          <Input
+          <PasswordInput
             id="reset_confirm"
-            type="password"
             value={resetForm.confirm}
             autoComplete="new-password"
             minLength={6}
@@ -947,9 +945,8 @@ function RegisterForm({ busy, codeBusy, reg, setReg, onRegister, onSendCode }: A
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label htmlFor="reg_password">密码</Label>
-          <Input
+          <PasswordInput
             id="reg_password"
-            type="password"
             value={reg.password}
             autoComplete="new-password"
             minLength={6}
