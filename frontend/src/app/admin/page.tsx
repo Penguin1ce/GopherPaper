@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import {
   useCallback,
@@ -29,9 +30,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api/v1";
 const AUTH_KEY = "gopherpaper.admin.auth";
+const ADMIN_AUTH_EASE = [0.16, 1, 0.3, 1] as const;
 
 type AuthMode = "login" | "register";
 
@@ -638,19 +641,7 @@ export default function AdminPage() {
   );
 }
 
-function AuthPanel({
-  mode,
-  setMode,
-  busy,
-  codeBusy,
-  loginForm,
-  setLoginForm,
-  registerForm,
-  setRegisterForm,
-  onSendCode,
-  onLogin,
-  onRegister,
-}: {
+type AdminAuthPanelProps = {
   mode: AuthMode;
   setMode: (mode: AuthMode) => void;
   busy: boolean;
@@ -662,141 +653,239 @@ function AuthPanel({
   onSendCode: () => void;
   onLogin: (e: FormEvent) => void;
   onRegister: (e: FormEvent) => void;
-}) {
+};
+
+function AuthPanel(props: AdminAuthPanelProps) {
+  const { mode, setMode } = props;
+  const isLogin = mode === "login";
+
   return (
-    <section className="grid flex-1 place-items-center py-10">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-panel">
-        <div className="mb-5">
-          <p className="text-sm font-medium text-primary">Admin Console</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            {mode === "login" ? "管理员登录" : "注册管理员"}
+    <section className="grid flex-1 place-items-center py-8 sm:py-10">
+      <motion.div
+        initial={{ opacity: 0, y: 18, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.5, ease: ADMIN_AUTH_EASE }}
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card p-6 shadow-[0_24px_70px_-30px_oklch(0.255_0.012_56/0.4)] sm:p-8"
+      >
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-[1.7rem]">
+            {isLogin ? "管理员登录" : "管理员注册"}
           </h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            管理员账号独立于普通用户账号，注册需要注册码和邮箱验证码。
+            {isLogin
+              ? "使用管理员邮箱登录，进入论文库运营控制台。"
+              : "创建后台管理员账号，需要注册码与邮箱验证码。"}
           </p>
         </div>
-        <div className="mb-5 grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted p-1">
-          <button
-            type="button"
-            className={`h-8 rounded-md text-sm font-medium ${mode === "login" ? "bg-card shadow-sm" : "text-muted-foreground"}`}
-            onClick={() => setMode("login")}
-          >
-            登录
-          </button>
-          <button
-            type="button"
-            className={`h-8 rounded-md text-sm font-medium ${mode === "register" ? "bg-card shadow-sm" : "text-muted-foreground"}`}
-            onClick={() => setMode("register")}
-          >
-            注册
-          </button>
+
+        <div className="mb-6 grid grid-cols-2 gap-1 rounded-xl border border-border bg-muted/50 p-1">
+          {(["login", "register"] as const).map((nextMode) => (
+            <button
+              key={nextMode}
+              type="button"
+              className={`h-9 rounded-lg text-sm font-medium transition-all duration-200 ${
+                mode === nextMode
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => setMode(nextMode)}
+            >
+              {nextMode === "login" ? "登录" : "注册"}
+            </button>
+          ))}
         </div>
-        {mode === "login" ? (
-          <form className="space-y-4" onSubmit={onLogin}>
-            <Field label="邮箱">
-              <Input
-                type="email"
-                value={loginForm.email}
-                autoComplete="email"
-                required
-                onChange={(e) => setLoginForm((f) => ({ ...f, email: e.target.value }))}
-              />
-            </Field>
-            <Field label="密码">
-              <Input
-                type="password"
-                value={loginForm.password}
-                autoComplete="current-password"
-                required
-                onChange={(e) => setLoginForm((f) => ({ ...f, password: e.target.value }))}
-              />
-            </Field>
-            <Button className="h-10 w-full" type="submit" disabled={busy}>
-              {busy && <Loader2 className="size-4 animate-spin" />}
-              登录后台
-            </Button>
-          </form>
-        ) : (
-          <form className="space-y-4" onSubmit={onRegister}>
-            <Field label="姓名">
-              <Input
-                value={registerForm.name}
-                autoComplete="name"
-                onChange={(e) => setRegisterForm((f) => ({ ...f, name: e.target.value }))}
-              />
-            </Field>
-            <Field label="邮箱">
-              <Input
-                type="email"
-                value={registerForm.email}
-                autoComplete="email"
-                required
-                onChange={(e) => setRegisterForm((f) => ({ ...f, email: e.target.value }))}
-              />
-            </Field>
-            <div className="space-y-2">
-              <span className="text-sm font-medium">邮箱验证码</span>
-              <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                <Input
-                  value={registerForm.code}
-                  autoComplete="one-time-code"
-                  inputMode="numeric"
-                  maxLength={6}
-                  required
-                  onChange={(e) =>
-                    setRegisterForm((f) => ({
-                      ...f,
-                      code: e.target.value.replace(/\D/g, "").slice(0, 6),
-                    }))
-                  }
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy || codeBusy || !registerForm.email.trim()}
-                  onClick={() => void onSendCode()}
-                >
-                  {codeBusy && <Loader2 className="size-4 animate-spin" />}
-                  发送验证码
-                </Button>
-              </div>
-            </div>
-            <Field label="用户名">
-              <Input
-                value={registerForm.username}
-                autoComplete="username"
-                required
-                onChange={(e) => setRegisterForm((f) => ({ ...f, username: e.target.value }))}
-              />
-            </Field>
-            <Field label="密码">
-              <Input
-                type="password"
-                value={registerForm.password}
-                autoComplete="new-password"
-                minLength={6}
-                required
-                onChange={(e) => setRegisterForm((f) => ({ ...f, password: e.target.value }))}
-              />
-            </Field>
-            <Field label="管理员注册码">
-              <Input
-                type="password"
-                value={registerForm.registration_code}
-                required
-                onChange={(e) =>
-                  setRegisterForm((f) => ({ ...f, registration_code: e.target.value }))
-                }
-              />
-            </Field>
-            <Button className="h-10 w-full" type="submit" disabled={busy}>
-              {busy && <Loader2 className="size-4 animate-spin" />}
-              创建管理员
-            </Button>
-          </form>
-        )}
-      </div>
+
+        <AnimatePresence mode="wait" initial={false}>
+          {isLogin ? (
+            <motion.div
+              key="admin-login"
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ duration: 0.24, ease: ADMIN_AUTH_EASE }}
+            >
+              <AdminLoginForm {...props} />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="admin-register"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 10 }}
+              transition={{ duration: 0.24, ease: ADMIN_AUTH_EASE }}
+            >
+              <AdminRegisterFormPanel {...props} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          {isLogin ? (
+            <>
+              还没有管理员账号？
+              <button
+                type="button"
+                onClick={() => setMode("register")}
+                className="ml-1 font-medium text-primary underline-offset-4 hover:underline"
+              >
+                立即注册
+              </button>
+            </>
+          ) : (
+            <>
+              已有管理员账号？
+              <button
+                type="button"
+                onClick={() => setMode("login")}
+                className="ml-1 font-medium text-primary underline-offset-4 hover:underline"
+              >
+                直接登录
+              </button>
+            </>
+          )}
+        </p>
+      </motion.div>
     </section>
+  );
+}
+
+function AdminLoginForm({
+  busy,
+  loginForm,
+  setLoginForm,
+  onLogin,
+}: AdminAuthPanelProps) {
+  return (
+    <form className="space-y-4" onSubmit={onLogin}>
+      <Field label="邮箱">
+        <Input
+          className="h-10"
+          type="email"
+          value={loginForm.email}
+          autoComplete="email"
+          required
+          onChange={(e) => setLoginForm((f) => ({ ...f, email: e.target.value }))}
+        />
+      </Field>
+      <Field label="密码">
+        <PasswordInput
+          className="h-10"
+          value={loginForm.password}
+          autoComplete="current-password"
+          required
+          onChange={(e) => setLoginForm((f) => ({ ...f, password: e.target.value }))}
+        />
+      </Field>
+      <Button className="h-11 w-full gap-2" type="submit" disabled={busy}>
+        {busy && <Loader2 className="size-4 animate-spin" />}
+        登录后台
+      </Button>
+    </form>
+  );
+}
+
+function AdminRegisterFormPanel({
+  busy,
+  codeBusy,
+  registerForm,
+  setRegisterForm,
+  onSendCode,
+  onRegister,
+}: AdminAuthPanelProps) {
+  return (
+    <form className="space-y-4" onSubmit={onRegister}>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="姓名">
+          <Input
+            className="h-10"
+            value={registerForm.name}
+            autoComplete="name"
+            onChange={(e) => setRegisterForm((f) => ({ ...f, name: e.target.value }))}
+          />
+        </Field>
+        <Field label="用户名">
+          <Input
+            className="h-10"
+            value={registerForm.username}
+            autoComplete="username"
+            required
+            onChange={(e) => setRegisterForm((f) => ({ ...f, username: e.target.value }))}
+          />
+        </Field>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="admin-register-email">邮箱</Label>
+        <Input
+          id="admin-register-email"
+          className="h-10"
+          type="email"
+          value={registerForm.email}
+          autoComplete="email"
+          required
+          onChange={(e) => setRegisterForm((f) => ({ ...f, email: e.target.value }))}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="admin-register-code">邮箱验证码</Label>
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+          <Input
+            id="admin-register-code"
+            className="h-10"
+            value={registerForm.code}
+            autoComplete="one-time-code"
+            inputMode="numeric"
+            maxLength={6}
+            required
+            onChange={(e) =>
+              setRegisterForm((f) => ({
+                ...f,
+                code: e.target.value.replace(/\D/g, "").slice(0, 6),
+              }))
+            }
+          />
+          <Button
+            className="h-10 whitespace-nowrap"
+            type="button"
+            variant="outline"
+            disabled={busy || codeBusy || !registerForm.email.trim()}
+            onClick={() => void onSendCode()}
+          >
+            {codeBusy && <Loader2 className="size-4 animate-spin" />}
+            {codeBusy ? "发送中" : "发送验证码"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="密码">
+          <PasswordInput
+            className="h-10"
+            value={registerForm.password}
+            autoComplete="new-password"
+            minLength={6}
+            required
+            onChange={(e) => setRegisterForm((f) => ({ ...f, password: e.target.value }))}
+          />
+        </Field>
+        <Field label="管理员注册码">
+          <PasswordInput
+            className="h-10"
+            value={registerForm.registration_code}
+            required
+            onChange={(e) =>
+              setRegisterForm((f) => ({ ...f, registration_code: e.target.value }))
+            }
+          />
+        </Field>
+      </div>
+
+      <Button className="h-11 w-full gap-2" type="submit" disabled={busy}>
+        {busy && <Loader2 className="size-4 animate-spin" />}
+        创建管理员
+      </Button>
+    </form>
   );
 }
 
