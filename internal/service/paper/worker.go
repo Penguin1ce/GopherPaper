@@ -175,15 +175,22 @@ func saveStructured(ctx context.Context, paperID string, s *core.PaperStructured
 // upsertGraph 把论文及其作者/关键词/机构/会议与参考文献写入知识图谱,best-effort。
 func upsertGraph(ctx context.Context, task parseTask, s *core.PaperStructured, doc *core.ParsedDoc) {
 	if err := graph.UpsertPaper(ctx, graph.PaperGraph{
-		Owner:        task.OwnerID,
-		ID:           task.PaperID,
-		Title:        graphTitle(ctx, task, s),
-		Year:         s.PublishYear,
-		Venue:        s.Venue,
-		Authors:      s.Authors,
-		Keywords:     s.Keywords,
-		Affiliations: s.Affiliations,
-		Embedding:    paperEmbedding(ctx, s),
+		Owner:             task.OwnerID,
+		ID:                task.PaperID,
+		Title:             graphTitle(ctx, task, s),
+		Year:              s.PublishYear,
+		Venue:             s.Venue,
+		Authors:           s.Authors,
+		Keywords:          s.Keywords,
+		Affiliations:      s.Affiliations,
+		ResearchQuestions: s.ResearchQuestions,
+		Methods:           s.Methods,
+		Experiments:       s.Experiments,
+		Results:           s.Results,
+		Innovations:       s.Innovations,
+		Limitations:       s.Limitations,
+		FutureWork:        s.FutureWork,
+		Embedding:         paperEmbedding(ctx, s),
 	}); err != nil {
 		zlog.Error("图谱写入论文失败,降级", "paper_id", task.PaperID, "err", err)
 	}
