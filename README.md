@@ -10,7 +10,7 @@
 
 | 名称 | 定位 | 说明 |
 | --- | --- | --- |
-| 小文鸮 | 论文精读 Workflow | 围绕当前论文做精读问答、事实定位、方法解读与摘要概括。 |
+| 小文鸮 | 论文精读 Agent | 围绕当前论文做精读问答、事实定位、方法解读与摘要概括。 |
 | 小云雀 | 先锋工具 Agent | 面向开放任务先行探索,调用外部工具完成学术检索、论文导入与其他可接入操作。 |
 | 小囊鼠 | 知识管理 Agent | 面向个人论文库做标签归档、知识卡片、论文关联与长期知识沉淀。 |
 
@@ -32,10 +32,15 @@ go run cmd/server/main.go
 cd frontend && npm install && npm run dev
 ```
 
+Swagger接口url：<http://localhost:8080/swagger>
+
 前端默认运行在 `http://localhost:3000`。前端的 `/api/v1/*` route handler
 会流式代理到 `http://127.0.0.1:8080`,可通过 `GOPHERPAPER_API_ORIGIN` 覆盖。
+后端 Swagger 文档可访问 `http://localhost:8080/swagger`，Swagger JSON 为
+`http://localhost:8080/swagger/doc.json`。接口注释变更后执行
+`go generate ./cmd/server` 重新生成 `docs/`。
 如果使用 compose 内的 Nginx 入口,仍按上面方式启动后端和前端,浏览器访问
-`http://localhost:8081`;Nginx 会把 `/api/v1/*` 和 `/healthz` 转发到宿主机
+`http://localhost:8081`;Nginx 会把 `/api/v1/*`、`/swagger` 和 `/healthz` 转发到宿主机
 `127.0.0.1:8080` 的 Go 后端,其余请求转发到宿主机 `127.0.0.1:3000` 的
 Next 前端,并对 `/api/v1/events` 和聊天消息 SSE 关闭代理缓冲。
 
@@ -60,7 +65,7 @@ Next 前端,并对 `/api/v1/events` 和聊天消息 SSE 关闭代理缓冲。
 | JWT | GET | `/api/v1/papers/search?q=` | 历史文献检索 |
 | JWT | GET | `/api/v1/papers/:id` | 论文详情、结构化元信息与章节大纲 |
 | JWT | GET | `/api/v1/papers/:id/status` | 查询解析状态,作为 WebSocket 断线兜底 |
-| JWT | POST | `/api/v1/papers/:id/report` | 生成或读取研读报告,body `type`: `quickread`、`method`、`result`、`innovation`、`compare`、`future` |
+| JWT | POST | `/api/v1/papers/:id/report` | 生成或读取研读报告,body `type`: `quickread`、`method`、`result`、`innovation`、`future` |
 | JWT | POST | `/api/v1/papers/:id/translate` | 精读页选段翻译,body `text`,单次最多 4000 字符 |
 | JWT | POST | `/api/v1/sessions` | 新建会话,body 可带 `paper_id`、`title`、`agent_type` |
 | JWT | GET | `/api/v1/sessions` | 列出当前用户会话 |

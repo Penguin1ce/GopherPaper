@@ -17,6 +17,15 @@ import (
 
 // Overview 返回当前用户图谱的规模总览。
 // GET /api/v1/graph/overview
+//
+// @Summary 图谱规模总览
+// @Description 返回当前用户知识图谱的论文、作者、关键词、引用数量与年份跨度。
+// @Tags graph
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} dto.Response{data=dto.GraphStats}
+// @Failure 500 {object} dto.Response
+// @Router /graph/overview [get]
 func Overview(c *gin.Context) {
 	owner := tenant.MustStudentID(c.Request.Context())
 	stats, err := graphstore.Overview(c.Request.Context(), owner)
@@ -30,6 +39,16 @@ func Overview(c *gin.Context) {
 
 // Trends 返回研究趋势:每年论文数与 Top 关键词的逐年热度。
 // GET /api/v1/graph/trends?keyword_top=10
+//
+// @Summary 研究趋势
+// @Description 返回每年论文数与 Top 关键词逐年热度。
+// @Tags graph
+// @Produce json
+// @Security BearerAuth
+// @Param keyword_top query int false "关键词 Top N" default(10)
+// @Success 200 {object} dto.Response{data=dto.GraphTrendsResponse}
+// @Failure 500 {object} dto.Response
+// @Router /graph/trends [get]
 func Trends(c *gin.Context) {
 	owner := tenant.MustStudentID(c.Request.Context())
 	topN := queryInt(c, "keyword_top", 10)
@@ -50,6 +69,18 @@ func Trends(c *gin.Context) {
 
 // Related 返回与指定论文相关的论文,关系来自共享作者/关键词/共被引/直接引用。
 // GET /api/v1/graph/papers/:id/related?limit=10
+//
+// @Summary 查询相关论文
+// @Description 返回与指定论文相关的论文，关系来自共享作者、关键词、共被引、直接引用与语义相似边。
+// @Tags graph
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "论文 ID"
+// @Param limit query int false "返回数量" default(10)
+// @Success 200 {object} dto.Response{data=[]dto.RelatedPaper}
+// @Failure 400 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /graph/papers/{id}/related [get]
 func Related(c *gin.Context) {
 	owner := tenant.MustStudentID(c.Request.Context())
 	paperID := c.Param("id")
@@ -69,6 +100,16 @@ func Related(c *gin.Context) {
 
 // Keywords 返回当前用户最热门的关键词。
 // GET /api/v1/graph/keywords?top=20
+//
+// @Summary 热门关键词
+// @Description 返回当前用户知识图谱中出现次数最多的关键词。
+// @Tags graph
+// @Produce json
+// @Security BearerAuth
+// @Param top query int false "关键词 Top N" default(20)
+// @Success 200 {object} dto.Response{data=[]dto.NameCount}
+// @Failure 500 {object} dto.Response
+// @Router /graph/keywords [get]
 func Keywords(c *gin.Context) {
 	owner := tenant.MustStudentID(c.Request.Context())
 	topN := queryInt(c, "top", 20)

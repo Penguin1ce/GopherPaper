@@ -2,8 +2,13 @@
 package router
 
 import (
-	"github.com/gin-gonic/gin"
+	"net/http"
 
+	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
+	"GopherPaper/docs"
 	"GopherPaper/internal/handler"
 	adminhandler "GopherPaper/internal/handler/admin"
 	chathandler "GopherPaper/internal/handler/chat"
@@ -19,9 +24,16 @@ import (
 // Init 构建 gin 引擎。mode 为运行模式，依赖已由各包 Init 初始化。
 func Init(mode string) *gin.Engine {
 	gin.SetMode(mode)
+	docs.SwaggerInfo.BasePath = "/api/v1"
+
 	r := gin.New()
 	// 访问日志与 panic 恢复都写到 zlog 的输出目标，和应用日志同去向（文件或 stdout）。
 	r.Use(gin.LoggerWithWriter(zlog.Writer()), gin.RecoveryWithWriter(zlog.Writer()))
+
+	r.GET("/swagger", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/swagger/index.html")
+	})
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// 健康检查，无需鉴权。
 	r.GET("/healthz", func(c *gin.Context) {

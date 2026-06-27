@@ -1,5 +1,17 @@
 // GopherPaper 科研文献智能解析与知识服务系统 —— 服务入口。
 // 启动顺序：配置、日志、基础设施、模型资源、知识库、编排器、HTTP 路由。
+//
+// @title GopherPaper API
+// @version 1.0
+// @description 科研文献智能解析与知识服务系统后端接口。受保护接口使用 Authorization: Bearer <jwt>。
+// @BasePath /api/v1
+// @schemes http https
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description 输入 Bearer <JWT>
+//
+//go:generate sh -c "cd ../.. && go run github.com/swaggo/swag/cmd/swag@v1.16.6 init --dir ./cmd/server,./internal/handler,./internal/handler/user,./internal/handler/paper,./internal/handler/chat,./internal/handler/graph,./internal/handler/sse,./internal/dto,./internal/model,./pkg/constant --generalInfo main.go --parseInternal --output ./docs"
 package main
 
 import (

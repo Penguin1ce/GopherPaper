@@ -15,8 +15,8 @@ import (
 	"GopherPaper/internal/credential"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/response"
-	"GopherPaper/internal/sse"
 	chatservice "GopherPaper/internal/service/chat"
+	"GopherPaper/internal/sse"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
@@ -25,6 +25,18 @@ import (
 
 // CreateSession 新建会话。
 // POST /api/v1/sessions
+//
+// @Summary 创建会话
+// @Description 创建一段多轮会话，可绑定论文，也可指定 agent_type=pioneer 使用小云雀。
+// @Tags sessions
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.CreateSessionRequest true "会话参数"
+// @Success 200 {object} dto.Response{data=model.Session}
+// @Failure 400 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /sessions [post]
 func CreateSession(c *gin.Context) {
 	var req dto.CreateSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -47,6 +59,15 @@ func CreateSession(c *gin.Context) {
 
 // ListSessions 列出当前学生的会话。
 // GET /api/v1/sessions
+//
+// @Summary 列出会话
+// @Description 返回当前登录用户的会话列表。
+// @Tags sessions
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} dto.Response{data=[]model.Session}
+// @Failure 500 {object} dto.Response
+// @Router /sessions [get]
 func ListSessions(c *gin.Context) {
 	studentID := tenant.MustStudentID(c.Request.Context())
 	sessions, err := chatservice.ListSessions(c.Request.Context(), studentID)
@@ -60,6 +81,18 @@ func ListSessions(c *gin.Context) {
 
 // DeleteSession 删除会话。
 // DELETE /api/v1/sessions/:id
+//
+// @Summary 删除会话
+// @Description 删除当前用户拥有的会话。
+// @Tags sessions
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "会话 ID"
+// @Success 200 {object} dto.Response
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /sessions/{id} [delete]
 func DeleteSession(c *gin.Context) {
 	studentID := tenant.MustStudentID(c.Request.Context())
 	if err := chatservice.DeleteSession(c.Request.Context(), studentID, c.Param("id")); err != nil {
@@ -71,6 +104,18 @@ func DeleteSession(c *gin.Context) {
 
 // ListMessages 拉取会话历史消息，按时间升序还原上下文。
 // GET /api/v1/sessions/:id/messages
+//
+// @Summary 拉取会话消息
+// @Description 按时间升序返回某个会话的历史消息。
+// @Tags sessions
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "会话 ID"
+// @Success 200 {object} dto.Response{data=[]model.Message}
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /sessions/{id}/messages [get]
 func ListMessages(c *gin.Context) {
 	studentID := tenant.MustStudentID(c.Request.Context())
 	msgs, err := chatservice.ListMessages(c.Request.Context(), studentID, c.Param("id"))
@@ -85,6 +130,23 @@ func ListMessages(c *gin.Context) {
 // done 事件收尾带完整助教消息与引用出处。开流前的错误(参数/会话校验)仍走普通 JSON 状态码,
 // 开流后的失败降级为 error 事件。
 // POST /api/v1/sessions/:id/messages
+//
+// @Summary 发送会话消息
+// @Description 在会话内发送一轮消息，以 SSE 推送 tool_call、tool_result、plan、delta、done、error 等事件；done 事件载荷为 dto.SendMessageResponse。
+// @Tags sessions
+// @Accept json
+// @Produce text/event-stream
+// @Security BearerAuth
+// @Param id path string true "会话 ID"
+// @Param X-Luckin-Token header string false "小云雀调用瑞幸工具时透传的凭据"
+// @Param X-GopherPaper-Delete-Confirm header string false "论文删除确认令牌"
+// @Param request body dto.SendMessageRequest true "消息内容"
+// @Success 200 {string} string "SSE 事件流"
+// @Failure 400 {object} dto.Response
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /sessions/{id}/messages [post]
 func SendMessage(c *gin.Context) {
 	var req dto.SendMessageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

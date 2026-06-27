@@ -19,6 +19,17 @@ import (
 
 // SendCode 下发邮箱验证码，有效期 5 分钟。
 // POST /api/v1/user/send-code
+//
+// @Summary 下发邮箱验证码
+// @Description 向注册邮箱发送 6 位验证码，验证码有效期 5 分钟。
+// @Tags user
+// @Accept json
+// @Produce json
+// @Param request body dto.SendCodeRequest true "邮箱"
+// @Success 200 {object} dto.Response
+// @Failure 400 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /user/send-code [post]
 func SendCode(c *gin.Context) {
 	var req dto.SendCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -35,6 +46,17 @@ func SendCode(c *gin.Context) {
 
 // Register 校验邮箱验证码并注册用户。
 // POST /api/v1/user/register
+//
+// @Summary 注册用户
+// @Description 校验邮箱验证码后创建学生用户。
+// @Tags user
+// @Accept json
+// @Produce json
+// @Param request body dto.RegisterRequest true "注册参数"
+// @Success 200 {object} dto.Response
+// @Failure 400 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /user/register [post]
 func Register(c *gin.Context) {
 	var req dto.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -58,6 +80,18 @@ func Register(c *gin.Context) {
 
 // Login 校验学号密码并签发 JWT，token 同时写入 Redis。
 // POST /api/v1/user/login
+//
+// @Summary 登录
+// @Description 按学号和密码登录，返回 JWT 与用户基本信息。
+// @Tags user
+// @Accept json
+// @Produce json
+// @Param request body dto.LoginRequest true "登录参数"
+// @Success 200 {object} dto.Response{data=dto.LoginResponse}
+// @Failure 400 {object} dto.Response
+// @Failure 401 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /user/login [post]
 func Login(c *gin.Context) {
 	var req dto.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -86,6 +120,16 @@ func Login(c *gin.Context) {
 // Logout 注销当前登录:清除服务端登录态并释放该用户常驻的 agent runner 与模型缓存。
 // 身份取自 JWT 注入的租户上下文,故须经鉴权中间件。
 // POST /api/v1/user/logout
+//
+// @Summary 登出
+// @Description 注销当前登录态，并释放该用户常驻的模型与 agent runner 缓存。
+// @Tags user
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} dto.Response
+// @Failure 401 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /user/logout [post]
 func Logout(c *gin.Context) {
 	studentID := tenant.MustStudentID(c.Request.Context())
 	if studentID == "" {

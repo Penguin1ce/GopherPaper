@@ -18,6 +18,15 @@ const heartbeat = 25 * time.Second
 
 // Subscribe 建立 SSE 流并按用户订阅解析进度与报告就绪推送。
 // GET /api/v1/events?token=<jwt>
+//
+// @Summary 订阅事件流
+// @Description 建立 SSE 长连接，推送论文解析进度与报告就绪事件。浏览器 EventSource 无法携带 Authorization 头，因此鉴权使用 query token。
+// @Tags events
+// @Produce text/event-stream
+// @Param token query string true "JWT"
+// @Success 200 {string} string "SSE 事件流"
+// @Failure 401 {object} dto.Response
+// @Router /events [get]
 func Subscribe(c *gin.Context) {
 	// SSE 允许跨源直连:dev 下前端绕开 Next 代理直接连本端口(:8080),避免代理 fetch
 	// 长连断开不回收、堆满 Next 源连接池致前端卡死。鉴权走 query token、无 cookie,
