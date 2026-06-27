@@ -8,6 +8,7 @@ import type {
   GraphStats,
   GraphTrends,
   LoginResponse,
+  AvatarResponse,
   Message,
   NameCount,
   Paper,
@@ -136,6 +137,23 @@ export function sendCode(email: string) {
   return request<null>("/user/send-code", {
     method: "POST",
     body: JSON.stringify({ email }),
+  });
+}
+
+export async function uploadAvatar(file: File): Promise<AvatarResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_BASE}/user/avatar`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: formData,
+  });
+  return readEnvelope<AvatarResponse>(res);
+}
+
+export function clearAvatar() {
+  return request<AvatarResponse>("/user/avatar", {
+    method: "DELETE",
   });
 }
 

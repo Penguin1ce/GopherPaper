@@ -1,10 +1,11 @@
-// Package user 处理用户注册、登录与邮箱验证码下发。
-// 处理函数为裸包级 func，业务委托给 service，本层只做参数绑定与错误映射。
+// Package user 处理用户注册、登录、登出、邮箱验证码与头像接口。
 package user
 
 import (
 	"errors"
+	"io"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 
@@ -14,10 +15,11 @@ import (
 	userservice "GopherPaper/internal/service/user"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
+	"GopherPaper/pkg/constant"
 	"GopherPaper/pkg/errs"
 )
 
-// SendCode 下发邮箱验证码，有效期 5 分钟。
+// SendCode 下发邮箱验证码。
 // POST /api/v1/user/send-code
 //
 // @Summary 下发邮箱验证码
@@ -78,7 +80,7 @@ func Register(c *gin.Context) {
 	response.OKMsg(c, "注册成功", nil)
 }
 
-// Login 校验学号密码并签发 JWT，token 同时写入 Redis。
+// Login 校验学号密码并签发 JWT。
 // POST /api/v1/user/login
 //
 // @Summary 登录
@@ -114,11 +116,11 @@ func Login(c *gin.Context) {
 		StudentID: user.StudentID,
 		Name:      user.Name,
 		Email:     user.Email,
+		AvatarURL: user.AvatarURL,
 	})
 }
 
-// Logout 注销当前登录:清除服务端登录态并释放该用户常驻的 agent runner 与模型缓存。
-// 身份取自 JWT 注入的租户上下文,故须经鉴权中间件。
+// Logout 注销当前登录状态。
 // POST /api/v1/user/logout
 //
 // @Summary 登出
@@ -143,4 +145,86 @@ func Logout(c *gin.Context) {
 	}
 	ai.EvictUser(studentID)
 	response.OKMsg(c, "已登出", nil)
+}
+
+// UploadAvatar 更新当前用户头像。图片由前端裁剪后上传，后端负责格式、大小与归属校验。
+// POST /api/v1/user/avatar
+func UploadAvatar(c *gin.Context) {
+	studentID := tenant.MustStudentID(c.Request.Context())
+	if studentID == "" {
+		response.Fail(c, http.StatusUnauthorized, "未登录")
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, constant.MaxAvatarBytes+(512<<10))
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		response.Fail(c, http.StatusBadRequest, "缺少上传图片 file")
+		return
+	}
+	if fileHeader.Size > constant.MaxAvatarBytes {
+		response.Fail(c, http.StatusRequestEntityTooLarge, "头像图片不能超过 2MB")
+		return
+	}
+	f, err := fileHeader.Open()
+	if err != nil {
+		response.Fail(c, http.StatusBadRequest, "读取头像失败")
+		return
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, constant.MaxAvatarBytes+1))
+	if err != nil {
+		response.Fail(c, http.StatusBadRequest, "读取头像失败")
+		return
+	}
+	avatarURL, err := userservice.UpdateAvatar(c.Request.Context(), studentID, data)
+	if err != nil {
+		writeAvatarErr(c, err)
+		return
+	}
+	response.OK(c, dto.AvatarResponse{AvatarURL: avatarURL})
+}
+
+// ClearAvatar 恢复默认首字母头像。
+// DELETE /api/v1/user/avatar
+func ClearAvatar(c *gin.Context) {
+	studentID := tenant.MustStudentID(c.Request.Context())
+	if studentID == "" {
+		response.Fail(c, http.StatusUnauthorized, "未登录")
+		return
+	}
+	if err := userservice.ClearAvatar(c.Request.Context(), studentID); err != nil {
+		writeAvatarErr(c, err)
+		return
+	}
+	response.OK(c, dto.AvatarResponse{})
+}
+
+// AvatarFile 返回已保存头像文件。头像本身不是敏感数据，读取接口不要求 Authorization。
+// GET /api/v1/user/avatar-files/:name
+func AvatarFile(c *gin.Context) {
+	path, ok := userservice.AvatarFilePath(c.Param("name"))
+	if !ok {
+		response.Fail(c, http.StatusBadRequest, "非法文件名")
+		return
+	}
+	if _, err := os.Stat(path); err != nil {
+		response.Fail(c, http.StatusNotFound, "头像不存在")
+		return
+	}
+	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	c.File(path)
+}
+
+func writeAvatarErr(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, errs.ErrAvatarInvalid):
+		response.Fail(c, http.StatusBadRequest, "仅支持 jpg、png、webp 图片")
+	case errors.Is(err, errs.ErrAvatarTooLarge):
+		response.Fail(c, http.StatusRequestEntityTooLarge, "头像图片不能超过 2MB")
+	case errors.Is(err, errs.ErrUserNotFound):
+		response.Fail(c, http.StatusNotFound, err.Error())
+	default:
+		zlog.Error("头像接口错误", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "头像更新失败")
+	}
 }

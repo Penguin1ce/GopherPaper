@@ -144,12 +144,18 @@ export interface LoginResponse {
   student_id: string;
   name: string;
   email: string;
+  avatar_url?: string;
 }
 
 export interface AuthUser {
   student_id: string;
   name: string;
   email: string;
+  avatar_url?: string;
+}
+
+export interface AvatarResponse {
+  avatar_url: string;
 }
 
 export type ReportType =

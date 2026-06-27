@@ -14,6 +14,7 @@ type User struct {
 	StudentID    string         `gorm:"size:64;uniqueIndex;not null" json:"student_id"`
 	Name         string         `gorm:"size:64" json:"name"`
 	Email        string         `gorm:"size:128;index" json:"email"`
+	AvatarURL    string         `gorm:"size:255" json:"avatar_url"`
 	ClassID      string         `gorm:"size:64;index" json:"class_id"`
 	PasswordHash string         `gorm:"size:255;not null" json:"-"`
 	CreatedAt    time.Time      `json:"created_at"`

@@ -82,6 +82,8 @@ interface AppContextValue {
   registerAndLogin: (payload: RegisterPayload) => Promise<void>;
   sendCode: (email: string) => Promise<void>;
   logout: () => void;
+  updateAvatar: (file: File) => Promise<void>;
+  clearAvatar: () => Promise<void>;
   refreshPapers: (query?: string) => Promise<void>;
   uploadPaper: (file: File) => Promise<void>;
   removePaper: (id: string) => Promise<void>;
@@ -584,7 +586,12 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     async (studentID: string, password: string) => {
       const data = await api.login(studentID, password);
       persist(
-        { student_id: data.student_id, name: data.name, email: data.email },
+        {
+          student_id: data.student_id,
+          name: data.name,
+          email: data.email,
+          avatar_url: data.avatar_url,
+        },
         data.token,
       );
       await bootstrapSession(data.token);
@@ -608,6 +615,23 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     },
     [toast],
   );
+
+  const updateAvatar = useCallback(
+    async (file: File) => {
+      const data = await api.uploadAvatar(file);
+      const nextUser = user ? { ...user, avatar_url: data.avatar_url } : null;
+      persist(nextUser, token);
+      toast("头像已更新");
+    },
+    [persist, toast, token, user],
+  );
+
+  const clearAvatar = useCallback(async () => {
+    await api.clearAvatar();
+    const nextUser = user ? { ...user, avatar_url: "" } : null;
+    persist(nextUser, token);
+    toast("已恢复默认头像");
+  }, [persist, toast, token, user]);
 
   const uploadPaper = useCallback(
     async (file: File) => {
@@ -899,6 +923,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       registerAndLogin,
       sendCode,
       logout,
+      updateAvatar,
+      clearAvatar,
       refreshPapers,
       uploadPaper,
       removePaper,
@@ -931,6 +957,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       registerAndLogin,
       sendCode,
       logout,
+      updateAvatar,
+      clearAvatar,
       refreshPapers,
       uploadPaper,
       removePaper,

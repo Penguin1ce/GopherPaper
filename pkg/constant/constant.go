@@ -76,6 +76,12 @@ const (
 // MaxPaperDownloadBytes 小云雀联网下载论文 PDF 的体积上限,与上传接口的 50MB 对齐,防超大文件打满磁盘。
 const MaxPaperDownloadBytes = 50 << 20
 
+const (
+	MaxAvatarBytes   = 2 << 20
+	AvatarStorageDir = "data/avatars"
+	AvatarURLPrefix  = "/api/v1/user/avatar-files"
+)
+
 // 知识图谱语义相似边参数。同领域论文关键词字面常不重合(中英意译各异),靠结构化语义摘要的
 // cosine 相似补关联:超过阈值的取 Top K 建 SIMILAR_TO。阈值按 bge/qwen embedding 的同主题召回调校,
 // 保持略宽松,再由 TopK 控制密度。
