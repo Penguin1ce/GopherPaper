@@ -11,6 +11,8 @@ import (
 	"GopherPaper/internal/dao"
 	paperdao "GopherPaper/internal/dao/paper"
 	"GopherPaper/internal/model"
+	"GopherPaper/internal/service/metrics"
+	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 	"GopherPaper/pkg/errs"
@@ -100,21 +102,31 @@ func ensureReport(ctx context.Context, paperID string, t constant.ReportType) (*
 		return reply, nil
 	}
 
+	start := time.Now()
+	ownerID := tenant.MustStudentID(ctx)
+	metricSuccess := false
+	var metricErr error
+	defer func() {
+		metrics.Record(ctx, metrics.ServiceReport, ownerID, paperID, "", metricSuccess, time.Since(start), metricErr)
+	}()
+
 	reply, err := ai.GenerateReport(ctx, paperID, t)
 	if err != nil {
+		metricErr = err
 		return nil, err
 	}
 	rec := &model.PaperReport{PaperID: paperID, ReportType: t, Content: reply.Content}
 	if reply.Meta != nil {
 		rec.Meta = model.JSONMap(reply.Meta)
 	}
-	// 落库失败不影响本次返回,锁释放后下次点击再生成即可。
 	if err := paperdao.SaveReport(ctx, rec); err != nil {
 		zlog.Error("研读报告落库失败", "paper_id", paperID, "type", string(t), "err", err)
-	} else {
-		// 落库成功才失效就绪缓存,让轮询/重开下一次查询看到这条新报告。
-		invalidateReadyCache(ctx, paperID)
+		metricErr = err
+		return nil, err
 	}
+	// 落库成功才失效就绪缓存,让轮询/重开下一次查询看到这条新报告。
+	invalidateReadyCache(ctx, paperID)
+	metricSuccess = true
 	return reply, nil
 }
 

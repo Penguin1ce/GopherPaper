@@ -13,6 +13,7 @@ import {
   Quote,
   Upload,
 } from "lucide-react";
+import Link from "next/link";
 import {
   AnimatePresence,
   motion,
@@ -253,6 +254,12 @@ function TopNav({ mode, setMode }: { mode: AuthMode; setMode: (m: AuthMode) => v
       <BrandMark onClick={() => setMode("landing")} />
       {mode === "landing" ? (
         <nav className="flex items-center gap-1.5 sm:gap-2">
+          <Link
+            href="/admin"
+            className="inline-flex h-7 items-center justify-center rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            管理员
+          </Link>
           <Button variant="ghost" size="sm" onClick={() => setMode("login")}>
             登录
           </Button>

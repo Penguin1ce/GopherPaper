@@ -212,9 +212,10 @@ const (
 
 // Redis 键前缀与时效。
 const (
-	RedisKeyVerifyCode  = "verify_code:"  // 邮箱验证码，键拼接邮箱
-	RedisKeyUserToken   = "jwt:"          // 登录 token，键拼接邮箱前缀
-	RedisKeyParseStatus = "paper:status:" // 论文解析状态缓存，键拼接 paperID
+	RedisKeyVerifyCode      = "verify_code:"       // 普通用户邮箱验证码，键拼接邮箱
+	RedisKeyAdminVerifyCode = "admin_verify_code:" // 管理员邮箱验证码，键拼接邮箱
+	RedisKeyUserToken       = "jwt:"               // 登录 token，键拼接邮箱前缀
+	RedisKeyParseStatus     = "paper:status:"      // 论文解析状态缓存，键拼接 paperID
 )
 
 // VerifyCodeTTL 邮箱验证码有效期。

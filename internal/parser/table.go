@@ -14,7 +14,7 @@ type tableCell struct {
 }
 
 // tableToMarkdown 把 MinerU table_body 的 HTML 表格转成 GitHub Markdown 表格。
-// 处理 colspan/rowspan:把跨格的值平铺到每个被覆盖的格(每列自带表头便于检索与渲染),
+// 处理 colspan/rowspan:跨格值仅放在锚点格,其余覆盖格留空,避免大段文本被指数级复制,
 // 首行作表头。无法解析或无单元格时返回空串,由调用方回退按图处理。
 func tableToMarkdown(tableHTML string) string {
 	tableHTML = strings.TrimSpace(tableHTML)
@@ -100,7 +100,9 @@ func expandGrid(rows [][]tableCell) [][]string {
 			}
 			for dr := 0; dr < cell.rowspan && ri+dr < len(rows); dr++ {
 				for dc := 0; dc < cell.colspan && ci+dc < width; dc++ {
-					grid[ri+dr][ci+dc] = cell.text
+					if dr == 0 && dc == 0 {
+						grid[ri+dr][ci+dc] = cell.text
+					}
 					filled[ri+dr][ci+dc] = true
 				}
 			}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"GopherPaper/internal/ai"
 	"GopherPaper/internal/ai/core"
@@ -14,8 +15,9 @@ import (
 	"GopherPaper/internal/knowledge"
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/parser"
-	"GopherPaper/internal/tenant"
+	"GopherPaper/internal/service/metrics"
 	"GopherPaper/internal/sse"
+	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 	"GopherPaper/pkg/errs"
@@ -49,6 +51,7 @@ func startParseWorker(ctx context.Context) error {
 
 // runPipeline 跑完整解析流水线,逐步更新状态并经 ws 推送。任一步失败标记 failed。
 func runPipeline(ctx context.Context, task parseTask) {
+	start := time.Now()
 	// 注入论文 owner,供 ai.Extract 选到该用户模型,knowledge 写入按 owner 隔离。
 	ctx = tenant.With(ctx, tenant.Tenant{StudentID: task.OwnerID})
 
@@ -56,21 +59,21 @@ func runPipeline(ctx context.Context, task parseTask) {
 
 	doc, err := parser.Parse(ctx, task.FileURI)
 	if err != nil {
-		fail(ctx, task, "解析 PDF 失败", err)
+		fail(ctx, task, "解析 PDF 失败", err, start)
 		return
 	}
 	saveArtifact(task, doc) // 解析一拿到就归档原始产物,后续步骤失败也能据此离线重建
 
 	structured, err := ai.Extract(ctx, doc)
 	if err != nil {
-		fail(ctx, task, "结构化抽取失败", err)
+		fail(ctx, task, "结构化抽取失败", err, start)
 		return
 	}
 	if !paperPresentForPipeline(ctx, task, "save_structured") {
 		return
 	}
 	if err := saveStructured(ctx, task.PaperID, structured, doc); err != nil {
-		fail(ctx, task, "落库元信息失败", err)
+		fail(ctx, task, "落库元信息失败", err, start)
 		return
 	}
 	setStatus(ctx, task, constant.PaperExtracted, "")
@@ -94,11 +97,11 @@ func runPipeline(ctx context.Context, task parseTask) {
 	// 重解析先清掉该论文旧 chunk,避免内容变化后旧切分残留成孤儿(UpsertChunks 仅按本批主键删)。
 	// 首次解析时无旧数据,删除是 no-op。
 	if err := knowledge.DeletePaperChunks(ctx, task.OwnerID, task.PaperID); err != nil {
-		fail(ctx, task, "清理旧 chunks 失败", err)
+		fail(ctx, task, "清理旧 chunks 失败", err, start)
 		return
 	}
 	if _, err := knowledge.UpsertChunks(ctx, chunks); err != nil {
-		fail(ctx, task, "写入向量库失败", err)
+		fail(ctx, task, "写入向量库失败", err, start)
 		return
 	}
 	setStatus(ctx, task, constant.PaperIndexed, "")
@@ -114,6 +117,7 @@ func runPipeline(ctx context.Context, task parseTask) {
 		return
 	}
 	setStatus(ctx, task, constant.PaperReady, "")
+	metrics.Record(ctx, metrics.ServiceParse, task.OwnerID, task.PaperID, "", true, time.Since(start), nil)
 	zlog.Info("论文解析入库完成", "paper_id", task.PaperID, "chunks", len(chunks))
 
 	// 研读报告改按需生成:用户在画廊里点某类报告才起小囊鼠长任务,解析完成不再全量预生成,
@@ -398,7 +402,8 @@ func setStatus(ctx context.Context, task parseTask, status constant.PaperStatus,
 	sse.PushStatus(task.OwnerID, task.PaperID, string(status), detail)
 }
 
-func fail(ctx context.Context, task parseTask, msg string, err error) {
+func fail(ctx context.Context, task parseTask, msg string, err error, start time.Time) {
 	zlog.Error("论文解析失败", "paper_id", task.PaperID, "stage", msg, "err", err)
 	setStatus(ctx, task, constant.PaperFailed, msg)
+	metrics.Record(ctx, metrics.ServiceParse, task.OwnerID, task.PaperID, "", false, time.Since(start), err)
 }
