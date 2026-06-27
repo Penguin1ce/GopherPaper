@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"strconv"
 	"strings"
 
 	mventity "github.com/milvus-io/milvus/client/v2/entity"
+	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"trpc.group/trpc-go/trpc-agent-go/knowledge/document"
 	trpcembedder "trpc.group/trpc-go/trpc-agent-go/knowledge/embedder"
 	"trpc.group/trpc-go/trpc-agent-go/knowledge/searchfilter"
@@ -24,6 +26,8 @@ var (
 	trpcStore vectorstore.VectorStore
 	trpcEmb   trpcembedder.Embedder
 	trpcDim   int
+	statsCli  *milvusclient.Client
+	statsColl string
 )
 
 // Init 用 trpc vectorstore 与 embedder 初始化知识库 collection。
@@ -48,6 +52,14 @@ func Init(ctx context.Context, mc config.MilvusConfig, collection string, emb tr
 	trpcStore = vs
 	trpcEmb = emb
 	trpcDim = dim
+	statsColl = collection
+	if cli, err := milvusclient.New(ctx, &milvusclient.ClientConfig{
+		Address:  mc.Address,
+		Username: mc.Username,
+		Password: mc.Password,
+	}); err == nil {
+		statsCli = cli
+	}
 	return nil
 }
 
@@ -82,17 +94,76 @@ func addChunk(ctx context.Context, chunk Chunk) error {
 // Ready 报告 trpc 知识库是否已初始化。
 func Ready() bool { return trpcStore != nil && trpcEmb != nil }
 
+func VectorCount(ctx context.Context) (int64, error) {
+	if trpcStore == nil {
+		return 0, fmt.Errorf("knowledge: trpc store not initialized")
+	}
+	privateCount, err := countChunksByScope(ctx, constant.KnowledgeScopePrivate)
+	if err != nil {
+		return 0, err
+	}
+	publicCount, err := countChunksByScope(ctx, constant.KnowledgeScopePublic)
+	if err != nil {
+		return 0, err
+	}
+	return privateCount + publicCount, nil
+}
+
+func countChunksByScope(ctx context.Context, scope constant.KnowledgeScope) (int64, error) {
+	n, err := trpcStore.Count(ctx, vectorstore.WithCountFilter(map[string]any{
+		constant.MilvusFieldKnowledgeScope: string(scope),
+	}))
+	if err != nil {
+		return 0, fmt.Errorf("knowledge: count %s vectors failed: %w", scope, err)
+	}
+	return int64(n), nil
+}
+
+func VectorCollectionStatsCount(ctx context.Context) (int64, error) {
+	if statsCli == nil || statsColl == "" {
+		return 0, fmt.Errorf("knowledge: milvus stats client not initialized")
+	}
+	stats, err := statsCli.GetCollectionStats(ctx, milvusclient.NewGetCollectionStatsOption(statsColl))
+	if err != nil {
+		return 0, fmt.Errorf("knowledge: get collection stats failed: %w", err)
+	}
+	for _, key := range []string{"row_count", "num_entities"} {
+		if raw, ok := stats[key]; ok {
+			n, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil {
+				return 0, fmt.Errorf("knowledge: parse collection stat %s=%q failed: %w", key, raw, err)
+			}
+			return n, nil
+		}
+	}
+	return 0, fmt.Errorf("knowledge: collection stats missing row_count")
+}
+
+func CountPaperChunks(ctx context.Context, ownerID, paperID string) (int64, error) {
+	if trpcStore == nil {
+		return 0, fmt.Errorf("knowledge: trpc store not initialized")
+	}
+	n, err := trpcStore.Count(ctx, vectorstore.WithCountFilter(paperChunkFilter(ownerID, paperID)))
+	if err != nil {
+		return 0, fmt.Errorf("knowledge: count paper chunks failed: %w", err)
+	}
+	return int64(n), nil
+}
+
+func paperChunkFilter(ownerID, paperID string) map[string]any {
+	return map[string]any{
+		constant.MilvusFieldKnowledgeScope: string(constant.KnowledgeScopePrivate),
+		constant.MilvusFieldStudentID:      ownerID,
+		constant.MilvusFieldDocID:          paperID,
+	}
+}
+
 // DeletePaperChunks removes all private chunks for one uploaded paper.
 func DeletePaperChunks(ctx context.Context, ownerID, paperID string) error {
 	if trpcStore == nil {
 		return fmt.Errorf("knowledge: trpc store 未初始化")
 	}
-	filter := map[string]any{
-		constant.MilvusFieldKnowledgeScope: string(constant.KnowledgeScopePrivate),
-		constant.MilvusFieldStudentID:      ownerID,
-		constant.MilvusFieldDocID:          paperID,
-	}
-	if err := trpcStore.DeleteByFilter(ctx, vectorstore.WithDeleteFilter(filter)); err != nil {
+	if err := trpcStore.DeleteByFilter(ctx, vectorstore.WithDeleteFilter(paperChunkFilter(ownerID, paperID))); err != nil {
 		return fmt.Errorf("knowledge: 删除论文 chunks 失败: %w", err)
 	}
 	return nil
@@ -109,6 +180,10 @@ func Embed(ctx context.Context, text string) ([]float64, error) {
 
 // Close 关闭 trpc vectorstore 的 Milvus 连接,在服务关停时调用。
 func Close() error {
+	if statsCli != nil {
+		_ = statsCli.Close(context.Background())
+		statsCli = nil
+	}
 	if trpcStore == nil {
 		return nil
 	}
