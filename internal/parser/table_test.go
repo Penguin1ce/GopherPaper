@@ -13,14 +13,14 @@ func TestTableToMarkdownSimple(t *testing.T) {
 }
 
 func TestTableToMarkdownSpan(t *testing.T) {
-	// colspan 表头平铺到每列,rowspan 纵向填充。
+	// colspan/rowspan 只在锚点格保留文本,覆盖格留空,避免跨格内容重复膨胀。
 	html := `<table>` +
 		`<tr><td rowspan="2">Model</td><td colspan="2">BLEU</td></tr>` +
 		`<tr><td>EN-DE</td><td>EN-FR</td></tr>` +
 		`<tr><td>X</td><td>1</td><td>2</td></tr>` +
 		`</table>`
 	got := tableToMarkdown(html)
-	want := "| Model | BLEU | BLEU |\n| --- | --- | --- |\n| Model | EN-DE | EN-FR |\n| X | 1 | 2 |"
+	want := "| Model | BLEU |  |\n| --- | --- | --- |\n|  | EN-DE | EN-FR |\n| X | 1 | 2 |"
 	if got != want {
 		t.Fatalf("跨格表格转换不符:\n got=%q\nwant=%q", got, want)
 	}
