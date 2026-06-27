@@ -22,12 +22,16 @@ import type {
   AuthUser,
   Message,
   Paper,
+  PasswordResetCodePayload,
   PlanStep,
   RegisterPayload,
   ReportRun,
   ReportsStatus,
   ReportType,
+  ResetPasswordPayload,
   Session,
+  UpdateEmailPayload,
+  UpdateProfilePayload,
 } from "./types";
 import { chatSessions, isSettled, paperTitle, sessionsForPaper } from "./utils";
 
@@ -81,7 +85,14 @@ interface AppContextValue {
   login: (studentID: string, password: string) => Promise<void>;
   registerAndLogin: (payload: RegisterPayload) => Promise<void>;
   sendCode: (email: string) => Promise<void>;
-  logout: () => void;
+  sendPasswordResetCode: (payload: PasswordResetCodePayload) => Promise<void>;
+  resetPassword: (payload: ResetPasswordPayload) => Promise<void>;
+  logout: (notifyServer?: boolean) => void;
+  refreshUser: () => Promise<void>;
+  updateProfile: (payload: UpdateProfilePayload) => Promise<void>;
+  updateEmail: (payload: UpdateEmailPayload) => Promise<void>;
+  updateAvatar: (file: File) => Promise<void>;
+  clearAvatar: () => Promise<void>;
   refreshPapers: (query?: string) => Promise<void>;
   uploadPaper: (file: File) => Promise<void>;
   removePaper: (id: string) => Promise<void>;
@@ -577,14 +588,21 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     setUser(saved.user);
     setTokenState(saved.token);
     api.setToken(saved.token);
+    api.me().then((profile) => persist(profile, saved.token)).catch(() => {});
     bootstrapSession(saved.token).catch(() => logout(false));
-  }, [bootstrapSession, logout]);
+  }, [bootstrapSession, logout, persist]);
 
   const login = useCallback(
     async (studentID: string, password: string) => {
       const data = await api.login(studentID, password);
       persist(
-        { student_id: data.student_id, name: data.name, email: data.email },
+        {
+          student_id: data.student_id,
+          name: data.name,
+          email: data.email,
+          avatar_url: data.avatar_url,
+          class_id: data.class_id,
+        },
         data.token,
       );
       await bootstrapSession(data.token);
@@ -608,6 +626,61 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     },
     [toast],
   );
+
+  const sendPasswordResetCode = useCallback(
+    async (payload: PasswordResetCodePayload) => {
+      await api.sendPasswordResetCode(payload);
+      toast("如果账号与邮箱匹配，验证码已发送");
+    },
+    [toast],
+  );
+
+  const resetPassword = useCallback(
+    async (payload: ResetPasswordPayload) => {
+      await api.resetPassword(payload);
+      toast("密码已重置，请重新登录");
+    },
+    [toast],
+  );
+
+  const refreshUser = useCallback(async () => {
+    const profile = await api.me();
+    persist(profile, token);
+  }, [persist, token]);
+
+  const updateProfile = useCallback(
+    async (payload: UpdateProfilePayload) => {
+      const profile = await api.updateProfile(payload);
+      persist(profile, token);
+      toast("个人资料已更新");
+    },
+    [persist, toast, token],
+  );
+
+  const updateEmail = useCallback(
+    async (payload: UpdateEmailPayload) => {
+      await api.updateEmail(payload);
+      toast("邮箱已更新，请重新登录");
+    },
+    [toast],
+  );
+
+  const updateAvatar = useCallback(
+    async (file: File) => {
+      const data = await api.uploadAvatar(file);
+      const nextUser = user ? { ...user, avatar_url: data.avatar_url } : null;
+      persist(nextUser, token);
+      toast("头像已更新");
+    },
+    [persist, toast, token, user],
+  );
+
+  const clearAvatar = useCallback(async () => {
+    await api.clearAvatar();
+    const nextUser = user ? { ...user, avatar_url: "" } : null;
+    persist(nextUser, token);
+    toast("已恢复默认头像");
+  }, [persist, toast, token, user]);
 
   const uploadPaper = useCallback(
     async (file: File) => {
@@ -898,7 +971,14 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       login,
       registerAndLogin,
       sendCode,
+      sendPasswordResetCode,
+      resetPassword,
       logout,
+      refreshUser,
+      updateProfile,
+      updateEmail,
+      updateAvatar,
+      clearAvatar,
       refreshPapers,
       uploadPaper,
       removePaper,
@@ -930,7 +1010,14 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       login,
       registerAndLogin,
       sendCode,
+      sendPasswordResetCode,
+      resetPassword,
       logout,
+      refreshUser,
+      updateProfile,
+      updateEmail,
+      updateAvatar,
+      clearAvatar,
       refreshPapers,
       uploadPaper,
       removePaper,

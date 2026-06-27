@@ -32,10 +32,45 @@ type LoginRequest struct {
 	Password  string `json:"password" binding:"required"`
 }
 
+type PasswordResetCodeRequest struct {
+	StudentID string `json:"student_id" binding:"required"`
+	Email     string `json:"email" binding:"required,email"`
+}
+
+type ResetPasswordRequest struct {
+	StudentID string `json:"student_id" binding:"required"`
+	Email     string `json:"email" binding:"required,email"`
+	Code      string `json:"code" binding:"required,len=6"`
+	Password  string `json:"password" binding:"required,min=6"`
+}
+
 // LoginResponse 登录成功返回 JWT 与基本信息。
 type LoginResponse struct {
 	Token     string `json:"token"`
 	StudentID string `json:"student_id"`
 	Name      string `json:"name"`
 	Email     string `json:"email"`
+	AvatarURL string `json:"avatar_url"`
+	ClassID   string `json:"class_id"`
+}
+
+type AvatarResponse struct {
+	AvatarURL string `json:"avatar_url"`
+}
+
+type UserProfileResponse struct {
+	StudentID string `json:"student_id"`
+	Name      string `json:"name"`
+	Email     string `json:"email"`
+	AvatarURL string `json:"avatar_url"`
+	ClassID   string `json:"class_id"`
+}
+
+type UpdateProfileRequest struct {
+	Name string `json:"name"`
+}
+
+type UpdateEmailRequest struct {
+	Email string `json:"email" binding:"required,email"`
+	Code  string `json:"code" binding:"required,len=6"`
 }

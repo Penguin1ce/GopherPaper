@@ -1,4 +1,4 @@
-// Package router 装配 gin 引擎与路由，处理函数来自 handler 包。
+// Package router 装配 gin 引擎与路由。
 package router
 
 import (
@@ -21,13 +21,12 @@ import (
 	"GopherPaper/internal/zlog"
 )
 
-// Init 构建 gin 引擎。mode 为运行模式，依赖已由各包 Init 初始化。
+// Init 构建 gin 引擎。依赖必须在启动阶段完成初始化。
 func Init(mode string) *gin.Engine {
 	gin.SetMode(mode)
 	docs.SwaggerInfo.BasePath = "/api/v1"
 
 	r := gin.New()
-	// 访问日志与 panic 恢复都写到 zlog 的输出目标，和应用日志同去向（文件或 stdout）。
 	r.Use(gin.LoggerWithWriter(zlog.Writer()), gin.RecoveryWithWriter(zlog.Writer()))
 
 	r.GET("/swagger", func(c *gin.Context) {
@@ -42,43 +41,43 @@ func Init(mode string) *gin.Engine {
 
 	api := r.Group("/api/v1")
 	{
-		// 公开接口：签发 token。
 		api.POST("/auth/token", handler.Token)
 
 		// 公开接口：用户注册登录与邮箱验证码。
 		api.POST("/user/send-code", user.SendCode) // 下发邮箱验证码
 		api.POST("/user/register", user.Register)  // 校验验证码并注册
 		api.POST("/user/login", user.Login)        // 登录签发 JWT
+		api.POST("/user/password-reset/send-code", user.SendPasswordResetCode)
+		api.POST("/user/password-reset", user.ResetPassword)
+		api.GET("/user/avatar-files/:name", user.AvatarFile)
 		api.POST("/admin/send-code", adminhandler.SendCode)
 		api.POST("/admin/register", adminhandler.Register)
 		api.POST("/admin/login", adminhandler.Login)
 
-		// SSE 订阅解析进度，鉴权走 query token(EventSource 带不了头)。
 		api.GET("/events", ssehandler.Subscribe)
-
-		// 取召回引用的图片，img 标签带不了头，鉴权走 query token。
 		api.GET("/papers/:id/figures/:name", paperhandler.Figure)
-
-		// 取原始 PDF，pdf.js 带不了头，鉴权走 query token。
 		api.GET("/papers/:id/file", paperhandler.File)
 
-		// 受保护接口：JWT 校验后注入租户身份。
 		authed := api.Group("")
 		authed.Use(middleware.JWTAuth())
 		{
-			// 登出：清登录态与该用户常驻的 agent/模型缓存。
-			authed.POST("/user/logout", user.Logout) // 注销当前登录
+			authed.GET("/user/me", user.Me)
+			authed.POST("/user/profile", user.UpdateProfile)
+			authed.PATCH("/user/profile", user.UpdateProfile)
+			authed.POST("/user/email", user.UpdateEmail)
+			authed.POST("/user/logout", user.Logout)
+			authed.POST("/user/avatar", user.UploadAvatar)
+			authed.DELETE("/user/avatar", user.ClearAvatar)
 
-			// 论文上传与管理。
-			authed.POST("/papers", paperhandler.Upload)                  // 上传 PDF，触发异步解析
-			authed.GET("/papers", paperhandler.List)                     // 列出我的论文
-			authed.GET("/papers/search", paperhandler.Search)            // 历史文献检索
-			authed.GET("/papers/:id", paperhandler.Detail)               // 论文详情与结构化元信息
-			authed.DELETE("/papers/:id", paperhandler.Delete)            // 删除本人论文及派生数据
-			authed.GET("/papers/:id/status", paperhandler.Status)        // 解析状态兜底查询
-			authed.GET("/papers/:id/reports", paperhandler.Reports)      // 列出已生成的研读报告类型
-			authed.POST("/papers/:id/report", paperhandler.Report)       // 生成研读报告
-			authed.POST("/papers/:id/translate", paperhandler.Translate) // 精读页逐段翻译
+			authed.POST("/papers", paperhandler.Upload)
+			authed.GET("/papers", paperhandler.List)
+			authed.GET("/papers/search", paperhandler.Search)
+			authed.GET("/papers/:id", paperhandler.Detail)
+			authed.DELETE("/papers/:id", paperhandler.Delete)
+			authed.GET("/papers/:id/status", paperhandler.Status)
+			authed.GET("/papers/:id/reports", paperhandler.Reports)
+			authed.POST("/papers/:id/report", paperhandler.Report)
+			authed.POST("/papers/:id/translate", paperhandler.Translate)
 
 			// 知识图谱：论文关系发现与研究趋势,按用户隔离。
 			authed.GET("/graph/overview", graphhandler.Overview) // 图谱规模总览
@@ -90,12 +89,11 @@ func Init(mode string) *gin.Engine {
 			authed.POST("/graph/papers/:id/rebuild", graphhandler.RebuildPaper)
 			authed.GET("/graph/papers/:id/related", graphhandler.Related) // 与某篇论文相关的论文
 
-			// 会话与多轮论文问答。
-			authed.POST("/sessions", chathandler.CreateSession)            // 新建会话，可绑定论文
-			authed.GET("/sessions", chathandler.ListSessions)              // 列出我的会话
-			authed.DELETE("/sessions/:id", chathandler.DeleteSession)      // 删除会话
-			authed.GET("/sessions/:id/messages", chathandler.ListMessages) // 拉取历史消息
-			authed.POST("/sessions/:id/messages", chathandler.SendMessage) // 发消息，Host 路由专家
+			authed.POST("/sessions", chathandler.CreateSession)
+			authed.GET("/sessions", chathandler.ListSessions)
+			authed.DELETE("/sessions/:id", chathandler.DeleteSession)
+			authed.GET("/sessions/:id/messages", chathandler.ListMessages)
+			authed.POST("/sessions/:id/messages", chathandler.SendMessage)
 		}
 
 		adminAuthed := api.Group("/admin")

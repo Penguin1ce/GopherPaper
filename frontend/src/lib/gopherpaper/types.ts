@@ -144,12 +144,41 @@ export interface LoginResponse {
   student_id: string;
   name: string;
   email: string;
+  avatar_url?: string;
+  class_id?: string;
 }
 
 export interface AuthUser {
   student_id: string;
   name: string;
   email: string;
+  avatar_url?: string;
+  class_id?: string;
+}
+
+export interface AvatarResponse {
+  avatar_url: string;
+}
+
+export type UserProfile = AuthUser;
+
+export interface UpdateProfilePayload {
+  name: string;
+}
+
+export interface UpdateEmailPayload {
+  email: string;
+  code: string;
+}
+
+export interface PasswordResetCodePayload {
+  student_id: string;
+  email: string;
+}
+
+export interface ResetPasswordPayload extends PasswordResetCodePayload {
+  code: string;
+  password: string;
 }
 
 export type ReportType =

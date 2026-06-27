@@ -30,7 +30,7 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { useApp } from "@/lib/gopherpaper/store";
 import { useGuard } from "./app-ui";
 
-type AuthMode = "landing" | "login" | "register";
+type AuthMode = "landing" | "login" | "register" | "forgot";
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 
@@ -49,6 +49,17 @@ const AGENTS = [
   { name: "小囊鼠", role: "知识管理", icon: Library },
 ] as const;
 
+function useHydrationSafeReducedMotion() {
+  const reduce = useReducedMotion();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  return mounted ? Boolean(reduce) : false;
+}
+
 /* 磁吸 — 元素向光标轻微靠拢,motion value 走在 render 之外 */
 function Magnetic({
   children,
@@ -59,7 +70,7 @@ function Magnetic({
   strength?: number;
   className?: string;
 }) {
-  const reduce = useReducedMotion();
+  const reduce = useHydrationSafeReducedMotion();
   const ref = useRef<HTMLDivElement>(null);
   const x = useMotionValue(0);
   const y = useMotionValue(0);
@@ -91,7 +102,7 @@ function Magnetic({
 
 /* 视差倾斜 — 卡片随光标做轻微 3D 偏转,克制在 ±6deg */
 function Tilt({ children, className }: { children: React.ReactNode; className?: string }) {
-  const reduce = useReducedMotion();
+  const reduce = useHydrationSafeReducedMotion();
   const ref = useRef<HTMLDivElement>(null);
   const rx = useMotionValue(0);
   const ry = useMotionValue(0);
@@ -124,12 +135,19 @@ function Tilt({ children, className }: { children: React.ReactNode; className?: 
 }
 
 export function AuthView() {
-  const { login, registerAndLogin, sendCode } = useApp();
+  const { login, registerAndLogin, resetPassword, sendCode, sendPasswordResetCode, toast } = useApp();
   const guard = useGuard();
   const [mode, setMode] = useState<AuthMode>("landing");
   const [busy, setBusy] = useState(false);
   const [codeBusy, setCodeBusy] = useState(false);
   const [loginForm, setLoginForm] = useState({ student_id: "", password: "" });
+  const [resetForm, setResetForm] = useState({
+    student_id: "",
+    email: "",
+    code: "",
+    password: "",
+    confirm: "",
+  });
   const [reg, setReg] = useState({
     student_id: "",
     name: "",
@@ -172,6 +190,37 @@ export function AuthView() {
     );
   };
 
+  const onSendResetCode = () => {
+    if (!resetForm.student_id.trim() || !resetForm.email.trim()) return;
+    setCodeBusy(true);
+    guard(() =>
+      sendPasswordResetCode({
+        student_id: resetForm.student_id.trim(),
+        email: resetForm.email.trim(),
+      }),
+    ).finally(() => window.setTimeout(() => setCodeBusy(false), 900));
+  };
+
+  const onResetPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    if (resetForm.password !== resetForm.confirm) {
+      toast("两次输入的新密码不一致", "error");
+      return;
+    }
+    setBusy(true);
+    guard(async () => {
+      await resetPassword({
+        student_id: resetForm.student_id.trim(),
+        email: resetForm.email.trim(),
+        code: resetForm.code.trim(),
+        password: resetForm.password,
+      });
+      setLoginForm({ student_id: resetForm.student_id.trim(), password: "" });
+      setMode("login");
+    }).finally(() => setBusy(false));
+  };
+
   return (
     <main className="relative isolate min-h-dvh overflow-hidden bg-background">
       <Backdrop />
@@ -193,9 +242,13 @@ export function AuthView() {
               setLoginForm={setLoginForm}
               reg={reg}
               setReg={setReg}
+              resetForm={resetForm}
+              setResetForm={setResetForm}
               onLogin={onLogin}
               onRegister={onRegister}
               onSendCode={onSendCode}
+              onSendResetCode={onSendResetCode}
+              onResetPassword={onResetPassword}
             />
           )}
         </AnimatePresence>
@@ -281,7 +334,7 @@ function TopNav({ mode, setMode }: { mode: AuthMode; setMode: (m: AuthMode) => v
 /* ---------------- 落地页 ---------------- */
 
 function Landing({ onStart, onRegister }: { onStart: () => void; onRegister: () => void }) {
-  const reduce = useReducedMotion();
+  const reduce = useHydrationSafeReducedMotion();
   const rise = (delay: number) =>
     reduce
       ? { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { duration: 0.3, delay } }
@@ -381,7 +434,7 @@ function Landing({ onStart, onRegister }: { onStart: () => void; onRegister: () 
 /* ---------------- 拟真工作台演示 ---------------- */
 
 function Console() {
-  const reduce = useReducedMotion();
+  const reduce = useHydrationSafeReducedMotion();
   const [step, setStep] = useState(reduce ? PIPELINE.length - 1 : 0);
 
   useEffect(() => {
@@ -561,14 +614,33 @@ type AuthPanelProps = {
       code: string;
     }>
   >;
+  resetForm: {
+    student_id: string;
+    email: string;
+    code: string;
+    password: string;
+    confirm: string;
+  };
+  setResetForm: React.Dispatch<
+    React.SetStateAction<{
+      student_id: string;
+      email: string;
+      code: string;
+      password: string;
+      confirm: string;
+    }>
+  >;
   onLogin: (e: React.FormEvent) => void;
   onRegister: (e: React.FormEvent) => void;
   onSendCode: () => void;
+  onSendResetCode: () => void;
+  onResetPassword: (e: React.FormEvent) => void;
 };
 
 function AuthPanel(props: AuthPanelProps) {
   const { mode, setMode } = props;
   const isLogin = mode === "login";
+  const isForgot = mode === "forgot";
 
   return (
     <motion.section
@@ -585,10 +657,14 @@ function AuthPanel(props: AuthPanelProps) {
       >
         <div className="mb-6">
           <h1 className="font-serif text-[1.7rem] font-semibold tracking-tight">
-            {isLogin ? "进入工作台" : "创建账号"}
+            {isForgot ? "重置密码" : isLogin ? "进入工作台" : "创建账号"}
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            {isLogin ? "使用学号登录,继续你的论文研读。" : "用邮箱验证码注册,开启你的研究工作台。"}
+            {isForgot
+              ? "验证你的绑定邮箱,设置一个新的登录密码。"
+              : isLogin
+                ? "使用学号登录,继续你的论文研读。"
+                : "用邮箱验证码注册,开启你的研究工作台。"}
           </p>
         </div>
 
@@ -610,7 +686,17 @@ function AuthPanel(props: AuthPanelProps) {
         </div>
 
         <AnimatePresence mode="wait">
-          {isLogin ? (
+          {isForgot ? (
+            <motion.div
+              key="forgot"
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -8 }}
+              transition={{ duration: 0.25, ease: EASE_OUT }}
+            >
+              <ResetPasswordForm {...props} />
+            </motion.div>
+          ) : isLogin ? (
             <motion.div
               key="login"
               initial={{ opacity: 0, x: -8 }}
@@ -634,7 +720,18 @@ function AuthPanel(props: AuthPanelProps) {
         </AnimatePresence>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          {isLogin ? (
+          {isForgot ? (
+            <>
+              想起密码了？
+              <button
+                type="button"
+                onClick={() => setMode("login")}
+                className="ml-1 font-medium text-sienna hover:underline"
+              >
+                返回登录
+              </button>
+            </>
+          ) : isLogin ? (
             <>
               还没有账号？
               <button
@@ -663,7 +760,7 @@ function AuthPanel(props: AuthPanelProps) {
   );
 }
 
-function LoginForm({ busy, loginForm, setLoginForm, onLogin }: AuthPanelProps) {
+function LoginForm({ busy, loginForm, setLoginForm, setMode, onLogin }: AuthPanelProps) {
   return (
     <form className="space-y-4" onSubmit={onLogin}>
       <div className="space-y-2">
@@ -677,7 +774,16 @@ function LoginForm({ busy, loginForm, setLoginForm, onLogin }: AuthPanelProps) {
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="password">密码</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="password">密码</Label>
+          <button
+            type="button"
+            onClick={() => setMode("forgot")}
+            className="text-xs font-medium text-sienna transition-colors hover:text-sienna/80 hover:underline"
+          >
+            忘记密码？
+          </button>
+        </div>
         <PasswordInput
           id="password"
           value={loginForm.password}
@@ -689,6 +795,94 @@ function LoginForm({ busy, loginForm, setLoginForm, onLogin }: AuthPanelProps) {
       <Button className="h-11 w-full gap-2" type="submit" disabled={busy}>
         {busy && <Loader2 className="size-4 animate-spin" />}
         登录
+        {!busy && <ArrowRight className="size-4" />}
+      </Button>
+    </form>
+  );
+}
+
+function ResetPasswordForm({
+  busy,
+  codeBusy,
+  resetForm,
+  setResetForm,
+  onResetPassword,
+  onSendResetCode,
+}: AuthPanelProps) {
+  const canSendCode = Boolean(resetForm.student_id.trim() && resetForm.email.trim());
+  return (
+    <form className="space-y-4" onSubmit={onResetPassword}>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label htmlFor="reset_student">学号</Label>
+          <Input
+            id="reset_student"
+            value={resetForm.student_id}
+            autoComplete="username"
+            required
+            onChange={(e) => setResetForm({ ...resetForm, student_id: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="reset_email">绑定邮箱</Label>
+          <Input
+            id="reset_email"
+            type="email"
+            value={resetForm.email}
+            autoComplete="email"
+            required
+            onChange={(e) => setResetForm({ ...resetForm, email: e.target.value })}
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="reset_code">邮箱验证码</Label>
+        <div className="flex gap-2">
+          <Input
+            id="reset_code"
+            value={resetForm.code}
+            inputMode="numeric"
+            maxLength={6}
+            required
+            onChange={(e) => setResetForm({ ...resetForm, code: e.target.value })}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onSendResetCode}
+            disabled={codeBusy || !canSendCode}
+          >
+            {codeBusy ? "已发送" : "验证码"}
+          </Button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label htmlFor="reset_password">新密码</Label>
+          <PasswordInput
+            id="reset_password"
+            value={resetForm.password}
+            autoComplete="new-password"
+            minLength={6}
+            required
+            onChange={(e) => setResetForm({ ...resetForm, password: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="reset_confirm">确认密码</Label>
+          <PasswordInput
+            id="reset_confirm"
+            value={resetForm.confirm}
+            autoComplete="new-password"
+            minLength={6}
+            required
+            onChange={(e) => setResetForm({ ...resetForm, confirm: e.target.value })}
+          />
+        </div>
+      </div>
+      <Button className="h-11 w-full gap-2" type="submit" disabled={busy}>
+        {busy && <Loader2 className="size-4 animate-spin" />}
+        重置密码
         {!busy && <ArrowRight className="size-4" />}
       </Button>
     </form>
