@@ -13,6 +13,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 
 	"GopherPaper/internal/ai/agentrt"
 	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/ai/planstream"
 	"GopherPaper/internal/ai/ragagent"
 	"GopherPaper/internal/ai/retrieval"
 	"GopherPaper/internal/aimodel"
@@ -82,6 +84,10 @@ func agenticRAG(ctx context.Context, query string, intent constant.IntentType, h
 	ctx = retrieval.WithRefSink(ctx)
 	content, err := ragagent.Generate(ctx, constant.AgenticRAGPromptFor(intent), history, query, policyFor(intent))
 	if err != nil {
+		if errors.Is(err, planstream.ErrPseudoToolCall) {
+			zlog.Warn("agentic RAG 输出伪工具调用,降级单轮 RAG", "intent", intent, "err", err)
+			return singleShotRAG(ctx, query, history, intent)
+		}
 		return nil, err
 	}
 	reply := &core.Reply{Content: content, Intent: intent}
@@ -102,7 +108,10 @@ func policyFor(intent constant.IntentType) ragagent.Policy {
 // factRAG 是 fact 子类的单轮快路径:预检索正文与图块各一次拼进 system prompt,命中图随 query 发给
 // 多模态 chat 模型,单轮生成并收集出处进 Meta(保持改造前的事实定位行为不变)。
 func factRAG(ctx context.Context, query string, history []trpcmodel.Message) (*core.Reply, error) {
-	const intent = constant.IntentFact
+	return singleShotRAG(ctx, query, history, constant.IntentFact)
+}
+
+func singleShotRAG(ctx context.Context, query string, history []trpcmodel.Message, intent constant.IntentType) (*core.Reply, error) {
 	owner := tenant.MustStudentID(ctx)
 	paperID := core.PaperIDFrom(ctx)
 	docs, err := retrieval.RetrieveForPaper(ctx, query, owner, paperID)

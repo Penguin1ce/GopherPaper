@@ -1,8 +1,13 @@
 package planstream
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
+
+	"trpc.group/trpc-go/trpc-agent-go/event"
+	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
 
 	"GopherPaper/internal/ai/core"
 	"GopherPaper/pkg/constant"
@@ -107,6 +112,39 @@ func TestPlanSplitter_EndTurnResetsSection(t *testing.T) {
 	}
 }
 
+func TestPlanSplitter_UntaggedPreambleSuppressed(t *testing.T) {
+	sp, c := newCapture()
+	sp.feed("1. 先明确问题\n2. 调用 search_paper 检索 <IFunctionCallBegin>")
+	if strings.TrimSpace(c.delta) != "" {
+		t.Fatalf("未进入 FINAL_ANSWER 前的无标签内容不应流入正文: %q", c.delta)
+	}
+	if len(c.plan) != 0 {
+		t.Fatalf("无标签内容也不应伪装成计划事件: %+v", c.plan)
+	}
+}
+
+func TestCollectEvents_PseudoToolCallRejected(t *testing.T) {
+	content := `1. 首先需要明确用户所指的"他们"对应的具体论文研究
+2. 调用search_paper检索当前论文中的核心创新点相关内容 <IFunctionCallBegin>[{"name":"search_paper","parameters":{"query":"论文核心创新点"}}]<IFunctionCallEnd>`
+	ch := make(chan *event.Event, 1)
+	ch <- &event.Event{Response: &trpcmodel.Response{
+		Object: trpcmodel.ObjectTypeChatCompletion,
+		Choices: []trpcmodel.Choice{{
+			Message: trpcmodel.Message{Content: content},
+		}},
+	}}
+	close(ch)
+	if _, err := CollectEvents(context.Background(), ch); !errors.Is(err, ErrPseudoToolCall) {
+		t.Fatalf("CollectEvents err = %v, want ErrPseudoToolCall", err)
+	}
+	if got := extractFinalAnswer(content); strings.Contains(got, "IFunctionCall") {
+		t.Fatalf("伪工具调用标记不应保留在提取结果里: %q", got)
+	}
+	if !containsPseudoToolCall(content) || hasFinalAnswerMarker(content) {
+		t.Fatalf("测试样例应识别为无最终答案的伪工具调用")
+	}
+}
+
 func TestExtractFinalAnswer(t *testing.T) {
 	cases := []struct {
 		name, in, want string
@@ -128,6 +166,7 @@ func TestExtractFinalAnswer(t *testing.T) {
 		{"无终答标签_唯一旁白段不删空", "/*ACTION*/我将为你下单一杯冰美式", "我将为你下单一杯冰美式"},
 		// FINAL_ANSWER 标签后为空时回退到取最后过程标签之后的内容。
 		{"空终答标签回退过程标签", "/*ACTION*/我先查一下\n\n这是结果/*FINAL_ANSWER*/", "这是结果"},
+		{"伪工具调用有终答时剥离", "过程<IFunctionCallBegin>[{}]<IFunctionCallEnd>/*FINAL_ANSWER*/真正答案", "真正答案"},
 		{"空", "   ", ""},
 	}
 	for _, c := range cases {

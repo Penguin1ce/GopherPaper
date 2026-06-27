@@ -6,6 +6,7 @@ package planstream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -17,6 +18,10 @@ import (
 	"GopherPaper/internal/ai/core"
 	"GopherPaper/pkg/constant"
 )
+
+// ErrPseudoToolCall 表示模型把工具调用协议标记当普通文本吐出,框架没有真正执行工具。
+// 这类内容不能作为用户答案展示,上层可降级到更稳的单轮 RAG。
+var ErrPseudoToolCall = errors.New("planstream: 模型输出了未执行的文本工具调用")
 
 // planTags 把 planner 标签映射到对外 phase,FINAL_ANSWER 段 phase 为空表示走正文 delta。
 var planTags = []struct{ tag, phase string }{
@@ -82,7 +87,11 @@ func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) 
 			sp.endTurn() // 轮次边界重置,防止下一轮无标签内容污染计划栏
 		}
 	}
+	pseudoTool := containsPseudoToolCall(lastContent)
 	answer := extractFinalAnswer(lastContent)
+	if pseudoTool && !hasFinalAnswerMarker(lastContent) {
+		return "", ErrPseudoToolCall
+	}
 	if answer == "" {
 		return "", fmt.Errorf("planstream: 模型返回空内容")
 	}
@@ -95,6 +104,7 @@ type planSplitter struct {
 	emit        core.StreamHandler
 	buf         string // 尚未分类的尾巴,可能含半个标签
 	section     string // 当前段 phase,空串表示 FINAL_ANSWER 正文
+	bodyStarted bool   // 当前轮是否已经显式进入 FINAL_ANSWER 段
 	turnHadBody bool   // 当前轮是否已外发过正文增量
 	everHadBody bool   // 全程是否已外发过正文增量(用于跨轮重置)
 }
@@ -108,6 +118,7 @@ func newPlanSplitter(emit core.StreamHandler) *planSplitter {
 func (s *planSplitter) endTurn() {
 	s.buf = ""
 	s.section = ""
+	s.bodyStarted = false
 	s.turnHadBody = false
 }
 
@@ -125,6 +136,9 @@ func (s *planSplitter) feed(delta string) {
 		}
 		s.flush(s.buf[:idx]) // 标签前的文本属当前段
 		s.section = phase    // 切段并丢弃标签本身
+		if phase == "" {
+			s.bodyStarted = true
+		}
 		s.buf = s.buf[idx+len(tag):]
 	}
 }
@@ -137,6 +151,9 @@ func (s *planSplitter) flush(text string) {
 		return
 	}
 	if s.section == "" {
+		if !s.bodyStarted {
+			return
+		}
 		reset := !s.turnHadBody && s.everHadBody
 		s.turnHadBody = true
 		s.everHadBody = true
@@ -189,6 +206,10 @@ func extractFinalAnswer(full string) string {
 	if full == "" {
 		return ""
 	}
+	full = stripPseudoToolCalls(full)
+	if full == "" {
+		return ""
+	}
 	if idx := strings.LastIndex(full, react.FinalAnswerTag); idx >= 0 {
 		if ans := strings.TrimSpace(full[idx+len(react.FinalAnswerTag):]); ans != "" {
 			return ans
@@ -208,6 +229,20 @@ func extractFinalAnswer(full string) string {
 		}
 	}
 	return full
+}
+
+func containsPseudoToolCall(s string) bool {
+	return strings.Contains(s, "<IFunctionCallBegin>") || strings.Contains(s, "<FunctionCallBegin>")
+}
+
+func hasFinalAnswerMarker(s string) bool {
+	return strings.Contains(s, react.FinalAnswerTag) || strings.Contains(strings.ToUpper(s), finalAnswerPrefix)
+}
+
+var pseudoToolCallBlock = regexp.MustCompile(`(?s)<I?FunctionCallBegin>.*?<I?FunctionCallEnd>`)
+
+func stripPseudoToolCalls(s string) string {
+	return strings.TrimSpace(pseudoToolCallBlock.ReplaceAllString(s, ""))
 }
 
 // lastProcessTag 找最后一个过程标签(规划/重规划/动作/思考,不含 FINAL_ANSWER)的下标与字面量,无则 -1。
