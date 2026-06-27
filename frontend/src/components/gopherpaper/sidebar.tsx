@@ -57,7 +57,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
       <div className="space-y-2 p-4">
         <Button
           type="button"
-          variant="outline"
+          variant="default"
           className="h-10 w-full justify-start"
           onClick={() =>
             guard(async () => {
