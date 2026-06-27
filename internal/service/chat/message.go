@@ -10,6 +10,7 @@ import (
 	chatdao "GopherPaper/internal/dao/chat"
 	"GopherPaper/internal/history"
 	"GopherPaper/internal/model"
+	"GopherPaper/internal/service/metrics"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 )
@@ -19,18 +20,27 @@ import (
 // 返回的助教消息 ID 为空，CreatedAt 为应答时刻，落 Session 后真实事件 ID 由 ListMessages 还原。
 func SendMessage(ctx context.Context, studentID, sessionID, query string) (*model.Message, map[string]any, error) {
 	start := time.Now()
+	metricSuccess := false
+	var metricErr error
+	metricPaperID := ""
+	defer func() {
+		metrics.Record(ctx, metrics.ServiceChat, studentID, metricPaperID, sessionID, metricSuccess, time.Since(start), metricErr)
+	}()
 
 	sess, err := ownedSession(ctx, studentID, sessionID)
 	if err != nil {
+		metricErr = err
 		return nil, nil, err
 	}
 	// 会话绑定了论文时围绕该论文检索。
 	ctx = core.WithPaperID(ctx, sess.PaperID)
+	metricPaperID = sess.PaperID
 	checkMS := time.Since(start).Milliseconds()
 
 	step := time.Now()
 	hist, err := history.Load(ctx, studentID, sessionID, constant.MaxContextMessages)
 	if err != nil {
+		metricErr = err
 		return nil, nil, err
 	}
 	historyMS := time.Since(step).Milliseconds()
@@ -45,7 +55,8 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string) (*mode
 		reply, err = ai.Chat(ctx, hist, query)
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("service: 助教应答失败: %w", err)
+		metricErr = fmt.Errorf("service: 助教应答失败: %w", err)
+		return nil, nil, metricErr
 	}
 	aiMS := time.Since(step).Milliseconds()
 
@@ -73,5 +84,6 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string) (*mode
 		"persist_ms", persistMS,
 		"total_ms", time.Since(start).Milliseconds(),
 	)
+	metricSuccess = true
 	return aiMsg, reply.Meta, nil
 }
