@@ -134,13 +134,15 @@ function ForceEntityGraph({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [selected, setSelected] = useState<SelectedItem | null>(null);
+  const graphNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+  const graphEdges = Array.isArray(graph.edges) ? graph.edges : [];
 
   const resetLayout = () => {
     const center = { x: VIEW_W / 2, y: VIEW_H / 2 };
     const next: SimNode[] = [];
     if (mode === "detail") {
-      const others = graph.nodes.filter((n) => n.type !== "paper");
-      const paper = graph.nodes.find((n) => n.type === "paper") || graph.nodes[0];
+      const others = graphNodes.filter((n) => n.type !== "paper");
+      const paper = graphNodes.find((n) => n.type === "paper") || graphNodes[0];
       if (paper) {
         next.push({ ...paper, x: center.x, y: center.y, vx: 0, vy: 0 });
       }
@@ -156,8 +158,8 @@ function ForceEntityGraph({
         });
       });
     } else {
-      const paperNodes = graph.nodes.filter((n) => n.type === "paper");
-      const nonPaperNodes = graph.nodes.filter((n) => n.type !== "paper");
+      const paperNodes = graphNodes.filter((n) => n.type === "paper");
+      const nonPaperNodes = graphNodes.filter((n) => n.type !== "paper");
       const paperPositions = new Map<string, { x: number; y: number }>();
       const paperRing = paperNodes.length <= 1 ? 0 : clamp(40 + paperNodes.length * 10, 60, 120);
 
@@ -170,7 +172,7 @@ function ForceEntityGraph({
       });
 
       const edgePapersByNode = new Map<string, string[]>();
-      for (const edge of graph.edges) {
+      for (const edge of graphEdges) {
         const sourceIsPaper = edge.source.startsWith("paper:");
         const targetIsPaper = edge.target.startsWith("paper:");
         if (sourceIsPaper && !targetIsPaper) {
@@ -215,7 +217,7 @@ function ForceEntityGraph({
           });
           return;
         }
-        const angle = (-Math.PI / 2) + (i * Math.PI * 2) / Math.max(1, graph.nodes.length);
+        const angle = (-Math.PI / 2) + (i * Math.PI * 2) / Math.max(1, graphNodes.length);
         const ring = 70 + 15 * (i % 3);
         next.push({
           ...n,
@@ -227,7 +229,7 @@ function ForceEntityGraph({
       });
     }
     nodesRef.current = next;
-    edgesRef.current = graph.edges;
+    edgesRef.current = graphEdges;
     alphaRef.current = 0.9;
     setPan({ x: 0, y: 0 });
     setVersion((v) => v + 1);
@@ -663,9 +665,21 @@ function graphRequestErrorMessage(err: unknown, fallback: string) {
   return err instanceof api.ApiError && err.message ? err.message : fallback;
 }
 
+function normalizeEntityGraph(graph: EntityGraph | null | undefined): EntityGraph | null {
+  if (!graph || !Array.isArray(graph.nodes)) return null;
+  return {
+    nodes: graph.nodes,
+    edges: Array.isArray(graph.edges) ? graph.edges : [],
+  };
+}
+
 function mergeEntityGraphs(base: EntityGraph, addition: EntityGraph): EntityGraph {
-  const nodes = new Map(base.nodes.map((node) => [node.id, node]));
-  for (const node of addition.nodes) {
+  const baseNodes = Array.isArray(base.nodes) ? base.nodes : [];
+  const additionNodes = Array.isArray(addition.nodes) ? addition.nodes : [];
+  const baseEdges = Array.isArray(base.edges) ? base.edges : [];
+  const additionEdges = Array.isArray(addition.edges) ? addition.edges : [];
+  const nodes = new Map(baseNodes.map((node) => [node.id, node]));
+  for (const node of additionNodes) {
     const current = nodes.get(node.id);
     nodes.set(
       node.id,
@@ -674,7 +688,7 @@ function mergeEntityGraphs(base: EntityGraph, addition: EntityGraph): EntityGrap
   }
 
   const edges = new Map<string, EntityGraphEdge>();
-  for (const edge of [...base.edges, ...addition.edges]) {
+  for (const edge of [...baseEdges, ...additionEdges]) {
     const key = edge.id || `${edge.source}:${edge.type}:${edge.target}:${edge.label}`;
     if (!edges.has(key)) edges.set(key, edge);
   }
@@ -734,7 +748,7 @@ export function GraphView() {
     api
       .graphNetwork()
       .then((g) => {
-        if (!cancelled) setEntityGraph(g && Array.isArray(g.nodes) ? g : null);
+        if (!cancelled) setEntityGraph(normalizeEntityGraph(g));
       })
       .catch((err) => {
         if (!cancelled) {
@@ -759,7 +773,7 @@ export function GraphView() {
     api
       .paperEntityGraph(detailPaperID)
       .then((g) => {
-        if (!cancelled) setEntityGraph(g && Array.isArray(g.nodes) ? g : null);
+        if (!cancelled) setEntityGraph(normalizeEntityGraph(g));
       })
       .catch((err) => {
         if (!cancelled) {
@@ -783,7 +797,7 @@ export function GraphView() {
     setLoadingGraph(true);
     api
       .graphNetwork()
-      .then((g) => setEntityGraph(g && Array.isArray(g.nodes) ? g : null))
+      .then((g) => setEntityGraph(normalizeEntityGraph(g)))
       .catch((err) => {
         setEntityGraph(null);
         setGraphError(graphRequestErrorMessage(err, "总览知识图谱加载失败"));
@@ -807,12 +821,14 @@ export function GraphView() {
     api
       .paperEntityGraph(paperID)
       .then((g) => {
+        const nextGraph = normalizeEntityGraph(g);
         setEntityGraph((current) => {
-          if (!current || !Array.isArray(current.nodes)) return g && Array.isArray(g.nodes) ? g : current;
-          if (!g || !Array.isArray(g.nodes)) return current;
-          return mergeEntityGraphs(current, g);
+          const currentGraph = normalizeEntityGraph(current);
+          if (!currentGraph) return nextGraph;
+          if (!nextGraph) return currentGraph;
+          return mergeEntityGraphs(currentGraph, nextGraph);
         });
-        setGraphNotice("已在总览图谱中展开论文实体");
+        if (nextGraph) setGraphNotice("已在总览图谱中展开论文实体");
       })
       .catch((err) => {
         setGraphError(graphRequestErrorMessage(err, "论文知识图谱展开失败"));
@@ -835,7 +851,7 @@ export function GraphView() {
       api
         .rebuildGraphNetwork()
         .then((g) => {
-          setEntityGraph(g && Array.isArray(g.nodes) ? g : null);
+          setEntityGraph(normalizeEntityGraph(g));
           setGraphNotice("总览图谱已更新");
           refreshStats();
         })
@@ -858,7 +874,7 @@ export function GraphView() {
       .rebuildPaperEntityGraph(paperID)
       .then((g) => {
         setDetailPaperID(paperID);
-        setEntityGraph(g && Array.isArray(g.nodes) ? g : null);
+        setEntityGraph(normalizeEntityGraph(g));
         setGraphNotice("论文图谱已更新");
         refreshStats();
       })

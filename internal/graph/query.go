@@ -154,7 +154,7 @@ ORDER BY title`
 	if err != nil {
 		return EntityGraph{}, err
 	}
-	g := EntityGraph{}
+	g := emptyEntityGraph()
 	seenNodes := map[string]bool{}
 	seenEdges := map[string]bool{}
 
@@ -257,7 +257,7 @@ RETURN p.id AS paperID, coalesce(p.title, p.id) AS title, p.year AS year, p.venu
 		return EntityGraph{}, err
 	}
 	if len(res.Records) == 0 {
-		return EntityGraph{}, nil
+		return emptyEntityGraph(), nil
 	}
 
 	r := res.Records[0]
@@ -274,6 +274,7 @@ RETURN p.id AS paperID, coalesce(p.title, p.id) AS title, p.year AS year, p.venu
 				"venue":    asStr(r, "venue"),
 			},
 		}},
+		Edges: []EntityEdge{},
 	}
 
 	items, _ := r.Get("items")
@@ -317,6 +318,13 @@ RETURN p.id AS paperID, coalesce(p.title, p.id) AS title, p.year AS year, p.venu
 		seenEdges[edgeID] = true
 	}
 	return g, nil
+}
+
+func emptyEntityGraph() EntityGraph {
+	return EntityGraph{
+		Nodes: []EntityNode{},
+		Edges: []EntityEdge{},
+	}
 }
 
 func RelatedPapers(ctx context.Context, owner, paperID string, limit int) ([]Related, error) {
