@@ -11,9 +11,9 @@ import (
 )
 
 // SaveArtifact 把 MinerU 产物 zip 解压落盘到 destDir,保留 zip 内相对路径
-// (content_list.json、细粒度 model/middle.json 与 images/)。
+// (content_list_v2.json、layout.json 等与 images/)。
 // 供 worker 在解析成功后归档,为后续离线重建索引/重解析铺垫——改了分块或解析逻辑
-// 时可直接读归档的 content_list.json 重跑,不必重打分钟级的 MinerU 在线 API。
+// 时可直接读归档的 content_list_v2.json 重跑,不必重打分钟级的 MinerU 在线 API。
 func SaveArtifact(destDir string, zipData []byte) error {
 	if len(zipData) == 0 {
 		return fmt.Errorf("parser: 产物为空,无可归档")

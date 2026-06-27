@@ -64,6 +64,16 @@ func ListByStatus(ctx context.Context, status constant.PaperStatus) ([]model.Pap
 	return papers, nil
 }
 
+// ListAll 列出全部未删除论文,供离线维护任务按本地归档重建索引。
+func ListAll(ctx context.Context) ([]model.Paper, error) {
+	var papers []model.Paper
+	err := dao.DB.WithContext(ctx).Order("created_at desc").Find(&papers).Error
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询全部论文失败: %w", err)
+	}
+	return papers, nil
+}
+
 // attachKeywords 批量回填论文关键词。关键词在 paper_meta 表，列表不联表故单查回填，供前端做关键词筛选。
 func attachKeywords(ctx context.Context, papers []model.Paper) error {
 	if len(papers) == 0 {

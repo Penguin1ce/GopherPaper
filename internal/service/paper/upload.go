@@ -53,11 +53,15 @@ func Upload(ctx context.Context, ownerID, fileName string, data []byte) (*model.
 
 // parseTask 是投递给解析消费者的任务负载。
 type parseTask struct {
-	PaperID  string `json:"paper_id"`
-	OwnerID  string `json:"owner_id"`
-	FileURI  string `json:"file_uri"`
-	FileName string `json:"file_name"`
+	PaperID      string `json:"paper_id"`
+	OwnerID      string `json:"owner_id"`
+	FileURI      string `json:"file_uri"`
+	FileName     string `json:"file_name"`
+	Mode         string `json:"mode,omitempty"`
+	RebuildGraph bool   `json:"rebuild_graph,omitempty"`
 }
+
+const parseTaskModeMinerUArchive = "mineru_archive"
 
 func taskOf(p *model.Paper) parseTask {
 	return parseTask{PaperID: p.ID, OwnerID: p.OwnerID, FileURI: p.FileURI, FileName: p.FileName}

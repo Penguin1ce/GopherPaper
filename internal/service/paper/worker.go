@@ -40,7 +40,14 @@ func startParseWorker(ctx context.Context) error {
 				_ = d.Ack(false)
 				continue
 			}
-			runPipeline(ctx, task)
+			switch task.Mode {
+			case "", "online":
+				runPipeline(ctx, task)
+			case parseTaskModeMinerUArchive:
+				runReparsePipeline(ctx, task)
+			default:
+				zlog.Warn("未知解析任务模式,跳过", "paper_id", task.PaperID, "mode", task.Mode)
+			}
 			_ = d.Ack(false)
 		}
 		zlog.Info("解析消费者已退出")
@@ -91,17 +98,12 @@ func runPipeline(ctx context.Context, task parseTask) {
 	chunks = append(chunks, buildChunks(task, doc)...)
 	chunks = append(chunks, buildFigureChunks(task, doc)...)
 	chunks = append(chunks, buildTableChunks(task, doc)...)
+	chunks = append(chunks, buildCodeChunks(task, doc)...)
 	if !paperPresentForPipeline(ctx, task, "upsert_chunks") {
 		return
 	}
-	// 重解析先清掉该论文旧 chunk,避免内容变化后旧切分残留成孤儿(UpsertChunks 仅按本批主键删)。
-	// 首次解析时无旧数据,删除是 no-op。
-	if err := knowledge.DeletePaperChunks(ctx, task.OwnerID, task.PaperID); err != nil {
-		fail(ctx, task, "清理旧 chunks 失败", err, start)
-		return
-	}
-	if _, err := knowledge.UpsertChunks(ctx, chunks); err != nil {
-		fail(ctx, task, "写入向量库失败", err, start)
+	if err := rebuildPaperVectors(ctx, task, chunks, "online"); err != nil {
+		fail(ctx, task, "重建向量库失败", err, start)
 		return
 	}
 	setStatus(ctx, task, constant.PaperIndexed, "")
@@ -350,15 +352,16 @@ func compactStrings(values []string) []string {
 }
 
 // buildChunks 把正文段落切成带页码出处的知识块,归属上传者私有库。
-// 切分策略:把同一标题、同一页的连续碎段合并成一个块,并把章节路径前缀进正文一起
-// 向量化,让小标题语义进入向量(问"实验方法"能召回方法段);换标题、换页或累计超
-// MaxChunkRunes 即切块,保证页码出处精确、块不过大。
+// 切分策略:把同一标题下的连续碎段合并成一个块,并把章节路径前缀进正文一起
+// 向量化,让小标题语义进入向量(问"实验方法"能召回方法段);换标题或累计超
+// MaxChunkRunes 即切块。不再因翻页切——同章节正文常跨页,纯按分页切会割裂语义;
+// 页码出处取块起始页,跨页时另记终页(page_end),块仍受 MaxChunkRunes 约束不会过大。
 func buildChunks(task parseTask, doc *core.ParsedDoc) []knowledge.Chunk {
 	var chunks []knowledge.Chunk
 	var buf []string
 	var bufRunes int
 	var curSection string
-	var curPage int
+	var startPage, endPage int
 
 	flush := func() {
 		if len(buf) == 0 {
@@ -369,15 +372,19 @@ func buildChunks(task parseTask, doc *core.ParsedDoc) []knowledge.Chunk {
 		if curSection != "" {
 			content = curSection + "\n\n" + body // 标题语境进 embedding
 		}
+		meta := map[string]any{"section": curSection}
+		if endPage > startPage {
+			meta["page_end"] = endPage // 块跨页时记终页,出处页码取起始页
+		}
 		chunks = append(chunks, knowledge.Chunk{
 			Content:    content,
 			Scope:      constant.KnowledgeScopePrivate,
 			OwnerID:    task.OwnerID,
 			DocID:      task.PaperID,
 			SourceFile: task.FileName,
-			PageNo:     int64(curPage),
+			PageNo:     int64(startPage),
 			ChunkIndex: int64(len(chunks)),
-			Metadata:   map[string]any{"section": curSection},
+			Metadata:   meta,
 		})
 		buf = buf[:0]
 		bufRunes = 0
@@ -389,12 +396,15 @@ func buildChunks(task parseTask, doc *core.ParsedDoc) []knowledge.Chunk {
 			continue
 		}
 		n := len([]rune(text))
-		// 边界:换标题、换页或累计超上限,先冲刷已攒的块再开新块。
-		if len(buf) > 0 && (p.SectionPath != curSection || p.PageNo != curPage || bufRunes+n > constant.MaxChunkRunes) {
+		// 边界:换标题或累计超上限,先冲刷已攒的块再开新块;翻页不再切块。
+		if len(buf) > 0 && (p.SectionPath != curSection || bufRunes+n > constant.MaxChunkRunes) {
 			flush()
 		}
+		if len(buf) == 0 {
+			startPage = p.PageNo
+		}
 		curSection = p.SectionPath
-		curPage = p.PageNo
+		endPage = p.PageNo
 		buf = append(buf, text)
 		bufRunes += n
 	}

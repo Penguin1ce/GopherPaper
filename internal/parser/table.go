@@ -17,23 +17,28 @@ type tableCell struct {
 // 处理 colspan/rowspan:跨格值仅放在锚点格,其余覆盖格留空,避免大段文本被指数级复制,
 // 首行作表头。无法解析或无单元格时返回空串,由调用方回退按图处理。
 func tableToMarkdown(tableHTML string) string {
-	tableHTML = strings.TrimSpace(tableHTML)
-	if tableHTML == "" {
-		return ""
-	}
-	root, err := html.Parse(strings.NewReader(tableHTML))
-	if err != nil {
-		return ""
-	}
-	rows := collectRows(root)
-	if len(rows) == 0 {
-		return ""
-	}
-	grid := expandGrid(rows)
+	grid := tableToGrid(tableHTML)
 	if len(grid) == 0 || len(grid[0]) == 0 {
 		return ""
 	}
 	return renderMarkdown(grid)
+}
+
+// tableToGrid 把 MinerU table_body 的 HTML 表格展开成规整二维网格。
+func tableToGrid(tableHTML string) [][]string {
+	tableHTML = strings.TrimSpace(tableHTML)
+	if tableHTML == "" {
+		return nil
+	}
+	root, err := html.Parse(strings.NewReader(tableHTML))
+	if err != nil {
+		return nil
+	}
+	rows := collectRows(root)
+	if len(rows) == 0 {
+		return nil
+	}
+	return expandGrid(rows)
 }
 
 // collectRows 深度遍历取出每个 tr 的单元格序列。

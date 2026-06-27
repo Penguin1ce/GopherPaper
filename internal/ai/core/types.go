@@ -13,11 +13,12 @@ type Reply struct {
 // ParsedDoc 是 PDF 解析后的结构化中间产物，由 parser 产出，供抽取与分块共用。
 // 不与具体解析器耦合，MinerU 的细节在 parser 包内消化。
 type ParsedDoc struct {
-	Sections   []Section   `json:"sections"`   // 章节标题树，层级即 Level
-	Paragraphs []Paragraph `json:"paragraphs"` // 正文段落，带页码与所属章节路径
-	Figures    []Figure    `json:"figures"`    // 插图说明
-	Tables     []Table     `json:"tables"`     // 表格，MinerU table_body 转 Markdown，走文本不返图
-	References []string    `json:"references"` // 参考文献，整条保留
+	Sections   []Section   `json:"sections"`    // 章节标题树，层级即 Level
+	Paragraphs []Paragraph `json:"paragraphs"`  // 正文段落，带页码与所属章节路径
+	Figures    []Figure    `json:"figures"`     // 插图说明
+	Tables     []Table     `json:"tables"`      // 表格，MinerU table_body 转 Markdown/行列网格入库
+	CodeBlocks []CodeBlock `json:"code_blocks"` // 算法、伪代码与提示词块，独立入库便于方法检索
+	References []string    `json:"references"`  // 参考文献，整条保留
 	PageCount  int         `json:"page_count"`
 	Artifact   []byte      `json:"-"` // MinerU 原始产物 zip 字节，仅 worker 内存传递供归档落盘，不序列化
 }
@@ -41,21 +42,36 @@ type Paragraph struct {
 // ImgPath 为产物 zip 内的相对路径,ImgData 为解码出的图片字节(仅 worker 内存传递,不序列化),
 // ImgURI 在 worker 把图片落盘后回填为本地路径,供建图块与带图问答用。
 type Figure struct {
-	Caption string `json:"caption"`
-	PageNo  int    `json:"page_no"`
-	ImgPath string `json:"img_path,omitempty"`
-	ImgData []byte `json:"-"`
-	ImgURI  string `json:"img_uri,omitempty"`
-	Desc    string `json:"desc,omitempty"` // vlm 解析期生成的图片内容描述,与 caption 一起入库提升召回
+	Caption     string `json:"caption"`
+	PageNo      int    `json:"page_no"`
+	SectionPath string `json:"section_path,omitempty"` // 所属章节标题链,前缀进图块文本提升召回
+	ImgPath     string `json:"img_path,omitempty"`
+	ImgData     []byte `json:"-"`
+	ImgURI      string `json:"img_uri,omitempty"`
+	Desc        string `json:"desc,omitempty"` // vlm 解析期生成的图片内容描述,与 caption 一起入库提升召回
 }
 
-// Table 是一张表格。MinerU 的 table_body 已转成 Markdown 存于 Markdown 字段,
-// Caption 为表题与脚注合并。表格走文本入库不返图,故无图片字节;
-// 仅当 table_body 缺失退化时才回退到 Figure 当图处理(见 parser)。
+// Table 是一张表格。MinerU 的 table_body 已转成 Markdown 与 Rows 网格,
+// Caption 为表题与脚注合并。表格走文本入库;若 MinerU 同时给了表格截图,
+// parser 会额外生成 Figure 供原图展示与 VLM 描述。
 type Table struct {
-	Caption  string `json:"caption"`
-	Markdown string `json:"markdown"`
-	PageNo   int    `json:"page_no"`
+	Caption     string     `json:"caption"`
+	Markdown    string     `json:"markdown"`
+	PageNo      int        `json:"page_no"`
+	SectionPath string     `json:"section_path,omitempty"` // 所属章节标题链,前缀进表块文本提升召回
+	ImgPath     string     `json:"img_path,omitempty"`
+	ImgData     []byte     `json:"-"`
+	ImgURI      string     `json:"img_uri,omitempty"`
+	Rows        [][]string `json:"rows,omitempty"`
+}
+
+// CodeBlock 是论文中的算法、伪代码或 prompt 代码块。
+type CodeBlock struct {
+	Caption     string `json:"caption,omitempty"`
+	Body        string `json:"body"`
+	Language    string `json:"language,omitempty"`
+	PageNo      int    `json:"page_no"`
+	SectionPath string `json:"section_path"`
 }
 
 // PaperStructured 是论文结构化抽取结果，由 extract 产出。

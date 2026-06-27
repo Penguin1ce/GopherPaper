@@ -225,6 +225,7 @@ const (
 	BlockTypeText  = "text"
 	BlockTypeImage = "image"
 	BlockTypeTable = "table" // 表格块,Content 为 caption + Markdown 表格,不带 img_uri 不返图
+	BlockTypeCode  = "code"  // 算法、伪代码与 prompt 等代码块
 )
 
 // Redis 键前缀与时效。
