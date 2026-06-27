@@ -11,6 +11,7 @@ import (
 
 	"GopherPaper/internal/ai"
 	"GopherPaper/internal/dto"
+	"GopherPaper/internal/model"
 	"GopherPaper/internal/response"
 	userservice "GopherPaper/internal/service/user"
 	"GopherPaper/internal/tenant"
@@ -117,7 +118,61 @@ func Login(c *gin.Context) {
 		Name:      user.Name,
 		Email:     user.Email,
 		AvatarURL: user.AvatarURL,
+		ClassID:   user.ClassID,
 	})
+}
+
+func Me(c *gin.Context) {
+	studentID := tenant.MustStudentID(c.Request.Context())
+	if studentID == "" {
+		response.Fail(c, http.StatusUnauthorized, "未登录")
+		return
+	}
+	user, err := userservice.Profile(c.Request.Context(), studentID)
+	if err != nil {
+		writeProfileErr(c, err)
+		return
+	}
+	response.OK(c, profileResponse(user))
+}
+
+func UpdateProfile(c *gin.Context) {
+	studentID := tenant.MustStudentID(c.Request.Context())
+	if studentID == "" {
+		response.Fail(c, http.StatusUnauthorized, "未登录")
+		return
+	}
+	var req dto.UpdateProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	user, err := userservice.UpdateProfile(c.Request.Context(), studentID, req)
+	if err != nil {
+		writeProfileErr(c, err)
+		return
+	}
+	response.OK(c, profileResponse(user))
+}
+
+func UpdateEmail(c *gin.Context) {
+	studentID := tenant.MustStudentID(c.Request.Context())
+	if studentID == "" {
+		response.Fail(c, http.StatusUnauthorized, "未登录")
+		return
+	}
+	var req dto.UpdateEmailRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	user, err := userservice.UpdateEmail(c.Request.Context(), studentID, req)
+	if err != nil {
+		writeProfileErr(c, err)
+		return
+	}
+	ai.EvictUser(studentID)
+	response.OK(c, profileResponse(user))
 }
 
 // Logout 注销当前登录状态。
@@ -213,6 +268,30 @@ func AvatarFile(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "public, max-age=31536000, immutable")
 	c.File(path)
+}
+
+func profileResponse(user *model.User) dto.UserProfileResponse {
+	return dto.UserProfileResponse{
+		StudentID: user.StudentID,
+		Name:      user.Name,
+		Email:     user.Email,
+		AvatarURL: user.AvatarURL,
+		ClassID:   user.ClassID,
+	}
+}
+
+func writeProfileErr(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, errs.ErrCodeExpired), errors.Is(err, errs.ErrCodeMismatch):
+		response.Fail(c, http.StatusBadRequest, err.Error())
+	case errors.Is(err, errs.ErrUserExists):
+		response.Fail(c, http.StatusBadRequest, "邮箱已被其他账号绑定")
+	case errors.Is(err, errs.ErrUserNotFound):
+		response.Fail(c, http.StatusNotFound, err.Error())
+	default:
+		zlog.Error("用户资料接口错误", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "用户资料更新失败")
+	}
 }
 
 func writeAvatarErr(c *gin.Context, err error) {

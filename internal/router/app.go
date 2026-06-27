@@ -59,6 +59,10 @@ func Init(mode string) *gin.Engine {
 		authed := api.Group("")
 		authed.Use(middleware.JWTAuth())
 		{
+			authed.GET("/user/me", user.Me)
+			authed.POST("/user/profile", user.UpdateProfile)
+			authed.PATCH("/user/profile", user.UpdateProfile)
+			authed.POST("/user/email", user.UpdateEmail)
 			authed.POST("/user/logout", user.Logout)
 			authed.POST("/user/avatar", user.UploadAvatar)
 			authed.DELETE("/user/avatar", user.ClearAvatar)

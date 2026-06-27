@@ -2,18 +2,15 @@
 
 import { Coffee, LogOut, Network, NotebookText, PanelLeftClose, Plus } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useApp } from "@/lib/gopherpaper/store";
-import { AvatarDialog } from "./avatar-dialog";
 import { useGuard } from "./app-ui";
 
 export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
-  const { user, logout, updateAvatar, clearAvatar, activePaperID, createSession } = useApp();
-  const [avatarOpen, setAvatarOpen] = useState(false);
+  const { user, logout, activePaperID, createSession } = useApp();
   const guard = useGuard();
   const fallback = (user?.name || user?.student_id || "G").slice(0, 1).toUpperCase();
 
@@ -21,11 +18,10 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
     <div className="shrink-0 bg-background">
       <div className="p-4">
         <div className="flex items-center gap-3">
-          <button
-            type="button"
+          <Link
+            href="/profile"
             className="rounded-lg outline-none ring-ring/50 transition hover:opacity-90 focus-visible:ring-3"
-            title="更改头像"
-            onClick={() => setAvatarOpen(true)}
+            title="个人中心"
           >
             <Avatar key={user?.avatar_url || fallback} className="size-9 rounded-lg">
               {user?.avatar_url && (
@@ -35,12 +31,12 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
                 {fallback}
               </AvatarFallback>
             </Avatar>
-          </button>
+          </Link>
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{user?.name || user?.student_id}</div>
             <div className="truncate text-xs text-muted-foreground">{user?.email || "已登录"}</div>
           </div>
-          <Button type="button" variant="ghost" size="icon" onClick={logout} title="退出登录">
+          <Button type="button" variant="ghost" size="icon" onClick={() => logout()} title="退出登录">
             <LogOut className="size-4" />
           </Button>
           {onCollapse && (
@@ -57,14 +53,6 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
           )}
         </div>
       </div>
-      <AvatarDialog
-        open={avatarOpen}
-        onOpenChange={setAvatarOpen}
-        currentAvatarUrl={user?.avatar_url}
-        fallback={fallback}
-        onSave={updateAvatar}
-        onClear={clearAvatar}
-      />
       <Separator />
       <div className="space-y-2 p-4">
         <Button

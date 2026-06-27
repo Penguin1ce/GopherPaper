@@ -39,8 +39,26 @@ type LoginResponse struct {
 	Name      string `json:"name"`
 	Email     string `json:"email"`
 	AvatarURL string `json:"avatar_url"`
+	ClassID   string `json:"class_id"`
 }
 
 type AvatarResponse struct {
 	AvatarURL string `json:"avatar_url"`
+}
+
+type UserProfileResponse struct {
+	StudentID string `json:"student_id"`
+	Name      string `json:"name"`
+	Email     string `json:"email"`
+	AvatarURL string `json:"avatar_url"`
+	ClassID   string `json:"class_id"`
+}
+
+type UpdateProfileRequest struct {
+	Name string `json:"name"`
+}
+
+type UpdateEmailRequest struct {
+	Email string `json:"email" binding:"required,email"`
+	Code  string `json:"code" binding:"required,len=6"`
 }
