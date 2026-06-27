@@ -5,11 +5,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"GopherPaper/internal/handler"
+	adminhandler "GopherPaper/internal/handler/admin"
 	chathandler "GopherPaper/internal/handler/chat"
 	graphhandler "GopherPaper/internal/handler/graph"
 	paperhandler "GopherPaper/internal/handler/paper"
-	"GopherPaper/internal/handler/user"
 	ssehandler "GopherPaper/internal/handler/sse"
+	"GopherPaper/internal/handler/user"
 	"GopherPaper/internal/middleware"
 	"GopherPaper/internal/response"
 	"GopherPaper/internal/zlog"
@@ -36,6 +37,9 @@ func Init(mode string) *gin.Engine {
 		api.POST("/user/send-code", user.SendCode) // 下发邮箱验证码
 		api.POST("/user/register", user.Register)  // 校验验证码并注册
 		api.POST("/user/login", user.Login)        // 登录签发 JWT
+		api.POST("/admin/send-code", adminhandler.SendCode)
+		api.POST("/admin/register", adminhandler.Register)
+		api.POST("/admin/login", adminhandler.Login)
 
 		// SSE 订阅解析进度，鉴权走 query token(EventSource 带不了头)。
 		api.GET("/events", ssehandler.Subscribe)
@@ -65,10 +69,10 @@ func Init(mode string) *gin.Engine {
 			authed.POST("/papers/:id/translate", paperhandler.Translate) // 精读页逐段翻译
 
 			// 知识图谱：论文关系发现与研究趋势,按用户隔离。
-			authed.GET("/graph/overview", graphhandler.Overview)            // 图谱规模总览
-			authed.GET("/graph/trends", graphhandler.Trends)               // 研究趋势:年度论文数与关键词热度
-			authed.GET("/graph/keywords", graphhandler.Keywords)           // 热门关键词
-			authed.GET("/graph/papers/:id/related", graphhandler.Related)  // 与某篇论文相关的论文
+			authed.GET("/graph/overview", graphhandler.Overview)          // 图谱规模总览
+			authed.GET("/graph/trends", graphhandler.Trends)              // 研究趋势:年度论文数与关键词热度
+			authed.GET("/graph/keywords", graphhandler.Keywords)          // 热门关键词
+			authed.GET("/graph/papers/:id/related", graphhandler.Related) // 与某篇论文相关的论文
 
 			// 会话与多轮论文问答。
 			authed.POST("/sessions", chathandler.CreateSession)            // 新建会话，可绑定论文
@@ -76,6 +80,15 @@ func Init(mode string) *gin.Engine {
 			authed.DELETE("/sessions/:id", chathandler.DeleteSession)      // 删除会话
 			authed.GET("/sessions/:id/messages", chathandler.ListMessages) // 拉取历史消息
 			authed.POST("/sessions/:id/messages", chathandler.SendMessage) // 发消息，Host 路由专家
+		}
+
+		adminAuthed := api.Group("/admin")
+		adminAuthed.Use(middleware.AdminJWTAuth())
+		{
+			adminAuthed.GET("/me", adminhandler.Me)
+			adminAuthed.GET("/overview", adminhandler.Overview)
+			adminAuthed.GET("/papers", adminhandler.ListPapers)
+			adminAuthed.DELETE("/papers/:id", adminhandler.DeletePaper)
 		}
 	}
 	return r

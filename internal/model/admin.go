@@ -1,6 +1,25 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
+
+type Admin struct {
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	Username     string         `gorm:"size:64;uniqueIndex;not null" json:"username"`
+	Email        string         `gorm:"size:128;uniqueIndex;not null" json:"email"`
+	Name         string         `gorm:"size:64" json:"name"`
+	PasswordHash string         `gorm:"size:255;not null" json:"-"`
+	Status       string         `gorm:"size:16;not null;default:active;index" json:"status"`
+	LastLoginAt  *time.Time     `json:"last_login_at,omitempty"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+func (Admin) TableName() string { return "admins" }
 
 type ServiceCallLog struct {
 	ID           uint64    `gorm:"primaryKey" json:"id"`
