@@ -145,6 +145,7 @@ export interface LoginResponse {
   name: string;
   email: string;
   avatar_url?: string;
+  class_id?: string;
 }
 
 export interface AuthUser {
@@ -152,10 +153,22 @@ export interface AuthUser {
   name: string;
   email: string;
   avatar_url?: string;
+  class_id?: string;
 }
 
 export interface AvatarResponse {
   avatar_url: string;
+}
+
+export type UserProfile = AuthUser;
+
+export interface UpdateProfilePayload {
+  name: string;
+}
+
+export interface UpdateEmailPayload {
+  email: string;
+  code: string;
 }
 
 export type ReportType =

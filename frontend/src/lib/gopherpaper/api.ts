@@ -20,6 +20,9 @@ import type {
   ReportType,
   SendMessageResponse,
   Session,
+  UpdateEmailPayload,
+  UpdateProfilePayload,
+  UserProfile,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api/v1";
@@ -137,6 +140,35 @@ export function sendCode(email: string) {
   return request<null>("/user/send-code", {
     method: "POST",
     body: JSON.stringify({ email }),
+  });
+}
+
+export function me() {
+  return request<UserProfile>("/user/me");
+}
+
+export async function updateProfile(payload: UpdateProfilePayload) {
+  const body = JSON.stringify(payload);
+  try {
+    return await request<UserProfile>("/user/profile", {
+      method: "POST",
+      body,
+    });
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      return request<UserProfile>("/user/profile", {
+        method: "PATCH",
+        body,
+      });
+    }
+    throw err;
+  }
+}
+
+export function updateEmail(payload: UpdateEmailPayload) {
+  return request<UserProfile>("/user/email", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

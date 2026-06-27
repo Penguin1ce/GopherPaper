@@ -28,6 +28,8 @@ import type {
   ReportsStatus,
   ReportType,
   Session,
+  UpdateEmailPayload,
+  UpdateProfilePayload,
 } from "./types";
 import { chatSessions, isSettled, paperTitle, sessionsForPaper } from "./utils";
 
@@ -81,7 +83,10 @@ interface AppContextValue {
   login: (studentID: string, password: string) => Promise<void>;
   registerAndLogin: (payload: RegisterPayload) => Promise<void>;
   sendCode: (email: string) => Promise<void>;
-  logout: () => void;
+  logout: (notifyServer?: boolean) => void;
+  refreshUser: () => Promise<void>;
+  updateProfile: (payload: UpdateProfilePayload) => Promise<void>;
+  updateEmail: (payload: UpdateEmailPayload) => Promise<void>;
   updateAvatar: (file: File) => Promise<void>;
   clearAvatar: () => Promise<void>;
   refreshPapers: (query?: string) => Promise<void>;
@@ -579,8 +584,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     setUser(saved.user);
     setTokenState(saved.token);
     api.setToken(saved.token);
+    api.me().then((profile) => persist(profile, saved.token)).catch(() => {});
     bootstrapSession(saved.token).catch(() => logout(false));
-  }, [bootstrapSession, logout]);
+  }, [bootstrapSession, logout, persist]);
 
   const login = useCallback(
     async (studentID: string, password: string) => {
@@ -591,6 +597,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
           name: data.name,
           email: data.email,
           avatar_url: data.avatar_url,
+          class_id: data.class_id,
         },
         data.token,
       );
@@ -612,6 +619,28 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     async (email: string) => {
       await api.sendCode(email);
       toast("验证码已发送");
+    },
+    [toast],
+  );
+
+  const refreshUser = useCallback(async () => {
+    const profile = await api.me();
+    persist(profile, token);
+  }, [persist, token]);
+
+  const updateProfile = useCallback(
+    async (payload: UpdateProfilePayload) => {
+      const profile = await api.updateProfile(payload);
+      persist(profile, token);
+      toast("个人资料已更新");
+    },
+    [persist, toast, token],
+  );
+
+  const updateEmail = useCallback(
+    async (payload: UpdateEmailPayload) => {
+      await api.updateEmail(payload);
+      toast("邮箱已更新，请重新登录");
     },
     [toast],
   );
@@ -923,6 +952,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       registerAndLogin,
       sendCode,
       logout,
+      refreshUser,
+      updateProfile,
+      updateEmail,
       updateAvatar,
       clearAvatar,
       refreshPapers,
@@ -957,6 +989,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       registerAndLogin,
       sendCode,
       logout,
+      refreshUser,
+      updateProfile,
+      updateEmail,
       updateAvatar,
       clearAvatar,
       refreshPapers,
