@@ -22,6 +22,7 @@ import type {
   AuthUser,
   Message,
   Paper,
+  PaperFlow,
   PasswordResetCodePayload,
   PlanStep,
   RegisterPayload,
@@ -856,6 +857,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         // 占位消息的 plan 字段。plan 事件通常先于首个 delta 到达,patch 会让占位提前上屏,
         // 用户在答案写出前即看到流程在动(消除多轮检索的等待焦虑)。
         const planSteps: PlanStep[] = [];
+        // 思路图谱:generate_paper_flow 经 SSE 推来后即上屏到占位消息,done 时一并挂最终消息。
+        let capturedFlow: PaperFlow | undefined;
         let planRafID: number | null = null;
         const flushPlan = () => {
           planRafID = null;
@@ -910,6 +913,27 @@ function AppProviderInner({ children }: { children: ReactNode }) {
               else planSteps.push({ phase, text: content });
               if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
             },
+            // 思路图骨架推达:立即挂到占位消息,气泡内先画出结构(节点待点亮)。
+            onPaperFlow: (payload) => {
+              capturedFlow = payload;
+              patch((m) => ({ ...m, flow: payload }));
+            },
+            // 逐节点 detail 推达:更新对应节点点亮;带配图则追加到 figures。
+            onPaperFlowNode: (payload) => {
+              if (!capturedFlow) return;
+              const figures = payload.figure
+                ? [...(capturedFlow.figures ?? []), payload.figure]
+                : capturedFlow.figures;
+              capturedFlow = {
+                ...capturedFlow,
+                nodes: capturedFlow.nodes.map((n) =>
+                  n.id === payload.node_id ? { ...n, detail: payload.detail } : n,
+                ),
+                figures,
+              };
+              const flow = capturedFlow;
+              patch((m) => ({ ...m, flow }));
+            },
           });
           // 收尾:取消待处理的帧回调,最终消息直接整体替换占位。
           cancelFlush();
@@ -921,6 +945,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
             if (data.meta) assistant.meta = data.meta;
             // 把本轮累积的执行过程挂到最终消息,供答后折叠回看;瞬态不入库,刷新即失。
             if (planSteps.length) assistant.plan = planSteps;
+            // 思路图谱同样挂到最终消息,瞬态不入库,刷新即失。
+            if (capturedFlow) assistant.flow = capturedFlow;
             setMsg((list) => [
               ...list.filter((m) => m.id !== placeholderID),
               assistant,

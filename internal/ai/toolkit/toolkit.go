@@ -62,7 +62,7 @@ func Init(c config.ToolsConfig) error {
 	// 论文知识库工具给小云雀:列论文(走 paperdao)+ 检索(走 retrieval 检索层),
 	// 运行期才触达 DB/Milvus,故无条件登记(此时尚未 Init,但工具只在用户请求时被调用)。
 	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer],
-		newListPapersTool(), newPaperSearchTool(), newDeletePaperTool())
+		newListPapersTool(), newPaperSearchTool(), newDeletePaperTool(), newPaperFlowTool())
 	// 论文下载工具给小云雀:把联网找到的论文 PDF 直链下载并导入用户工作台(uploaded,不解析)。
 	// 实现由 paperservice.Init 反向注入,破依赖环;此处无条件登记,运行期才触达下载实现。
 	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newDownloadPaperTool())

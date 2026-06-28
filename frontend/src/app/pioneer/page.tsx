@@ -40,6 +40,7 @@ import * as api from "@/lib/gopherpaper/api";
 import type {
   Message,
   PaperDeleteConfirmPayload,
+  PaperFlow,
   PlanStep,
   Session,
 } from "@/lib/gopherpaper/types";
@@ -48,6 +49,7 @@ import { formatTime, sessionTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty } from "@/components/gopherpaper/app-ui";
 import { Markdown } from "@/components/gopherpaper/markdown";
+import { PaperFlowCard } from "@/components/gopherpaper/paper-flow-card";
 import { WorkspaceFrame, WorkspacePanel } from "@/components/gopherpaper/workspace-frame";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 
@@ -304,11 +306,14 @@ const PlanRail = memo(function PlanRail({
 
 const Bubble = memo(function Bubble({ message }: { message: Message }) {
   const isAssistant = message.role === "assistant";
+  // flow 来源:本轮流式挂在 message.flow;刷新/重开会话则从持久化的 meta.flow 还原。
+  const flow = message.flow ?? (message.meta?.flow as PaperFlow | undefined);
   return (
     <article className={cn("flex flex-col gap-1.5", isAssistant ? "items-start" : "items-end")}>
       {isAssistant ? (
         <div className="w-full">
           <Markdown richLinks>{message.content}</Markdown>
+          {flow && <PaperFlowCard flow={flow} />}
         </div>
       ) : (
         <div className="max-w-[80%] rounded-2xl bg-primary px-4 py-2.5 text-primary-foreground">
@@ -335,8 +340,8 @@ function ToolStatus({ note }: { note: string }) {
 
 const PROMPT_HINTS = [
   "帮我找几篇关于注意力机制的经典论文",
-  "我在国贸，帮我点一杯瑞幸生椰拿铁",
-  "查一下我刚才那单咖啡好了没",
+  "我在重庆大学虎溪校区，帮我点一杯冰美式",
+  "画一个思路流程图",
 ];
 
 export default function PioneerPage() {
@@ -496,6 +501,8 @@ export default function PioneerPage() {
       patch((m) => ({ ...m, content: m.content + chunk }));
     };
     const planSteps: PlanStep[] = [];
+    // 思路图谱:generate_paper_flow 经 SSE 推达后即上屏占位,done 时一并挂最终消息。
+    let capturedFlow: PaperFlow | undefined;
     let planRafID: number | null = null;
     const flushPlan = () => {
       planRafID = null;
@@ -538,6 +545,26 @@ export default function PioneerPage() {
         onConfirmDeletePaper: (payload) => {
           if (mountedRef.current) setDeleteConfirm(payload);
         },
+        onPaperFlow: (payload) => {
+          if (!mountedRef.current) return;
+          capturedFlow = payload;
+          patch((m) => ({ ...m, flow: payload }));
+        },
+        onPaperFlowNode: (payload) => {
+          if (!mountedRef.current || !capturedFlow) return;
+          const figures = payload.figure
+            ? [...(capturedFlow.figures ?? []), payload.figure]
+            : capturedFlow.figures;
+          capturedFlow = {
+            ...capturedFlow,
+            nodes: capturedFlow.nodes.map((n) =>
+              n.id === payload.node_id ? { ...n, detail: payload.detail } : n,
+            ),
+            figures,
+          };
+          const flow = capturedFlow;
+          patch((m) => ({ ...m, flow }));
+        },
       });
       cancelFlush();
       if (!mountedRef.current) return;
@@ -548,6 +575,7 @@ export default function PioneerPage() {
           ...data.message,
           id: data.message.id || `local-a-${Date.now()}`,
           plan: planSteps.length > 0 ? planSteps : undefined,
+          flow: capturedFlow,
         },
       ]);
     } catch (e) {
@@ -759,7 +787,7 @@ export default function PioneerPage() {
               <Textarea
                 rows={1}
                 value={input}
-                placeholder="我在国贸，帮我点一杯冰美式"
+                placeholder=""
                 disabled={sending}
                 className="max-h-44 min-h-9 resize-none overflow-y-auto border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0"
                 onChange={(e) => setInput(e.target.value)}

@@ -14,6 +14,8 @@ import type {
   Paper,
   PaperDeleteConfirmPayload,
   PaperDetail,
+  PaperFlow,
+  PaperFlowNodeDetail,
   PasswordResetCodePayload,
   RegisterPayload,
   RelatedPaper,
@@ -336,6 +338,10 @@ export interface SendStreamHandlers {
   onTool?: (tool: string, done: boolean) => void;
   onPlan?: (phase: string, content: string) => void;
   onConfirmDeletePaper?: (payload: PaperDeleteConfirmPayload) => void;
+  // onPaperFlow 收 generate_paper_flow 推送的思路图骨架,前端先画结构。
+  onPaperFlow?: (payload: PaperFlow) => void;
+  // onPaperFlowNode 收逐节点补齐的 detail,前端据此逐个点亮节点。
+  onPaperFlowNode?: (payload: PaperFlowNodeDetail) => void;
 }
 
 // 解析一帧 SSE(event + data 行),返回事件名与 JSON 载荷,无 data 返回 null。
@@ -404,6 +410,12 @@ export async function sendMessage(
         break;
       case "confirm_delete_paper":
         stream?.onConfirmDeletePaper?.(parsed.payload as PaperDeleteConfirmPayload);
+        break;
+      case "paper_flow":
+        stream?.onPaperFlow?.(parsed.payload as PaperFlow);
+        break;
+      case "paper_flow_node":
+        stream?.onPaperFlowNode?.(parsed.payload as PaperFlowNodeDetail);
         break;
       case "done":
         result = parsed.payload as SendMessageResponse;

@@ -82,6 +82,51 @@ export interface Message {
   streaming?: boolean;
   // 先锋者执行计划段,仅本轮内存保留(不入库、刷新即失),用于气泡内折叠回看。
   plan?: PlanStep[];
+  // 论文思路图谱,小云雀调 generate_paper_flow 时经 SSE 推送,仅本轮内存保留(不入库、刷新即失)。
+  flow?: PaperFlow;
+}
+
+// PaperFlowNode 思路图节点,type 取固定枚举供前端配色。
+export interface PaperFlowNode {
+  id: string;
+  // problem/gap/idea/method/experiment/result/conclusion
+  type: string;
+  label: string;
+  detail?: string;
+}
+
+// PaperFlowEdge 思路图有向边,label 表达节点间推进关系。
+export interface PaperFlowEdge {
+  from: string;
+  to: string;
+  label?: string;
+}
+
+// PaperFlowFigure 是挂在主节点旁的论文真实配图(缩略图),不参与主线推进。
+export interface PaperFlowFigure {
+  id: string;
+  parent: string;
+  doc_id: string;
+  img_name: string;
+  page_no?: number;
+  caption?: string;
+}
+
+// PaperFlow 是 generate_paper_flow 工具推送的思路图骨架载荷(detail 与 figures 随后逐节点补齐)。
+export interface PaperFlow {
+  paper_id: string;
+  title: string;
+  nodes: PaperFlowNode[];
+  edges: PaperFlowEdge[];
+  figures?: PaperFlowFigure[];
+}
+
+// PaperFlowNodeDetail 是某节点补齐的 detail 与可选配图,逐条经 paper_flow_node 事件推达。
+export interface PaperFlowNodeDetail {
+  paper_id: string;
+  node_id: string;
+  detail: string;
+  figure?: PaperFlowFigure;
 }
 
 // PlanStep 是先锋者 plan-execute 的一个阶段段落,phase 区分规划/动作/思考。

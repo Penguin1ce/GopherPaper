@@ -14,11 +14,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { figureUrl } from "@/lib/gopherpaper/api";
 import { useApp } from "@/lib/gopherpaper/store";
-import type { Message, Reference } from "@/lib/gopherpaper/types";
+import type { Message, PaperFlow, Reference } from "@/lib/gopherpaper/types";
 import { formatTime, intentLabel, paperTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty, useGuard } from "./app-ui";
 import { Markdown } from "./markdown";
+import { PaperFlowCard } from "./paper-flow-card";
 import { ProcessTrace } from "./process-trace";
 
 function extractSources(meta?: Record<string, unknown>): Reference[] {
@@ -140,6 +141,9 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: Messag
             <ProcessTrace steps={message.plan} live={!!message.streaming} />
           )}
           <Markdown figures={figures}>{message.content}</Markdown>
+          {(message.flow ?? (message.meta?.flow as PaperFlow | undefined)) && (
+            <PaperFlowCard flow={(message.flow ?? message.meta?.flow) as PaperFlow} />
+          )}
           {refs.length > 0 && <Sources refs={refs} />}
         </div>
       ) : (

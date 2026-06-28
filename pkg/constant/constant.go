@@ -198,6 +198,8 @@ const (
 	StreamEventDelta              = "delta"                // 应答文本增量
 	StreamEventPlan               = "plan"                 // 先锋者规划/动作阶段文本,载荷带 phase 与增量
 	StreamEventConfirmDeletePaper = "confirm_delete_paper" // 请求前端弹出论文删除确认框
+	StreamEventPaperFlow          = "paper_flow"           // 推送论文思路图骨架(nodes/edges,detail 待补),前端先画结构
+	StreamEventPaperFlowNode      = "paper_flow_node"      // 逐节点补 detail,载荷 {paper_id,node_id,detail},前端逐个点亮节点
 	StreamEventDone               = "done"                 // 生成完成,载荷为完整 SendMessageResponse
 	StreamEventError              = "error"                // 生成中途失败,载荷带错误说明
 )
@@ -340,6 +342,34 @@ const TranslatePrompt = `你是科研论文翻译助手。请把用户给出的�
 
 // MaxTranslateRunes 限制单次翻译输入长度,防止超长选段打爆小模型上下文。
 const MaxTranslateRunes = 4000
+
+// PaperFlowSkeletonPrompt 是思路图第一阶段「骨架」指令:只产出节点小标题与有向边,不写 detail。
+// detail 留待第二阶段逐节点检索原文补齐(前端据此逐个点亮节点),故此处刻意不要求 detail。
+const PaperFlowSkeletonPrompt = `你是科研论文的思路梳理专家。下面给出一篇论文的结构化信息,请把它的研究脉络抽象成一张有向流程图的骨架,呈现作者从问题到结论的完整思考链路。
+
+只输出一个 JSON 对象,禁止任何多余文字、解释或代码围栏。结构如下:
+{
+  "title": "论文核心一句话主旨",
+  "nodes": [
+    {"id": "n1", "type": "problem", "label": "不超过14字的节点小标题"}
+  ],
+  "edges": [
+    {"from": "n1", "to": "n2", "label": "推进关系,如 因此/为验证/导致,不超过6字"}
+  ]
+}
+
+约束:
+- node 的 type 只能取以下之一:problem(研究问题/背景痛点)、gap(现有方法不足)、idea(核心思路/创新点)、method(方法/模型设计)、experiment(实验设置/验证)、result(关键结果/发现)、conclusion(结论/贡献)。
+- label 是简短小标题(不超过14字),概括该环节;**不要写 detail 字段**,正文细节稍后另行补齐。
+- 节点数控制在 6 到 12 个,主线清晰,避免琐碎;按 problem→gap→idea→method→experiment→result→conclusion 的逻辑推进,但不必每类都有。
+- id 用 n1、n2…顺序编号;edges 必须只引用已出现的节点 id,构成连通的有向图,允许分支与汇聚。
+- label 用中文,准确具体,只依据给定材料,不臆测、不编造数据。`
+
+// PaperFlowNodeDetailPrompt 是思路图第二阶段「逐节点补细节」指令:给定某节点小标题与该环节
+// 从论文检索到的原文片段,写出具体翔实的说明。只输出说明文字,前端把它填进对应节点。
+const PaperFlowNodeDetailPrompt = `你是论文精读助手。下面给出某篇论文思路图里某一个环节的小标题与类型,以及从该论文检索到的相关原文片段。请用 2 到 4 句话(约 60~120 字)写出这个环节的具体内容:做了什么、用了什么方法/数据/设定、得到什么结论或数字,让没读过原文的人也能看懂这一步。
+
+只依据给定材料,不臆测、不编造数字;只输出这段说明文字本身,不要小标题、不要 Markdown、不要任何前后缀。`
 
 // PioneerInstruction 是小云雀 agent 的 system prompt。小云雀不走 RAG 链路,
 // 靠挂载的 mcp 工具与 skill 完成查论文、点咖啡等任务。

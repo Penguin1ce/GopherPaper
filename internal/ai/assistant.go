@@ -71,11 +71,18 @@ func EvictUser(userID string) {
 // ctx 须已注入租户身份;凭据型工具的 token 由请求 ctx 携带,见 credential 包。
 // 多轮上下文由 pioneer 的 Redis session 按 sessionID 自动承载(含工具轨迹),不再手工注入历史。
 func PioneerChat(ctx context.Context, sessionID, query string) (*core.Reply, error) {
+	// 注入思路图收集器:本轮若调了 generate_paper_flow,工具把成图写入,这里取出塞 reply.Meta 持久化。
+	sink := &core.FlowSink{}
+	ctx = core.WithFlowSink(ctx, sink)
 	content, err := pioneerflow.Chat(ctx, sessionID, query)
 	if err != nil {
 		return nil, err
 	}
-	return &core.Reply{Intent: constant.IntentPioneer, Content: content}, nil
+	reply := &core.Reply{Intent: constant.IntentPioneer, Content: content}
+	if flow := sink.Get(); flow != nil {
+		reply.Meta = map[string]any{"flow": flow}
+	}
+	return reply, nil
 }
 
 // toHistory 把存储层的历史消息转成 trpc 对话消息,喂给 RAG 链路做多轮上下文。

@@ -1,10 +1,49 @@
 package core
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
 type paperCtxKey struct{}
 
 type streamCtxKey struct{}
+
+type flowSinkKey struct{}
+
+// FlowSink 收集本轮工具生成的论文思路图,供入口(PioneerChat)取出塞进 reply.Meta 持久化。
+// 工具在 runner 协程内写,入口在 runner 结束后读,跨协程故加锁。
+type FlowSink struct {
+	mu  sync.Mutex
+	val any
+}
+
+// Set 记录一份思路图(取最后一次)。
+func (s *FlowSink) Set(v any) {
+	s.mu.Lock()
+	s.val = v
+	s.mu.Unlock()
+}
+
+// Get 取出已记录的思路图,未记录返回 nil。
+func (s *FlowSink) Get() any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.val
+}
+
+// WithFlowSink 把思路图收集器注入 context,供工具回传成图结果。
+func WithFlowSink(ctx context.Context, s *FlowSink) context.Context {
+	return context.WithValue(ctx, flowSinkKey{}, s)
+}
+
+// FlowSinkFrom 取出 context 中的思路图收集器,缺失返回 nil。
+func FlowSinkFrom(ctx context.Context) *FlowSink {
+	if s, ok := ctx.Value(flowSinkKey{}).(*FlowSink); ok {
+		return s
+	}
+	return nil
+}
 
 // StreamEvent 是生成过程的一次流式通知:工具调用、工具返回、文本增量或规划阶段文本。
 // Kind 取 constant.StreamEventToolCall / StreamEventToolResult / StreamEventDelta / StreamEventPlan。

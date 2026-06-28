@@ -183,7 +183,7 @@ func SendMessage(c *gin.Context) {
 			emit(ev.Kind, dto.StreamDeltaPayload{Content: ev.Delta, Reset: ev.Reset})
 		case constant.StreamEventPlan:
 			emit(ev.Kind, dto.StreamPlanPayload{Phase: ev.Phase, Content: ev.Delta})
-		case constant.StreamEventConfirmDeletePaper:
+		case constant.StreamEventConfirmDeletePaper, constant.StreamEventPaperFlow, constant.StreamEventPaperFlowNode:
 			emit(ev.Kind, ev.Payload)
 		default:
 			// 原始工具名换前端显示名,未配置回退原始名。
