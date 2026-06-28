@@ -67,11 +67,14 @@ baidu_map_sk = ""                      # AK 开了 SN 校验时填对应 SK,留�
 tavily_api_key = ""                    # Tavily 联网搜索密钥,非空时给小云雀挂 web_search 工具,补足实时信息
 semantic_scholar_api_key = ""          # Semantic Scholar 检索密钥,可选;官方填 s2k- key(x-api-key),走中转代理填 sk- 令牌(Bearer)
 semantic_scholar_base_url = ""          # Semantic Scholar 中转代理基址(如 https://s2api.ominiai.cn/s2),留空走官方(限流极紧)
+openalex_api_key = ""                   # OpenAlex 检索密钥,非空时给小云雀挂 search_openalex 工具
 
 # 工具显示名映射:原始工具名 → 前端展示名,SSE 推工具调用状态时换用,未配置回退原始名。
 # mcp 工具名带 toolset 名前缀,key 要写完整名,如 my-coffee_queryShopList。
 [tools.tool_names]
+current_time = "当前时间"
 delete_my_paper = "删除我的论文"
+generate_paper_flow = "生成思路图"
 geocode = "地点定位"
 list_my_papers = "我的论文列表"
 web_search = "联网搜索"
@@ -79,6 +82,7 @@ search_arxiv = "arXiv 检索"
 search_conference_proceedings = "官方会议录检索"
 search_openreview_papers = "OpenReview 检索"
 search_semantic_scholar = "学术检索"
+search_openalex = "OpenAlex 检索"
 recommend_similar_papers = "相似论文推荐"
 get_paper_citations = "查被引论文"
 get_paper_references = "查参考文献"

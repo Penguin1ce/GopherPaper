@@ -32,6 +32,59 @@ func TestInitGroupsByAgent(t *testing.T) {
 	}
 }
 
+func TestBuiltinFunctionToolsHaveDisplayNames(t *testing.T) {
+	oldToolSets, oldFuncTools, oldDisplayNames := toolSets, funcTools, displayNames
+	defer func() {
+		toolSets = oldToolSets
+		funcTools = oldFuncTools
+		displayNames = oldDisplayNames
+	}()
+	toolSets = map[string][]tool.ToolSet{}
+	funcTools = map[string][]tool.Tool{}
+
+	if err := Init(config.ToolsConfig{
+		BaiduMapAK:            "baidu-ak",
+		TavilyAPIKey:          "tavily-key",
+		SemanticScholarAPIKey: "s2-key",
+		OpenAlexAPIKey:        "openalex-key",
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	for _, tl := range ToolsFor(constant.AgentPioneer) {
+		decl := tl.Declaration()
+		if decl == nil || decl.Name == "" {
+			t.Fatalf("工具声明缺少名称: %#v", decl)
+		}
+		if got := DisplayName(decl.Name); got == decl.Name {
+			t.Errorf("工具 %s 缺少中文显示名", decl.Name)
+		}
+	}
+}
+
+func TestDisplayNameConfigOverridesBuiltin(t *testing.T) {
+	oldToolSets, oldFuncTools, oldDisplayNames := toolSets, funcTools, displayNames
+	defer func() {
+		toolSets = oldToolSets
+		funcTools = oldFuncTools
+		displayNames = oldDisplayNames
+	}()
+	toolSets = map[string][]tool.ToolSet{}
+	funcTools = map[string][]tool.Tool{}
+
+	if err := Init(config.ToolsConfig{
+		ToolNames: map[string]string{"current_time": "取当前时间"},
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if got := DisplayName("current_time"); got != "取当前时间" {
+		t.Fatalf("配置应覆盖内置显示名,得到 %q", got)
+	}
+	if got := DisplayName("unknown_tool"); got != "unknown_tool" {
+		t.Fatalf("未知工具应回退原名,得到 %q", got)
+	}
+}
+
 // TestGeocode 验证百度地理编码的请求参数与响应解析,status 非 0 报错。
 func TestGeocode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

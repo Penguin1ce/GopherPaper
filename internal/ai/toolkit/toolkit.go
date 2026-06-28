@@ -32,11 +32,31 @@ var (
 	// funcTools 按 agent 分组的零散 function tool,如百度地理编码。
 	funcTools = map[string][]tool.Tool{}
 	// displayNames 工具显示名映射,SSE 推工具状态时把原始工具名换成前端友好名。
-	displayNames = map[string]string{}
+	displayNames = maps.Clone(builtinToolDisplayNames)
 )
+
+var builtinToolDisplayNames = map[string]string{
+	"current_time":                  "当前时间",
+	"delete_my_paper":               "删除我的论文",
+	"download_paper":                "下载论文",
+	"generate_paper_flow":           "生成思路图",
+	"geocode":                       "地点定位",
+	"get_paper_citations":           "查被引论文",
+	"get_paper_references":          "查参考文献",
+	"list_my_papers":                "我的论文列表",
+	"recommend_similar_papers":      "相似论文推荐",
+	"search_arxiv":                  "arXiv 检索",
+	"search_conference_proceedings": "官方会议录检索",
+	"search_my_papers":              "检索我的论文",
+	"search_openalex":               "OpenAlex 检索",
+	"search_openreview_papers":      "OpenReview 检索",
+	"search_semantic_scholar":       "学术检索",
+	"web_search":                    "联网搜索",
+}
 
 // Init 按配置建工具集与 skill 仓库,无配置即空,不报错。
 func Init(c config.ToolsConfig) error {
+	displayNames = maps.Clone(builtinToolDisplayNames)
 	maps.Copy(displayNames, c.ToolNames)
 	for _, m := range c.MCP {
 		var set tool.ToolSet
@@ -87,6 +107,12 @@ func Init(c config.ToolsConfig) error {
 	)
 	zlog.Info("学术检索工具已登记", "agent", constant.AgentPioneer,
 		"s2_key", c.SemanticScholarAPIKey != "", "s2_proxy", c.SemanticScholarBaseURL != "")
+	// OpenAlex 学术检索给小云雀:覆盖 2.5 亿+ 文献、限流松,作 S2 的冗余/平替。
+	// 现按调用计费(免费 key 每天 $1 额度),故配了 key 才登记,留空不裸调。
+	if c.OpenAlexAPIKey != "" {
+		funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newOpenAlexTool(c.OpenAlexAPIKey))
+		zlog.Info("openalex 学术检索工具已登记", "agent", constant.AgentPioneer)
+	}
 	// Tavily 联网搜索给小云雀:补足模型知识截止后的实时信息。
 	if c.TavilyAPIKey != "" {
 		funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newTavilyTool(c.TavilyAPIKey))

@@ -90,6 +90,10 @@ type ToolsConfig struct {
 	// (原生限流极紧,search 端点带 key 也只约 1 req/s)。配中转代理(如 https://s2api.ominiai.cn/s2)
 	// 后改走代理额度并自动以 Authorization: Bearer 注入 key(代理约定),不再用官方的 x-api-key 头。
 	SemanticScholarBaseURL string `toml:"semantic_scholar_base_url"`
+	// OpenAlexAPIKey OpenAlex 检索密钥,非空时给小云雀挂 search_openalex 工具。
+	// OpenAlex 现按调用计费(免费 key 每天 $1 额度),留空则不登记该工具,不裸调。
+	// 覆盖 2.5 亿+ 文献且引用图谱完整,作 Semantic Scholar 的冗余/平替,限流远松。
+	OpenAlexAPIKey string `toml:"openalex_api_key"`
 	// ToolNames 工具显示名映射:原始工具名 → 前端展示名,SSE 推送工具状态时换用,
 	// 未配置的工具回退原始名。
 	ToolNames map[string]string `toml:"tool_names"`
