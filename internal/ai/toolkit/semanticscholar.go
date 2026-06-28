@@ -95,7 +95,7 @@ func s2Throttle(ctx context.Context) error {
 }
 
 type s2Input struct {
-	Query          string `json:"query" jsonschema:"description=检索词,只放主题关键词,如 contrastive learning for sentence embeddings;年份/会议/领域不要塞进这里,用下面的专门参数,required"`
+	Query          string `json:"query" jsonschema:"description=检索词,只放 1~3 个核心学术术语,按相关度召回,堆叠越多概念召回越差;用规范英文术语而非口语意译(写 machine-generated text detection 而非 AI generated text);先用最核心词宽搜再据结果加修饰收窄,别一上来就拼 4+ 概念的长句。年份/会议/领域不要塞进这里,用下面的专门参数,required"`
 	MaxResults     int    `json:"max_results,omitempty" jsonschema:"description=返回条数,默认 5,上限 10"`
 	Year           string `json:"year,omitempty" jsonschema:"description=按年份过滤,支持区间:单年 2025、闭区间 2024-2026、起始 2024-(2024 至今)、截止 -2020;找近期论文先用 current_time 取当前年再据此填"`
 	Venue          string `json:"venue,omitempty" jsonschema:"description=按发表会议/期刊过滤,逗号分隔,填常见缩写即可,如 NeurIPS,ICML,CVPR,ICLR,ACL,EMNLP;找顶会论文时填这个,服务端兜底由本工具按别名模糊匹配,别在 query 里凑会议名"`

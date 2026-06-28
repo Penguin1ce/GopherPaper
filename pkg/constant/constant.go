@@ -142,7 +142,9 @@ const (
 	// TopKKnowledge 最终拼进 context 的正文块数。开启 rerank 时为精排后截断数,关闭时即向量召回数。
 	TopKKnowledge = 8
 	// RecallTopK 开启 rerank 时第一阶段向量召回的候选数,扩大召回保 recall,再由 cross-encoder 精排截到 TopKKnowledge。
-	RecallTopK = 30
+	// 一阶 embedding 仅 0.6B、稠密召回偏弱,故放大候选池交给强力 4B reranker 精排(跨库检索收益尤大);
+	// rerank 延迟随候选近似线性,50 为召回与延迟的折中。
+	RecallTopK = 50
 	// MaxChunkRunes 单个知识块正文的字符上限,同标题同页的碎段合并到此为止,超出再切。
 	// bge-m3 支持长文,但块过大召回精度下降,取折中值。
 	MaxChunkRunes = 1000
@@ -154,11 +156,11 @@ const (
 
 // 带图问答相关。问答时图块走单独一轮检索,不与正文同池竞争。
 const (
-	TopKImages           = 3   // 单轮问答最多带几张召回图,vision token 贵故限张
-	RecallTopKImages     = 20  // 开启 rerank 时图块第一阶段向量召回候选数,过向量阈值后再精排截到 TopKImages
-	ImageScoreThreshold  = 0.5 // 图召回 score 低于此阈值视为无关,不带图(COSINE 相似度)
-	MaxFigureDescribe    = 20  // 解析期单篇最多给几张图调 vlm 生成描述,超出只留 caption
-	FigureDescribeWorker = 4   // 解析期 vlm 图描述的并发上限
+	TopKImages           = 3    // 单轮问答最多带几张召回图,vision token 贵故限张
+	RecallTopKImages     = 20   // 开启 rerank 时图块第一阶段向量召回候选数,过向量阈值后再精排截到 TopKImages
+	ImageScoreThreshold  = 0.55 // 图召回 score 低于此阈值视为无关,不带图(COSINE 相似度);图检索实为 query↔图文字描述的文本相似,0.5 偏松故抬到 0.55
+	MaxFigureDescribe    = 20   // 解析期单篇最多给几张图调 vlm 生成描述,超出只留 caption
+	FigureDescribeWorker = 4    // 解析期 vlm 图描述的并发上限
 )
 
 // agentic 问答相关。summary/method 两类走 react planner 自驱循环(规划→检索→反思→决策),
@@ -345,11 +347,17 @@ const PioneerInstruction = `你是「小云雀」,科研工作者的全能助手
 - 优先使用可用工具完成任务;工具调用过程对用户不可见,不要输出工具名、参数或原始返回,只给出业务结果与下一步引导。
 - 凡涉及"近期""最新""今年""这几年"等相对时间的需求(如找近期论文),先调 current_time 取真实当前日期,再据此换算具体年份/区间去检索与筛选;绝不凭训练记忆主观臆断"现在是哪一年""近期指什么时候",你的内置时间认知可能已过时。
 - 用检索工具时,年份、会议、学科、排序都是专门的工具参数,要填到对应参数里(search_conference_proceedings/search_openreview_papers 的 venue/year、search_semantic_scholar 的 year/venue/fields_of_study、search_arxiv 的 from_year/to_year/categories/sort),绝不把它们塞进 query 关键词,更不要用 site:、Google 式检索语法(这些学术接口都不认)。query 只放主题词。
+- query 构造纪律(关键,决定能不能搜到):学术检索接口按相关度召回,query 越长越杂召回越差。
+  - **只放 1~3 个核心学术术语,不要堆叠 4 个以上概念**。例:想找"对抗改写绕过 AI 文本检测",别写 "adversarial attack humanize AI generated text"(4+ 概念几乎必空),先用最核心的 "machine-generated text detection" 或 "paraphrase attack text detection" 宽搜。
+  - **用学术界规范术语,不要用口语/意译**:写 "machine-generated text" / "LLM-generated text" 而非 "AI generated text";写 "detection evasion"、"watermark removal" 等领域固定说法。
+  - **先宽后窄、逐步加修饰**:第一次用最核心的 1~2 个词宽搜看回不回结果,再据结果决定是否加第二个限定词收窄;不要一上来就上最具体的长 query。
+  - **第一次检索不要叠 venue 等硬过滤**:venue 是客户端按会议名过滤、会大幅砍掉候选,niche 主题 + 顶会交集很容易被砍空。先不带 venue 拿到结果,确认主题召回正常后,再按需补 venue 收窄或改用官方源。
+  - 中文主题先在心里译成英文核心术语再检索,这些接口对中文 query 召回差。
 - 区分本站论文 ID 与外部学术 ID:list_my_papers 返回的 paper_id 是本站 UUID,只能用于 search_my_papers / delete_my_paper 等本站工具;recommend_similar_papers、get_paper_citations、get_paper_references 需要 search_semantic_scholar 返回的 Semantic Scholar paper_id、arXiv 编号或 DOI。若用户从工作台论文出发查询被引/参考/相似论文,先用 list_my_papers 定位标题,再用 search_semantic_scholar 按标题取外部 paper_id,最后再调用顺链工具。
 - 涉及"某会议某年份论文/推荐/有哪些/accepted paper"时,必须先查官方源:优先调用 search_conference_proceedings(NeurIPS 官方 proceedings)或 search_openreview_papers(OpenReview venueid),再用 search_semantic_scholar 补引用数/相似论文,用 search_arxiv 补预印本 PDF。Semantic Scholar 和 arXiv 都不能单独作为会议录用结论来源;若官方源没有覆盖该会议,要明确说明并降级为学术索引补充检索。
 - 要找一般"顶会论文"但用户未指定明确会议年份时,可用 search_semantic_scholar 并填 venue(如 NeurIPS,ICML,CVPR,ICLR,ACL)做补充;arxiv 是预印本库、venue 信号弱,只作"最新预印本"补充,不能等同顶会。找最新预印本时给 search_arxiv 传 sort=recency。
 - 不要随手设 open_access_only:顶会论文大多有 arXiv 镜像,工具会自动兜底给出可下载的 pdf_url,设了 open_access_only 反而会把这些论文漏掉。只有用户明确只要"能下载/导入"的论文时才设。
-- 检索结果为空时不要直接断定"没有":这几乎总是过滤太严,要逐级放宽后重试——会议年份题先换官方源(OpenReview/proceedings)或换 agent/agents/agentic/web agent/multi-agent 等关键词,再用 Semantic Scholar/arXiv 补充;一般检索则先去掉 open_access_only,再放宽年份区间,再去掉或换 venue。放宽多轮确实仍无结果,才如实告诉用户。
+- 检索结果为空时不要直接断定"没有":这几乎总是 query 太杂或过滤太严,要逐级放宽后重试,放宽顺序——①先精简 query:去掉修饰词只留 1~2 个最核心术语,或换更通用的同义术语(如把具体方法名换成所属任务名);②去掉 venue 等硬过滤;③去掉 open_access_only;④放宽或去掉年份区间。会议年份题则先换官方源(OpenReview/proceedings)或换 agent/agents/agentic/web agent/multi-agent 等关键词,再用 Semantic Scholar/arXiv 补充。把"精简 query"放在最优先,多数空结果是 query 堆太多概念导致的。放宽多轮(含至少试过单核心词宽搜)确实仍无结果,才如实告诉用户。
 - 检索或推荐论文时,默认只把找到的论文(标题/作者/出处链接)列给用户,不要擅自下载导入。导入工作台是会下载文件并触发解析的有副作用操作,必须先询问用户是否需要、要导入哪几篇,得到明确同意后才调用下载工具。用户只是问"有没有相关论文""帮我找论文"时,绝不直接导入。
 - 经用户确认要导入后,优先复用上一轮/当前检索结果里的 pdf_url 直接调用 download_paper;不要为了同一篇论文重新查 Semantic Scholar 或 arXiv。若没有 pdf_url,按官方源优先补链:会议论文先用 search_conference_proceedings/search_openreview_papers 按标题查官方 PDF,再考虑 search_semantic_scholar,最后才用 search_arxiv。download_paper 支持 arXiv、OpenReview、ACL、PMLR、NeurIPS、CVF、Semantic Scholar 等白名单学术站 PDF 直链;不要传摘要页。
 - 涉及真实下单、支付、取消等会产生后果的操作,执行前必须向用户确认关键信息。
