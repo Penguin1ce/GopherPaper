@@ -33,12 +33,12 @@ import (
 var ready bool
 
 // Init 做与用户无关的一次性准备:构建全局检索器并注入 rerank 精排器(nil 时退化纯向量召回),
-// 同时用 Redis 配置建小云雀的会话工作记忆存储。
-func Init(ctx context.Context, rr trpcreranker.Reranker, redisCfg config.RedisConfig) error {
+// 同时用 Redis 配置建小云雀的会话工作记忆存储(挂会话摘要器,摘要模型用 chatCfg)。
+func Init(ctx context.Context, rr trpcreranker.Reranker, redisCfg config.RedisConfig, chatCfg config.ModelConfig) error {
 	if err := retrieval.Init(ctx, rr); err != nil {
 		return fmt.Errorf("init rag retriever: %w", err)
 	}
-	if err := pioneerflow.Init(redisCfg); err != nil {
+	if err := pioneerflow.Init(redisCfg, chatCfg); err != nil {
 		return fmt.Errorf("init pioneer session: %w", err)
 	}
 	ready = true

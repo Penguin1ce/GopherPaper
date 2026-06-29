@@ -191,6 +191,37 @@ const PioneerSessionKeyPrefix = "gp-sess"
 // 跨进程重启不丢(存 Redis 非内存),闲置 7 天后自动回收;展示历史另在 MySQL 永久留存。
 const PioneerSessionTTL = 7 * 24 * time.Hour
 
+// 小云雀会话摘要(多轮上下文治理):对话累积到阈值后,把较早轮次压缩成摘要;
+// 之后喂模型的上下文 = 摘要(早期) + 摘要水位线之后的最近原文,既控 token 又不丢远期上下文。
+// 由 runner 在每轮结束后自动按阈值入队异步摘要,agent 侧用 WithAddSessionSummary 注入。
+const (
+	// PioneerSummaryEventThreshold 是触发摘要的新增事件数阈值。小云雀一轮含 user 消息+助手回复
+	// (可能再加工具调用/返回),每轮 ≥2 个事件,故 40 ≈ 20 个纯问答轮;带工具的轮会更早触发。
+	PioneerSummaryEventThreshold = 40
+	// PioneerSummaryMaxWords 是单次摘要的字数上限,控制注入上下文的体量。
+	PioneerSummaryMaxWords = 400
+	// PioneerSummarySkipRecentEvents 是摘要时跳过的最近事件数(≈最近 2 轮),
+	// 让刚摘要完仍有「最近原文」留底,避免水位线追平到当下后近期细节被压没。
+	PioneerSummarySkipRecentEvents = 4
+	// PioneerSummaryAsyncWorkers 是异步摘要 worker 数,摘要在后台生成不阻断回答。
+	PioneerSummaryAsyncWorkers = 2
+	// PioneerSummaryQueueSize 是异步摘要任务队列容量。
+	PioneerSummaryQueueSize = 100
+)
+
+// PioneerSummaryJobTimeout 是单次异步摘要任务的超时。
+const PioneerSummaryJobTimeout = 60 * time.Second
+
+// PioneerSummaryPrompt 是小云雀会话摘要的生成 prompt。必须含 {conversation_text} 占位符
+// (框架填入待摘要的多轮对话);因设了字数上限,还须含 {max_summary_words}。
+const PioneerSummaryPrompt = `你是对话记忆压缩器。请用中文把下面的多轮对话压缩成不超过 {max_summary_words} 字的要点摘要,供后续轮次作为上下文记忆。要求:
+- 保留关键事实、用户的目标与偏好、已确认的结论、重要的工具调用结果与产出;
+- 丢弃寒暄、冗余复述与纯过程性细节;
+- 用简洁要点罗列,不展开解释,不臆造未出现的信息。
+
+待压缩的对话:
+{conversation_text}`
+
 // 发消息 SSE 事件名。生成过程经 SSE 推送:工具调用与文本增量实时上屏,done 收尾带完整消息。
 const (
 	StreamEventToolCall           = "tool_call"            // agent 发起一次工具调用,载荷带工具名
