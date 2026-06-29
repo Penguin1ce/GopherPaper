@@ -75,7 +75,9 @@ export function clearUnauthorizedHandler(fn: () => void) {
   if (onUnauthorized === fn) onUnauthorized = null;
 }
 
-function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+function authHeaders(
+  extra: Record<string, string> = {},
+): Record<string, string> {
   const headers: Record<string, string> = { ...extra };
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
@@ -219,9 +221,17 @@ export function searchPapers(q: string) {
 }
 
 export function paperStatus(id: string) {
-  return request<Pick<Paper, "id" | "status" | "fail_reason">>(
-    `/papers/${encodeURIComponent(id)}/status`,
-  );
+  return request<
+    Pick<
+      Paper,
+      | "id"
+      | "status"
+      | "fail_reason"
+      | "parse_progress"
+      | "parsed_pages"
+      | "total_pages"
+    >
+  >(`/papers/${encodeURIComponent(id)}/status`);
 }
 
 export function paperDetail(id: string) {
@@ -292,9 +302,12 @@ export function paperEntityGraph(id: string) {
 }
 
 export function rebuildPaperEntityGraph(id: string) {
-  return request<EntityGraph>(`/graph/papers/${encodeURIComponent(id)}/rebuild`, {
-    method: "POST",
-  });
+  return request<EntityGraph>(
+    `/graph/papers/${encodeURIComponent(id)}/rebuild`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export function relatedPapers(id: string, limit = 10) {
@@ -323,8 +336,14 @@ export function clearTopics() {
   return request<{ removed: number }>("/topics", { method: "DELETE" });
 }
 
-export function createSession(title: string, paperID?: string, agentType?: string) {
-  const payload: { title: string; paper_id?: string; agent_type?: string } = { title };
+export function createSession(
+  title: string,
+  paperID?: string,
+  agentType?: string,
+) {
+  const payload: { title: string; paper_id?: string; agent_type?: string } = {
+    title,
+  };
   if (paperID) payload.paper_id = paperID;
   if (agentType) payload.agent_type = agentType;
   return request<Session>("/sessions", {
@@ -360,7 +379,9 @@ export interface SendStreamHandlers {
 }
 
 // 解析一帧 SSE(event + data 行),返回事件名与 JSON 载荷,无 data 返回 null。
-function parseSSEFrame(frame: string): { event: string; payload: unknown } | null {
+function parseSSEFrame(
+  frame: string,
+): { event: string; payload: unknown } | null {
   let event = "message";
   const dataLines: string[] = [];
   for (const line of frame.split("\n")) {
@@ -412,10 +433,16 @@ export async function sendMessage(
     const payload = parsed.payload as Record<string, unknown>;
     switch (parsed.event) {
       case "delta":
-        stream?.onDelta?.(String(payload.content ?? ""), Boolean(payload.reset));
+        stream?.onDelta?.(
+          String(payload.content ?? ""),
+          Boolean(payload.reset),
+        );
         break;
       case "plan":
-        stream?.onPlan?.(String(payload.phase ?? ""), String(payload.content ?? ""));
+        stream?.onPlan?.(
+          String(payload.phase ?? ""),
+          String(payload.content ?? ""),
+        );
         break;
       case "tool_call":
         stream?.onTool?.(String(payload.tool ?? ""), false);
@@ -424,7 +451,9 @@ export async function sendMessage(
         stream?.onTool?.(String(payload.tool ?? ""), true);
         break;
       case "confirm_delete_paper":
-        stream?.onConfirmDeletePaper?.(parsed.payload as PaperDeleteConfirmPayload);
+        stream?.onConfirmDeletePaper?.(
+          parsed.payload as PaperDeleteConfirmPayload,
+        );
         break;
       case "paper_flow":
         stream?.onPaperFlow?.(parsed.payload as PaperFlow);
@@ -462,6 +491,9 @@ export interface PaperStatusEvent {
   paper_id: string;
   status: Paper["status"];
   detail?: string;
+  parse_progress?: number;
+  parsed_pages?: number;
+  total_pages?: number;
 }
 
 // ReportReadyEvent 是研读报告生成完成的就绪通知。
@@ -522,7 +554,8 @@ export function openStatusStream(
     if (!msg || !msg.paper_id) return;
     if (msg.type === "paper_status") onEvent(msg as PaperStatusEvent);
     else if (msg.type === "report_ready") onReport?.(msg as ReportReadyEvent);
-    else if (msg.type === "report_progress") onProgress?.(msg as ReportProgressEvent);
+    else if (msg.type === "report_progress")
+      onProgress?.(msg as ReportProgressEvent);
   });
   return source;
 }

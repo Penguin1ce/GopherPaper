@@ -55,11 +55,11 @@ export function formatSize(bytes?: number): string {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  uploaded: "已上传",
+  uploaded: "待解析",
   parsing: "解析中",
-  extracted: "已抽取",
-  indexed: "已索引",
-  ready: "可提问",
+  extracted: "抽取中",
+  indexed: "索引中",
+  ready: "完成",
   failed: "失败",
 };
 
@@ -70,8 +70,7 @@ export function statusLabel(status?: string): string {
 export type StatusTone = "ready" | "working" | "failed";
 
 export function statusTone(status?: PaperStatus): StatusTone {
-  if (status === "ready" || status === "indexed" || status === "extracted")
-    return "ready";
+  if (status === "ready") return "ready";
   if (status === "failed") return "failed";
   return "working";
 }

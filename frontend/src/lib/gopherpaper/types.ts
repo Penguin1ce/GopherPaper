@@ -1,12 +1,7 @@
 // 与后端 internal/model 与 internal/dto 一一对应的前端类型。
 
 export type PaperStatus =
-  | "uploaded"
-  | "parsing"
-  | "extracted"
-  | "indexed"
-  | "ready"
-  | "failed";
+  "uploaded" | "parsing" | "extracted" | "indexed" | "ready" | "failed";
 
 export interface Paper {
   id: string;
@@ -17,9 +12,13 @@ export interface Paper {
   size: number;
   status: PaperStatus;
   fail_reason?: string;
+  status_detail?: string;
   page_count: number;
   category?: string;
   progress: number;
+  parse_progress?: number;
+  parsed_pages?: number;
+  total_pages?: number;
   keywords?: string[];
   created_at: string;
   updated_at: string;
@@ -240,11 +239,7 @@ export interface ResetPasswordPayload extends PasswordResetCodePayload {
 }
 
 export type ReportType =
-  | "quickread"
-  | "method"
-  | "result"
-  | "innovation"
-  | "future";
+  "quickread" | "method" | "result" | "innovation" | "future";
 
 export interface RegisterPayload {
   student_id: string;
@@ -312,6 +307,7 @@ export interface EntityGraphEdge {
   target: string;
   type: string;
   label: string;
+  details?: Record<string, string>;
 }
 
 export interface EntityGraph {
