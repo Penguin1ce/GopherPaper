@@ -8,5 +8,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&User{}, &Session{}, &Topic{},
 		&Admin{}, &ServiceCallLog{},
 		&Paper{}, &PaperMeta{}, &PaperSection{}, &PaperReport{}, &Tag{}, &PaperTag{},
+		&PaperSemanticRelation{},
 	)
 }

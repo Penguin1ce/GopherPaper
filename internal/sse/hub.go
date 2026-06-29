@@ -31,10 +31,13 @@ var (
 
 // StatusMessage 是推送给前端的解析进度消息。
 type StatusMessage struct {
-	Type    string `json:"type"` // 固定 "paper_status"
-	PaperID string `json:"paper_id"`
-	Status  string `json:"status"`
-	Detail  string `json:"detail,omitempty"`
+	Type          string `json:"type"` // 固定 "paper_status"
+	PaperID       string `json:"paper_id"`
+	Status        string `json:"status"`
+	Detail        string `json:"detail,omitempty"`
+	ParseProgress int    `json:"parse_progress,omitempty"`
+	ParsedPages   int    `json:"parsed_pages,omitempty"`
+	TotalPages    int    `json:"total_pages,omitempty"`
 }
 
 // ReportMessage 是研读报告生成完成的就绪通知,前端据此免轮询直接拉缓存。
@@ -85,6 +88,14 @@ func Remove(s *Subscriber) {
 // PushStatus 向某用户所有在线订阅广播一条解析状态。
 func PushStatus(userID, paperID, status, detail string) {
 	broadcast(userID, paperID, StatusMessage{Type: "paper_status", PaperID: paperID, Status: status, Detail: detail})
+}
+
+// PushStatusProgress broadcasts MinerU page-level parse progress.
+func PushStatusProgress(userID, paperID, status, detail string, parseProgress, parsedPages, totalPages int) {
+	broadcast(userID, paperID, StatusMessage{
+		Type: "paper_status", PaperID: paperID, Status: status, Detail: detail,
+		ParseProgress: parseProgress, ParsedPages: parsedPages, TotalPages: totalPages,
+	})
 }
 
 // PushReport 向某用户所有在线订阅广播某类研读报告已就绪。

@@ -7,9 +7,12 @@ import (
 
 // PaperStatusResponse 是论文解析状态查询响应。
 type PaperStatusResponse struct {
-	ID         string               `json:"id"`
-	Status     constant.PaperStatus `json:"status"`
-	FailReason string               `json:"fail_reason"`
+	ID            string               `json:"id"`
+	Status        constant.PaperStatus `json:"status"`
+	FailReason    string               `json:"fail_reason"`
+	ParseProgress int                  `json:"parse_progress"`
+	ParsedPages   int                  `json:"parsed_pages"`
+	TotalPages    int                  `json:"total_pages"`
 }
 
 // PaperDetailResponse 是论文详情页响应。

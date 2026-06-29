@@ -15,6 +15,7 @@ import (
 	"GopherPaper/internal/knowledge"
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/parser"
+	"GopherPaper/internal/service/graphsemantic"
 	"GopherPaper/internal/service/metrics"
 	"GopherPaper/internal/sse"
 	"GopherPaper/internal/tenant"
@@ -64,13 +65,17 @@ func runPipeline(ctx context.Context, task parseTask) {
 
 	setStatus(ctx, task, constant.PaperParsing, "")
 
-	doc, err := parser.Parse(ctx, task.FileURI)
+	doc, err := parser.ParseWithProgress(ctx, task.FileURI, func(p parser.Progress) {
+		updateParseProgress(ctx, task, p)
+	})
 	if err != nil {
 		fail(ctx, task, "解析 PDF 失败", err, start)
 		return
 	}
 	saveArtifact(task, doc) // 解析一拿到就归档原始产物,后续步骤失败也能据此离线重建
 
+	updateParseProgress(ctx, task, parser.Progress{Percent: 100, Parsed: doc.PageCount, Total: doc.PageCount})
+	setStatus(ctx, task, constant.PaperExtracted, "抽取标题、摘要、作者等结构化信息")
 	structured, err := ai.Extract(ctx, doc)
 	if err != nil {
 		fail(ctx, task, "结构化抽取失败", err, start)
@@ -83,12 +88,11 @@ func runPipeline(ctx context.Context, task parseTask) {
 		fail(ctx, task, "落库元信息失败", err, start)
 		return
 	}
-	setStatus(ctx, task, constant.PaperExtracted, "")
-
 	if !paperPresentForPipeline(ctx, task, "save_figures") {
 		return
 	}
 
+	setStatus(ctx, task, constant.PaperIndexed, "构建知识片段并写入向量索引")
 	saveFigures(task, doc) // 图片落盘并回填 ImgURI,best-effort 不阻断
 	if err := ai.DescribeFigures(ctx, doc.Figures); err != nil {
 		// 图描述失败不阻断,图块退化为只用 caption 召回。
@@ -106,13 +110,12 @@ func runPipeline(ctx context.Context, task parseTask) {
 		fail(ctx, task, "重建向量库失败", err, start)
 		return
 	}
-	setStatus(ctx, task, constant.PaperIndexed, "")
-
 	// 写入知识图谱:论文与作者/关键词/机构/参考文献的关系,供关系发现与趋势分析。
 	// best-effort,失败只记日志不阻断论文就绪(图谱是增强能力)。
 	if !paperPresentForPipeline(ctx, task, "upsert_graph") {
 		return
 	}
+	setStatus(ctx, task, constant.PaperIndexed, "写入论文、作者、关键词与引用关系")
 	upsertGraph(ctx, task, structured, doc)
 
 	if !paperPresentForPipeline(ctx, task, "mark_ready") {
@@ -176,6 +179,11 @@ func saveStructured(ctx context.Context, paperID string, s *core.PaperStructured
 
 // upsertGraph 把论文及其作者/关键词/机构/会议与参考文献写入知识图谱,best-effort。
 func upsertGraph(ctx context.Context, task parseTask, s *core.PaperStructured, doc *core.ParsedDoc) {
+	defer func() {
+		if err := graphsemantic.RefreshPaper(ctx, task.OwnerID, task.PaperID); err != nil {
+			zlog.Error("semantic graph refresh failed, degraded", "paper_id", task.PaperID, "err", err)
+		}
+	}()
 	if err := graph.UpsertPaper(ctx, graph.PaperGraph{
 		Owner:             task.OwnerID,
 		ID:                task.PaperID,
@@ -417,6 +425,29 @@ func setStatus(ctx context.Context, task parseTask, status constant.PaperStatus,
 		zlog.Error("更新解析状态失败", "paper_id", task.PaperID, "status", status, "err", err)
 	}
 	sse.PushStatus(task.OwnerID, task.PaperID, string(status), detail)
+}
+
+func updateParseProgress(ctx context.Context, task parseTask, p parser.Progress) {
+	if p.Percent <= 0 && p.Total > 0 && p.Parsed > 0 {
+		p.Percent = p.Parsed * 100 / p.Total
+	}
+	if p.Percent < 0 {
+		p.Percent = 0
+	}
+	if p.Percent > 100 {
+		p.Percent = 100
+	}
+	if p.Total > 0 && p.Parsed > p.Total {
+		p.Parsed = p.Total
+	}
+	detail := ""
+	if p.Total > 0 && p.Parsed > 0 {
+		detail = fmt.Sprintf("已解析 %d/%d 页", p.Parsed, p.Total)
+	}
+	if err := paperdao.UpdateParseProgress(ctx, task.PaperID, p.Percent, p.Parsed, p.Total); err != nil {
+		zlog.Error("更新 MinerU 解析进度失败", "paper_id", task.PaperID, "err", err)
+	}
+	sse.PushStatusProgress(task.OwnerID, task.PaperID, string(constant.PaperParsing), detail, p.Percent, p.Parsed, p.Total)
 }
 
 func fail(ctx context.Context, task parseTask, msg string, err error, start time.Time) {
