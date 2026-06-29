@@ -226,19 +226,22 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   );
 
   // ---- 鉴权持久化 ----
-  const persist = useCallback((nextUser: AuthUser | null, nextToken: string) => {
-    setUser(nextUser);
-    setTokenState(nextToken);
-    api.setToken(nextToken);
-    if (nextToken) {
-      localStorage.setItem(
-        AUTH_KEY,
-        JSON.stringify({ user: nextUser, token: nextToken }),
-      );
-    } else {
-      localStorage.removeItem(AUTH_KEY);
-    }
-  }, []);
+  const persist = useCallback(
+    (nextUser: AuthUser | null, nextToken: string) => {
+      setUser(nextUser);
+      setTokenState(nextToken);
+      api.setToken(nextToken);
+      if (nextToken) {
+        localStorage.setItem(
+          AUTH_KEY,
+          JSON.stringify({ user: nextUser, token: nextToken }),
+        );
+      } else {
+        localStorage.removeItem(AUTH_KEY);
+      }
+    },
+    [],
+  );
 
   const disconnectWs = useCallback(() => {
     if (wsRef.current) {
@@ -262,18 +265,21 @@ function AppProviderInner({ children }: { children: ReactNode }) {
 
   // notifyServer 为真时先通知后端清登录态与常驻缓存(趁 token 未清,fire-and-forget 不阻塞);
   // 401 被动登出时 token 已失效,传 false 跳过这次注定失败的请求。
-  const logout = useCallback((notifyServer = true) => {
-    if (notifyServer) void api.logout();
-    disconnectWs();
-    persist(null, "");
-    // 清空所有 Query 缓存(sessions/messages/papers/轮询),与下方业务 state 一并归零。
-    queryClient.clear();
-    setPaperSearch("");
-    setActivePaperID("");
-    setActiveSessionID("");
-    setReportReady({});
-    setReportProgress({});
-  }, [disconnectWs, persist, queryClient]);
+  const logout = useCallback(
+    (notifyServer = true) => {
+      if (notifyServer) void api.logout();
+      disconnectWs();
+      persist(null, "");
+      // 清空所有 Query 缓存(sessions/messages/papers/轮询),与下方业务 state 一并归零。
+      queryClient.clear();
+      setPaperSearch("");
+      setActivePaperID("");
+      setActiveSessionID("");
+      setReportReady({});
+      setReportProgress({});
+    },
+    [disconnectWs, persist, queryClient],
+  );
 
   // 401 统一登出,被动登出不再回调后端(token 已失效)。
   const handleUnauthorized = useCallback(() => logout(false), [logout]);
@@ -285,7 +291,10 @@ function AppProviderInner({ children }: { children: ReactNode }) {
 
   // ---- WS 推送进度 ----
   const applyStatusEvent = useCallback(
-    (paperID: string, status: Paper["status"], detail?: string) => {
+    (event: api.PaperStatusEvent) => {
+      const paperID = event.paper_id;
+      const status = event.status;
+      const detail = event.detail;
       // 判重与 toast 都在 updater 之外做:SSE 与轮询兜底会就同一状态各调一次,
       // updater 必须纯,副作用留在这里只触发一次。
       const existing = papersRef.current.find((p) => p.id === paperID);
@@ -294,24 +303,39 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         void queryClient.invalidateQueries({ queryKey: ["papers"] });
         return;
       }
-      if (existing.status === status) return;
+      const statusDetail = detail || existing.status_detail;
+      const patch = {
+        status,
+        fail_reason:
+          status === "failed"
+            ? detail || existing.fail_reason
+            : existing.fail_reason,
+        status_detail: statusDetail,
+        parse_progress: event.parse_progress ?? existing.parse_progress,
+        parsed_pages: event.parsed_pages ?? existing.parsed_pages,
+        total_pages: event.total_pages ?? existing.total_pages,
+      };
+      const sameStatus = existing.status === status;
+      const sameProgress =
+        existing.parse_progress === patch.parse_progress &&
+        existing.parsed_pages === patch.parsed_pages &&
+        existing.total_pages === patch.total_pages;
+      const sameDetail = existing.status_detail === patch.status_detail;
+      if (sameStatus && sameProgress && sameDetail) return;
       if (status === "ready") {
         toast(`「${paperTitle(existing)}」已就绪,可提问`);
       } else if (status === "failed") {
-        toast(`「${paperTitle(existing)}」解析失败:${detail || "未知原因"}`, "error");
+        toast(
+          `「${paperTitle(existing)}」解析失败:${detail || "未知原因"}`,
+          "error",
+        );
       }
       // 先同步推进镜像,紧随其后的同状态事件(SSE/轮询)即被上面的判重拦掉。
       papersRef.current = papersRef.current.map((p) =>
-        p.id === paperID
-          ? { ...p, status, fail_reason: detail || p.fail_reason }
-          : p,
+        p.id === paperID ? { ...p, ...patch } : p,
       );
       setPapers((list) =>
-        list.map((p) =>
-          p.id === paperID
-            ? { ...p, status, fail_reason: detail || p.fail_reason }
-            : p,
-        ),
+        list.map((p) => (p.id === paperID ? { ...p, ...patch } : p)),
       );
     },
     [toast, setPapers, queryClient],
@@ -329,7 +353,10 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         if (!run) return prev;
         return {
           ...prev,
-          [paperID]: { ...prev[paperID], [reportType]: { ...run, live: false } },
+          [paperID]: {
+            ...prev[paperID],
+            [reportType]: { ...run, live: false },
+          },
         };
       });
       setPapers((list) =>
@@ -351,7 +378,10 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         ...prev[paperID],
         [type]: {
           steps: [
-            { phase: "preparing", text: "小囊鼠已接收生成任务，正在启动研读流水线。" },
+            {
+              phase: "preparing",
+              text: "小囊鼠已接收生成任务，正在启动研读流水线。",
+            },
           ],
           live: true,
           failed: false,
@@ -382,19 +412,28 @@ function AppProviderInner({ children }: { children: ReactNode }) {
           }
           return {
             ...prev,
-            [paperID]: { ...paperMap, [type]: { ...cur, steps, live: false, failed: true } },
+            [paperID]: {
+              ...paperMap,
+              [type]: { ...cur, steps, live: false, failed: true },
+            },
           };
         }
         const steps = cur.steps.slice();
         const last = steps[steps.length - 1];
         if (last && last.phase === phase) {
-          steps[steps.length - 1] = { ...last, text: last.text + (detail || "") };
+          steps[steps.length - 1] = {
+            ...last,
+            text: last.text + (detail || ""),
+          };
         } else {
           steps.push({ phase, text: detail || "" });
         }
         return {
           ...prev,
-          [paperID]: { ...paperMap, [type]: { steps, live: true, failed: false } },
+          [paperID]: {
+            ...paperMap,
+            [type]: { steps, live: true, failed: false },
+          },
         };
       });
     },
@@ -446,9 +485,10 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       disconnectWs();
       const source = api.openStatusStream(
         jwt,
-        (e) => applyStatusEvent(e.paper_id, e.status, e.detail),
+        (e) => applyStatusEvent(e),
         (e) => applyReportReady(e.paper_id, e.report_type),
-        (e) => applyReportProgress(e.paper_id, e.report_type, e.phase, e.detail),
+        (e) =>
+          applyReportProgress(e.paper_id, e.report_type, e.phase, e.detail),
       );
       if (!source) return;
       wsRef.current = source;
@@ -472,7 +512,17 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       const updates = await Promise.all(
         pending.map((p) => api.paperStatus(p.id)),
       );
-      for (const u of updates) applyStatusEvent(u.id, u.status, u.fail_reason);
+      for (const u of updates) {
+        applyStatusEvent({
+          type: "paper_status",
+          paper_id: u.id,
+          status: u.status,
+          detail: u.fail_reason,
+          parse_progress: u.parse_progress,
+          parsed_pages: u.parsed_pages,
+          total_pages: u.total_pages,
+        });
+      }
       return null;
     },
   });
@@ -729,7 +779,10 @@ function AppProviderInner({ children }: { children: ReactNode }) {
           null;
         if (nextPaper) {
           setActivePaperID(nextPaper.id);
-          const paperSessions = sessionsForPaper(remainingSessions, nextPaper.id);
+          const paperSessions = sessionsForPaper(
+            remainingSessions,
+            nextPaper.id,
+          );
           if (paperSessions.length > 0) {
             await openSession(paperSessions[0].id);
           } else {
@@ -745,7 +798,16 @@ function AppProviderInner({ children }: { children: ReactNode }) {
 
       toast("论文已删除");
     },
-    [activePaperID, activeSessionID, openSession, papers, sessions, toast, setSessions, setPapers],
+    [
+      activePaperID,
+      activeSessionID,
+      openSession,
+      papers,
+      sessions,
+      toast,
+      setSessions,
+      setPapers,
+    ],
   );
 
   // 选论文:同一篇保持当前会话不动;切到不同论文则跳到该论文最新会话,
@@ -807,7 +869,10 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         await queryClient.cancelQueries({ queryKey: ["messages", sessionID] });
         // 流式写入定位到该会话的 messages 缓存(sessionID 可能是刚新建的,与 activeSessionID 一致)。
         const setMsg = (fn: (list: Message[]) => Message[]) =>
-          queryClient.setQueryData<Message[]>(["messages", sessionID], (old = []) => fn(old));
+          queryClient.setQueryData<Message[]>(
+            ["messages", sessionID],
+            (old = []) => fn(old),
+          );
         const userMsg: Message = {
           id: `local-${Date.now()}`,
           session_id: sessionID,
@@ -887,22 +952,34 @@ function AppProviderInner({ children }: { children: ReactNode }) {
               if (!done) {
                 setToolNote(toolStatusText(tool, done));
                 // 首次工具调用前合成规划步(模型未输出时补全)
-                if (!planSteps.some((s) => s.phase === "planning" || s.phase === "replanning")) {
-                  planSteps.push({ phase: "planning", text: "分析问题，制定检索策略" });
+                if (
+                  !planSteps.some(
+                    (s) => s.phase === "planning" || s.phase === "replanning",
+                  )
+                ) {
+                  planSteps.push({
+                    phase: "planning",
+                    text: "分析问题，制定检索策略",
+                  });
                 }
                 const text = TOOL_STEP_TEXT[tool] || tool;
                 const last = planSteps[planSteps.length - 1];
                 if (!(last && last.phase === "action" && last.text === text)) {
                   planSteps.push({ phase: "action", text });
                 }
-                if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
+                if (planRafID === null)
+                  planRafID = requestAnimationFrame(flushPlan);
               } else {
                 setToolNote(toolStatusText(tool, done));
                 // 工具结果返回后合成思考步
                 const last = planSteps[planSteps.length - 1];
                 if (!last || last.phase !== "reasoning") {
-                  planSteps.push({ phase: "reasoning", text: "综合检索结果，整理回答" });
-                  if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
+                  planSteps.push({
+                    phase: "reasoning",
+                    text: "综合检索结果，整理回答",
+                  });
+                  if (planRafID === null)
+                    planRafID = requestAnimationFrame(flushPlan);
                 }
               }
             },
@@ -911,7 +988,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
               const last = planSteps[planSteps.length - 1];
               if (last && last.phase === phase) last.text += content;
               else planSteps.push({ phase, text: content });
-              if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
+              if (planRafID === null)
+                planRafID = requestAnimationFrame(flushPlan);
             },
             // 思路图骨架推达:立即挂到占位消息,气泡内先画出结构(节点待点亮)。
             // 兜底防重:同一论文本轮已收到骨架则忽略后续重复推送,避免把已点亮的图打回占位再重画
@@ -968,7 +1046,14 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         setToolNote("");
       }
     },
-    [activePaperID, activeSessionID, createSession, papers, refreshSessions, queryClient],
+    [
+      activePaperID,
+      activeSessionID,
+      createSession,
+      papers,
+      refreshSessions,
+      queryClient,
+    ],
   );
 
   const activePaper = useMemo(
