@@ -15,11 +15,13 @@ import (
 
 	"trpc.group/trpc-go/trpc-agent-go/agent"
 	"trpc.group/trpc-go/trpc-agent-go/agent/llmagent"
+	trpcevent "trpc.group/trpc-go/trpc-agent-go/event"
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
 	"trpc.group/trpc-go/trpc-agent-go/planner/react"
 	"trpc.group/trpc-go/trpc-agent-go/runner"
 	trpcsession "trpc.group/trpc-go/trpc-agent-go/session"
 	redissession "trpc.group/trpc-go/trpc-agent-go/session/redis"
+	"trpc.group/trpc-go/trpc-agent-go/session/summary"
 
 	"GopherPaper/internal/ai/core"
 	"GopherPaper/internal/ai/planstream"
@@ -40,12 +42,28 @@ var runners sync.Map // userID -> *runnerEntry
 // 存 Redis 故跨进程重启不丢(工作记忆属优化,真要清理直接删 Redis 键即可)。
 var sessStore trpcsession.Service
 
-// Init 用 Redis 配置建小云雀工作记忆的 session 服务。须在配置加载后调用,先于首轮 Chat。
-func Init(cfg config.RedisConfig) error {
+// Init 用 Redis 配置建小云雀工作记忆的 session 服务,并挂上会话摘要器做多轮上下文治理。
+// 须在配置加载后调用,先于首轮 Chat。chatCfg 是全局 chat 模型配置,供摘要器生成摘要。
+func Init(cfg config.RedisConfig, chatCfg config.ModelConfig) error {
+	// 会话摘要器:对话累积到阈值后把较早轮次压缩成摘要,做上下文治理。
+	// 模型用全局 chat 模型(所有用户同一把 key),故一个全局 summarizer 即可复用。
+	summarizer := summary.NewSummarizer(
+		aimodel.NewChatModel(chatCfg),
+		summary.WithEventThreshold(constant.PioneerSummaryEventThreshold),
+		summary.WithMaxSummaryWords(constant.PioneerSummaryMaxWords),
+		summary.WithPrompt(constant.PioneerSummaryPrompt),
+		// 跳过最近若干事件不进摘要,保证刚摘要完仍有「最近原文」留底。
+		summary.WithSkipRecent(func([]trpcevent.Event) int { return constant.PioneerSummarySkipRecentEvents }),
+	)
 	s, err := redissession.NewService(
 		redissession.WithRedisClientURL(redisURL(cfg)),
 		redissession.WithKeyPrefix(constant.PioneerSessionKeyPrefix),
 		redissession.WithSessionTTL(constant.PioneerSessionTTL),
+		// 挂摘要器:runner 每轮结束后自动按阈值入队异步摘要,后台生成不阻断回答。
+		redissession.WithSummarizer(summarizer),
+		redissession.WithAsyncSummaryNum(constant.PioneerSummaryAsyncWorkers),
+		redissession.WithSummaryQueueSize(constant.PioneerSummaryQueueSize),
+		redissession.WithSummaryJobTimeout(constant.PioneerSummaryJobTimeout),
 	)
 	if err != nil {
 		return fmt.Errorf("pioneer: 初始化 Redis session 失败: %w", err)
@@ -117,6 +135,9 @@ func runnerForUser(userID string) (runner.Runner, error) {
 			// 跨轮记忆:session 累积全量轨迹,只取最近若干条喂模型,防上下文无限膨胀;
 			// 截断点落在孤儿 tool 结果上时框架自动跳过,不会触发 tool_use_id 报错。
 			llmagent.WithMaxHistoryRuns(constant.PioneerMaxHistoryRuns),
+			// 多轮上下文治理:把分支摘要作为 system 消息前置,摘要水位线之后保留原文。
+			// 开此项后 MaxHistoryRuns 由摘要水位线接管(框架忽略),早期上下文经摘要不丢。
+			llmagent.WithAddSessionSummary(true),
 			// 工具列表在每轮运行时用请求 ctx 重建:凭据型工具集靠 ctx 里的 token
 			// 才能过远端鉴权,构建期的 context.Background 拉不到(401)。
 			llmagent.WithRefreshToolSetsOnRun(true),

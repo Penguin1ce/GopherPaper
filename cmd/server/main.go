@@ -131,7 +131,7 @@ func run(cfgPath string, backfillGraph bool) error {
 	zlog.Info("PDF 解析器已就绪")
 
 	// 6. 编排器：准备全局检索器并注入 rerank 精排器,建小云雀 Redis 工作记忆,模型由 aimodel 按用户缓存
-	if err := ai.Init(ctx, aimodel.NewReranker(cfg.Rerank), cfg.Redis); err != nil {
+	if err := ai.Init(ctx, aimodel.NewReranker(cfg.Rerank), cfg.Redis, cfg.Models.Chat); err != nil {
 		return err
 	}
 	zlog.Info("编排器已就绪")
