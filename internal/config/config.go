@@ -143,7 +143,8 @@ type RerankConfig struct {
 	Enabled bool   `toml:"enabled"`
 	BaseURL string `toml:"base_url"` // 完整 /rerank 端点，如 https://api.siliconflow.cn/v1/rerank
 	APIKey  string `toml:"api_key"`
-	Model   string `toml:"model"` // cross-encoder 模型名，如 BAAI/bge-reranker-v2-m3
+	Model   string `toml:"model"`   // cross-encoder 模型名，如 BAAI/bge-reranker-v2-m3
+	Timeout int    `toml:"timeout"` // 单次精排 HTTP 超时，秒。精排是 best-effort，超时即退化为向量序，故宜短以免拖慢问答
 }
 
 type MilvusConfig struct {
@@ -256,6 +257,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.MQ.ReportConcurrency <= 0 {
 		c.MQ.ReportConcurrency = 6
+	}
+	if c.Rerank.Timeout == 0 {
+		c.Rerank.Timeout = 15
 	}
 	if c.Parser.BaseURL == "" {
 		c.Parser.BaseURL = "https://mineru.net/api/v4"

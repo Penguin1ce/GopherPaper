@@ -8,6 +8,7 @@ package gopher
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -66,6 +67,7 @@ func Generate(ctx context.Context, in *core.ReportInput) (*core.Reply, error) {
 	if err != nil {
 		return nil, err
 	}
+	content = sanitizeReport(content)
 
 	reply := &core.Reply{
 		Content: content,
@@ -95,6 +97,10 @@ func runnerForUser(userID string) (runner.Runner, error) {
 		gc.ReasoningEffort = nil
 		// 流式拉取:经 ctx 的 StreamHandler 把规划/检索/思考阶段与正文增量推给前端。
 		gc.Stream = true
+		// 报告是长篇输出,端点默认温度(doubao≈1.0)在多轮长上下文下易采样退化:吐垃圾串、
+		// 自我批判、甚至重写出第二份报告。压低温度并加 frequency_penalty 抑制重复跑飞,只作用本链路。
+		gc.Temperature = trpcmodel.Float64Ptr(constant.ReportTemperature)
+		gc.FrequencyPenalty = trpcmodel.Float64Ptr(constant.ReportFrequencyPenalty)
 		opts := []llmagent.Option{
 			llmagent.WithModel(models.Chat),
 			llmagent.WithGenerationConfig(gc),
@@ -117,4 +123,18 @@ func runnerForUser(userID string) (runner.Runner, error) {
 // EvictUser 清除该用户缓存的小囊鼠 runner,登出时调用。下次访问 runnerForUser 重建。
 func EvictUser(userID string) {
 	runners.Delete(userID)
+}
+
+// reportH1 匹配 Markdown 一级标题行。一份报告至多一个一级标题,出现第二个即模型跑飞重写了第二份。
+var reportH1 = regexp.MustCompile(`(?m)^#\s+\S`)
+
+// sanitizeReport 是报告输出的最后一道防线:采样退化时模型偶发在一轮里重写出第二份报告
+// (前一份后跟思维链自语、垃圾串,再 # 重开一份)。检测到第二个一级标题即只保留第一份完整报告,
+// 截掉其后的所有内容。采样参数(ReportTemperature/FrequencyPenalty)是根因治理,这里兜底残留。
+func sanitizeReport(s string) string {
+	locs := reportH1.FindAllStringIndex(s, -1)
+	if len(locs) >= 2 {
+		s = s[:locs[1][0]]
+	}
+	return strings.TrimSpace(s)
 }

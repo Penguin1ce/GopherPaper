@@ -125,6 +125,7 @@ enabled = true
 base_url = "https://api.siliconflow.cn/v1/rerank" # 完整 /rerank 端点（非 /v1）
 api_key = "sk-xxxx"
 model = "Qwen/Qwen3-Reranker-4B"
+timeout = 15 # 单次精排 HTTP 超时（秒），缺省 15。精排 best-effort，超时即退化为向量序，宜短以免拖慢问答
 
 # ── Milvus 向量库 ────────────────────────────────────────────
 [milvus]

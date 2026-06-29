@@ -140,7 +140,8 @@ const ReportProgressCacheTTL = 15 * time.Minute
 const (
 	DefaultKnowledgeCollection = "knowledge_chunks"
 	// TopKKnowledge 最终拼进 context 的正文块数。开启 rerank 时为精排后截断数,关闭时即向量召回数。
-	TopKKnowledge = 8
+	// 强模型 + 4B reranker 下取精不取多:精排尾部块相关性递减近噪声,徒增 input token,6 块已够强模型提取。
+	TopKKnowledge = 6
 	// RecallTopK 开启 rerank 时第一阶段向量召回的候选数,扩大召回保 recall,再由 cross-encoder 精排截到 TopKKnowledge。
 	// 一阶 embedding 仅 0.6B、稠密召回偏弱,故放大候选池交给强力 4B reranker 精排(跨库检索收益尤大);
 	// rerank 延迟随候选近似线性,50 为召回与延迟的折中。
@@ -170,6 +171,12 @@ const (
 	AgenticMaxIterSummary = 5  // summary 类 agentic 循环的工具迭代硬上限,留出一轮给 find_figures 配图
 	AgenticMaxIterMethod  = 6  // method 类工具迭代硬上限,方法/流程常需逐步检索故放宽
 	AgenticMaxIterReport  = 12 // 研读报告要覆盖全文、按报告结构逐方面检索,迭代预算给得最宽
+)
+
+// 研读报告生成的采样参数:报告是长篇输出,端点默认温度易在长上下文下采样退化(吐垃圾串、重写第二份)。
+const (
+	ReportTemperature      = 0.3 // 压低随机性,抑制长输出跑飞,只作用小囊鼠报告链路
+	ReportFrequencyPenalty = 0.3 // 惩罚重复 token,打断退化重复(整段复述、垃圾串循环)
 )
 
 // 多轮对话相关。
