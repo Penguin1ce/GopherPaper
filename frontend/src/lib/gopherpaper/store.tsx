@@ -84,7 +84,7 @@ interface AppContextValue {
   // 动作
   toast: (message: string, type?: "ok" | "error") => void;
   dismissToast: (id: number) => void;
-  login: (studentID: string, password: string) => Promise<void>;
+  login: (account: string, password: string) => Promise<void>;
   registerAndLogin: (payload: RegisterPayload) => Promise<void>;
   sendCode: (email: string) => Promise<void>;
   sendPasswordResetCode: (payload: PasswordResetCodePayload) => Promise<void>;
@@ -645,8 +645,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   }, [bootstrapSession, logout, persist]);
 
   const login = useCallback(
-    async (studentID: string, password: string) => {
-      const data = await api.login(studentID, password);
+    async (account: string, password: string) => {
+      const data = await api.login(account, password);
       persist(
         {
           student_id: data.student_id,

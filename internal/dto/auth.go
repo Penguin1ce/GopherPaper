@@ -26,9 +26,10 @@ type RegisterRequest struct {
 	Code      string `json:"code" binding:"required,len=6"`
 }
 
-// LoginRequest 登录请求，按学号加密码校验。
+// LoginRequest 登录请求，Account 支持学号或绑定邮箱；StudentID 保留给旧客户端兼容。
 type LoginRequest struct {
-	StudentID string `json:"student_id" binding:"required"`
+	Account   string `json:"account"`
+	StudentID string `json:"student_id"`
 	Password  string `json:"password" binding:"required"`
 }
 

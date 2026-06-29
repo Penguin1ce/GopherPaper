@@ -1,7 +1,7 @@
 // Package user 是用户注册、登录与邮箱验证码下发的业务逻辑，包级函数直接读写 dao/auth/utils。
 //
 //	注册 Register: 校验 Redis 中的邮箱验证码 → 落库 → 删验证码
-//	登录 Login:    校验学号密码 → 签发 JWT → 以邮箱前缀为键写入 Redis
+//	登录 Login:    校验学号/邮箱密码 → 签发 JWT → 以邮箱前缀为键写入 Redis
 package user
 
 import (
@@ -94,10 +94,11 @@ func Register(ctx context.Context, req dto.RegisterRequest) error {
 	return nil
 }
 
-// Login 校验学号与密码，签发 JWT 并以邮箱前缀为键写入 Redis，返回 token 与用户。
-func Login(ctx context.Context, studentID, password string) (string, *model.User, error) {
+// Login 校验学号或绑定邮箱与密码，签发 JWT 并以邮箱前缀为键写入 Redis，返回 token 与用户。
+func Login(ctx context.Context, account, password string) (string, *model.User, error) {
 	var user model.User
-	err := dao.DB.WithContext(ctx).Where("student_id = ?", studentID).First(&user).Error
+	query, arg := loginLookup(account)
+	err := dao.DB.WithContext(ctx).Where(query, arg).First(&user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", nil, errs.ErrUserNotFound
 	}
@@ -116,6 +117,14 @@ func Login(ctx context.Context, studentID, password string) (string, *model.User
 		return "", nil, fmt.Errorf("service: 存储 token 失败: %w", err)
 	}
 	return token, &user, nil
+}
+
+func loginLookup(account string) (string, string) {
+	account = strings.TrimSpace(account)
+	if strings.Contains(account, "@") {
+		return "email = ?", account
+	}
+	return "student_id = ?", account
 }
 
 func Profile(ctx context.Context, studentID string) (*model.User, error) {

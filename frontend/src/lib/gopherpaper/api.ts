@@ -114,10 +114,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 // ---- 鉴权 ----
 
-export function login(studentID: string, password: string) {
+export function login(account: string, password: string) {
   return request<LoginResponse>("/user/login", {
     method: "POST",
-    body: JSON.stringify({ student_id: studentID, password }),
+    body: JSON.stringify({ account, password }),
   });
 }
 
