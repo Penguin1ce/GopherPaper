@@ -41,13 +41,37 @@ type batchResultResp struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 	Data struct {
-		ExtractResult []struct {
-			FileName   string `json:"file_name"`
-			State      string `json:"state"` // pending/running/done/failed
-			FullZipURL string `json:"full_zip_url"`
-			ErrMsg     string `json:"err_msg"`
-		} `json:"extract_result"`
+		ExtractResult []extractResultItem `json:"extract_result"`
 	} `json:"data"`
+}
+
+type extractResultItem struct {
+	FileName   string         `json:"file_name"`
+	State      string         `json:"state"` // pending/running/done/failed
+	FullZipURL string         `json:"full_zip_url"`
+	ErrMsg     string         `json:"err_msg"`
+	Raw        map[string]any `json:"-"`
+}
+
+func (i *extractResultItem) UnmarshalJSON(data []byte) error {
+	type alias extractResultItem
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*i = extractResultItem(a)
+	i.Raw = raw
+	return nil
+}
+
+type Progress struct {
+	Percent int
+	Parsed  int
+	Total   int
 }
 
 // requestUpload 申请上传链接，返回 batchID 与单文件的 PUT 地址。
@@ -99,8 +123,13 @@ func uploadFile(ctx context.Context, putURL string, data []byte) error {
 
 // pollBatch 轮询批次直到该文件 done/failed，返回产物 zip 地址。
 func pollBatch(ctx context.Context, batchID string) (string, error) {
+	return pollBatchProgress(ctx, batchID, nil)
+}
+
+func pollBatchProgress(ctx context.Context, batchID string, onProgress func(Progress)) (string, error) {
 	interval := time.Duration(cfg.PollInterval) * time.Second
 	deadline := time.Now().Add(time.Duration(cfg.PollTimeout) * time.Second)
+	var last Progress
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.BaseURL+"/extract-results/batch/"+batchID, nil)
 		if err != nil {
@@ -116,6 +145,12 @@ func pollBatch(ctx context.Context, batchID string) (string, error) {
 			return "", fmt.Errorf("parser: 查询批次结果失败: %s", out.Msg)
 		}
 		for _, r := range out.Data.ExtractResult {
+			if onProgress != nil {
+				if p, ok := extractProgress(r.Raw); ok && p != last {
+					onProgress(p)
+					last = p
+				}
+			}
 			switch r.State {
 			case "done":
 				if r.FullZipURL == "" {
@@ -135,6 +170,72 @@ func pollBatch(ctx context.Context, batchID string) (string, error) {
 		case <-time.After(interval):
 		}
 	}
+}
+
+// extractProgress reads page-level progress from MinerU responses across versions.
+func extractProgress(raw map[string]any) (Progress, bool) {
+	if raw == nil {
+		return Progress{}, false
+	}
+	total := firstInt(raw, "total_pages", "total_page", "page_count", "pages")
+	parsed := firstInt(raw, "parsed_pages", "parse_pages", "extracted_pages", "processed_pages", "current_page", "page")
+	percent := firstInt(raw, "percent", "progress", "extract_progress", "extract_progress_percent")
+	for _, key := range []string{"progress", "extract_progress", "page_progress"} {
+		if nested, ok := raw[key].(map[string]any); ok {
+			if total == 0 {
+				total = firstInt(nested, "total_pages", "total_page", "page_count", "pages", "total")
+			}
+			if parsed == 0 {
+				parsed = firstInt(nested, "parsed_pages", "parse_pages", "extracted_pages", "processed_pages", "current_page", "done", "finished")
+			}
+			if percent == 0 {
+				percent = firstInt(nested, "percent", "progress", "rate")
+			}
+		}
+	}
+	if total > 0 && parsed > total {
+		parsed = total
+	}
+	if percent == 0 && total > 0 && parsed > 0 {
+		percent = parsed * 100 / total
+	}
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	p := Progress{Percent: percent, Parsed: parsed, Total: total}
+	return p, p.Percent > 0 || p.Parsed > 0 || p.Total > 0
+}
+
+func firstInt(m map[string]any, keys ...string) int {
+	for _, key := range keys {
+		if v := anyInt(m[key]); v > 0 {
+			return v
+		}
+	}
+	return 0
+}
+
+func anyInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case json.Number:
+		i, _ := n.Int64()
+		return int(i)
+	case string:
+		var i int
+		if _, err := fmt.Sscanf(n, "%d", &i); err == nil {
+			return i
+		}
+	}
+	return 0
 }
 
 // downloadZip 拉取产物 zip 字节。

@@ -144,7 +144,10 @@ func Status(c *gin.Context) {
 		writePaperErr(c, err, "查询失败")
 		return
 	}
-	response.OK(c, gin.H{"id": p.ID, "status": p.Status, "fail_reason": p.FailReason})
+	response.OK(c, gin.H{
+		"id": p.ID, "status": p.Status, "fail_reason": p.FailReason,
+		"parse_progress": p.ParseProgress, "parsed_pages": p.ParsedPages, "total_pages": p.TotalPages,
+	})
 }
 
 // Detail 取论文及其结构化元信息与章节。

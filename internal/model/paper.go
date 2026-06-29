@@ -79,21 +79,24 @@ func (m *JSONMap) Scan(src any) error {
 // Paper 是一篇上传的论文，归属某个用户,主键 UUID 便于对外暴露。
 // Status 是从上传到就绪的解析状态机。
 type Paper struct {
-	ID         string               `gorm:"size:36;primaryKey" json:"id"`
-	OwnerID    string               `gorm:"size:64;index;not null" json:"owner_id"`
-	Title      string               `gorm:"size:512" json:"title"`
-	FileName   string               `gorm:"size:512;not null" json:"file_name"`
-	FileURI    string               `gorm:"size:1024;not null" json:"file_uri"`
-	Size       int64                `json:"size"`
-	Status     constant.PaperStatus `gorm:"size:16;not null;index" json:"status"`
-	FailReason string               `gorm:"size:512" json:"fail_reason,omitempty"`
-	PageCount  int                  `json:"page_count"`
-	Category   string               `gorm:"size:64;index" json:"category,omitempty"`
-	Progress   int                  `json:"progress"`                    // 阅读进度 0-100
-	Keywords   JSONStrings          `gorm:"-" json:"keywords,omitempty"` // 非表列 从 paper_meta 回填供前端筛选
-	CreatedAt  time.Time            `json:"created_at"`
-	UpdatedAt  time.Time            `json:"updated_at"`
-	DeletedAt  gorm.DeletedAt       `gorm:"index" json:"-"`
+	ID            string               `gorm:"size:36;primaryKey" json:"id"`
+	OwnerID       string               `gorm:"size:64;index;not null" json:"owner_id"`
+	Title         string               `gorm:"size:512" json:"title"`
+	FileName      string               `gorm:"size:512;not null" json:"file_name"`
+	FileURI       string               `gorm:"size:1024;not null" json:"file_uri"`
+	Size          int64                `json:"size"`
+	Status        constant.PaperStatus `gorm:"size:16;not null;index" json:"status"`
+	FailReason    string               `gorm:"size:512" json:"fail_reason,omitempty"`
+	PageCount     int                  `json:"page_count"`
+	Category      string               `gorm:"size:64;index" json:"category,omitempty"`
+	ParseProgress int                  `json:"parse_progress"`              // MinerU parse progress 0-100
+	ParsedPages   int                  `json:"parsed_pages"`                // MinerU parsed pages
+	TotalPages    int                  `json:"total_pages"`                 // MinerU total pages
+	Progress      int                  `json:"progress"`                    // 阅读进度 0-100
+	Keywords      JSONStrings          `gorm:"-" json:"keywords,omitempty"` // 非表列 从 paper_meta 回填供前端筛选
+	CreatedAt     time.Time            `json:"created_at"`
+	UpdatedAt     time.Time            `json:"updated_at"`
+	DeletedAt     gorm.DeletedAt       `gorm:"index" json:"-"`
 }
 
 func (Paper) TableName() string { return "papers" }

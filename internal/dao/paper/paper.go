@@ -145,6 +145,19 @@ func UpdateInfo(ctx context.Context, id, title string, pageCount int) error {
 	return nil
 }
 
+// UpdateParseProgress records MinerU parse progress 0-100.
+func UpdateParseProgress(ctx context.Context, id string, progress, parsedPages, totalPages int) error {
+	fields := map[string]any{
+		"parse_progress": progress,
+		"parsed_pages":   parsedPages,
+		"total_pages":    totalPages,
+	}
+	if err := dao.DB.WithContext(ctx).Model(&model.Paper{}).Where("id = ?", id).Updates(fields).Error; err != nil {
+		return fmt.Errorf("dao/paper: update parse progress failed: %w", err)
+	}
+	return nil
+}
+
 // UpdateProgress 记录阅读进度 0-100。
 func UpdateProgress(ctx context.Context, id string, progress int) error {
 	if err := dao.DB.WithContext(ctx).Model(&model.Paper{}).Where("id = ?", id).
@@ -167,6 +180,9 @@ func Delete(ctx context.Context, id string) error {
 			return err
 		}
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperTag{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("source_paper_id = ? or target_paper_id = ?", id, id).Delete(&model.PaperSemanticRelation{}).Error; err != nil {
 			return err
 		}
 		return tx.Where("id = ?", id).Delete(&model.Paper{}).Error

@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type Stats struct {
@@ -38,11 +39,12 @@ type EntityNode struct {
 }
 
 type EntityEdge struct {
-	ID     string `json:"id"`
-	Source string `json:"source"`
-	Target string `json:"target"`
-	Type   string `json:"type"`
-	Label  string `json:"label"`
+	ID      string            `json:"id"`
+	Source  string            `json:"source"`
+	Target  string            `json:"target"`
+	Type    string            `json:"type"`
+	Label   string            `json:"label"`
+	Details map[string]string `json:"details,omitempty"`
 }
 
 type EntityGraph struct {
@@ -234,7 +236,64 @@ RETURN p.id AS paperID, 'Affiliation:' + coalesce(n.norm, toString(id(n))) AS no
 		})
 		seenEdges[edgeID] = true
 	}
+	if err := appendSemanticOverviewEdges(ctx, owner, &g, seenEdges); err != nil {
+		return EntityGraph{}, err
+	}
 	return g, nil
+}
+
+func appendSemanticOverviewEdges(ctx context.Context, owner string, g *EntityGraph, seenEdges map[string]bool) error {
+	const cypher = `
+MATCH (p:Paper {owner:$owner})-[s:SEMANTIC_SIMILAR]-(q:Paper {owner:$owner})
+WHERE p.id < q.id
+RETURN p.id AS sourceID,
+       q.id AS targetID,
+       s.score AS score,
+       coalesce(s.matched_fields, []) AS matchedFields,
+       coalesce(s.summary, '') AS summary,
+       coalesce(s.keyword_similarity, '') AS keywordSimilarity,
+       coalesce(s.research_question_similarity, '') AS researchQuestionSimilarity,
+       coalesce(s.method_similarity, '') AS methodSimilarity,
+       coalesce(s.experiment_similarity, '') AS experimentSimilarity,
+       coalesce(s.innovation_similarity, '') AS innovationSimilarity,
+       coalesce(s.model, '') AS model
+ORDER BY score DESC`
+	res, err := exec(ctx, cypher, map[string]any{"owner": owner})
+	if err != nil {
+		return err
+	}
+	for _, r := range res.Records {
+		sourceID := asStr(r, "sourceID")
+		targetID := asStr(r, "targetID")
+		if sourceID == "" || targetID == "" {
+			continue
+		}
+		edgeID := "paper:" + sourceID + ":SEMANTIC_SIMILAR:paper:" + targetID
+		if seenEdges[edgeID] {
+			continue
+		}
+		details := map[string]string{
+			"相似摘要":   asStr(r, "summary"),
+			"相似字段":   joinNonEmpty(asStrSlice(r, "matchedFields"), "、"),
+			"相似分数":   fmt.Sprintf("%.3f", asFloat(r, "score")),
+			"关键词":    asStr(r, "keywordSimilarity"),
+			"研究问题":   asStr(r, "researchQuestionSimilarity"),
+			"方法":     asStr(r, "methodSimilarity"),
+			"实验/数据集": asStr(r, "experimentSimilarity"),
+			"创新点":    asStr(r, "innovationSimilarity"),
+			"判定模型":   asStr(r, "model"),
+		}
+		g.Edges = append(g.Edges, EntityEdge{
+			ID:      edgeID,
+			Source:  "paper:" + sourceID,
+			Target:  "paper:" + targetID,
+			Type:    "SEMANTIC_SIMILAR",
+			Label:   "语义相似",
+			Details: compactDetails(details),
+		})
+		seenEdges[edgeID] = true
+	}
+	return nil
 }
 
 func PaperEntityGraph(ctx context.Context, owner, paperID string) (EntityGraph, error) {
@@ -393,6 +452,52 @@ func intString(n int) string {
 		return ""
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+func asFloat(rec recordGetter, key string) float64 {
+	v, ok := rec.Get(key)
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return n
+	case float32:
+		return float64(n)
+	case int64:
+		return float64(n)
+	case int:
+		return float64(n)
+	default:
+		return 0
+	}
+}
+
+type recordGetter interface {
+	Get(string) (any, bool)
+}
+
+func compactDetails(in map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range in {
+		if v != "" {
+			out[k] = v
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func joinNonEmpty(values []string, sep string) string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return strings.Join(out, sep)
 }
 
 func graphNodeType(label string) string {

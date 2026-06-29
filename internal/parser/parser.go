@@ -111,6 +111,10 @@ var refTitleRe = regexp.MustCompile(`(?i)^\s*(references|bibliography|参考文�
 
 // Parse 把本地 PDF 解析为 ParsedDoc。
 func Parse(ctx context.Context, fileURI string) (*core.ParsedDoc, error) {
+	return ParseWithProgress(ctx, fileURI, nil)
+}
+
+func ParseWithProgress(ctx context.Context, fileURI string, onProgress func(Progress)) (*core.ParsedDoc, error) {
 	if httpClient == nil {
 		return nil, fmt.Errorf("parser: 未初始化")
 	}
@@ -126,7 +130,7 @@ func Parse(ctx context.Context, fileURI string) (*core.ParsedDoc, error) {
 	if err := uploadFile(ctx, putURL, data); err != nil {
 		return nil, err
 	}
-	zipURL, err := pollBatch(ctx, batchID)
+	zipURL, err := pollBatchProgress(ctx, batchID, onProgress)
 	if err != nil {
 		return nil, err
 	}
