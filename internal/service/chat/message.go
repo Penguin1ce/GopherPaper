@@ -7,6 +7,7 @@ import (
 
 	"GopherPaper/internal/ai"
 	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/ai/topic"
 	chatdao "GopherPaper/internal/dao/chat"
 	"GopherPaper/internal/history"
 	"GopherPaper/internal/model"
@@ -71,6 +72,19 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string) (*mode
 	}
 	_ = chatdao.TouchSession(ctx, sessionID) // 刷新列表排序，失败不影响应答
 	persistMS := time.Since(step).Milliseconds()
+
+	// 小云雀会话异步按对话内容归类,不阻塞应答。首轮必触发;前几轮内容变厚时再触发让 Classify 重排
+	// (hist 为本轮前历史,前 TopicRefineMaxTurns 轮内放行,之后锁定省去无谓 goroutine)。
+	// Classify 内按会话串行并再校验轮数,防并发与超窗重排。
+	if sess.AgentType == constant.AgentPioneer &&
+		(sess.TopicID == "" || len(hist) < constant.TopicRefineMaxTurns*2) {
+		go func() {
+			bg := context.WithoutCancel(ctx) // 保住 tenant 身份又不被请求 ctx 取消
+			if err := topic.Classify(bg, studentID, sessionID); err != nil {
+				zlog.Warn("会话主题归类失败", "session_id", sessionID, "err", err)
+			}
+		}()
+	}
 
 	// 分阶段耗时，ai_ms 通常是大头，persist_ms 为历史追加耗时。
 	zlog.Info("发消息完成",

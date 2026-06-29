@@ -14,7 +14,11 @@ type Session struct {
 	StudentID string `gorm:"size:64;index;not null" json:"student_id"`
 	PaperID   string `gorm:"size:36;index" json:"paper_id,omitempty"`
 	// AgentType 标记会话由哪个 agent 应答,空为默认论文助教,pioneer 为小云雀。
-	AgentType string         `gorm:"size:16;index" json:"agent_type,omitempty"`
+	AgentType string `gorm:"size:16;index" json:"agent_type,omitempty"`
+	// TopicID 关联自动归类的主题,可空表示尚未归类。当前仅 pioneer 会话归类。
+	TopicID string `gorm:"size:36;index" json:"topic_id,omitempty"`
+	// TopicVec 是该会话上次归类用的归一化向量(JSON),供重排时从旧主题精确扣减贡献。不外泄。
+	TopicVec  string         `gorm:"type:longtext" json:"-"`
 	Title     string         `gorm:"size:255" json:"title"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

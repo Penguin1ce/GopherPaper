@@ -2,14 +2,20 @@ package chat
 
 import (
 	"context"
+	"sync"
 
+	"GopherPaper/internal/ai/topic"
 	chatdao "GopherPaper/internal/dao/chat"
+	topicdao "GopherPaper/internal/dao/topic"
 	"GopherPaper/internal/history"
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 	"GopherPaper/pkg/errs"
 )
+
+// backfilling 记正在回填的用户,防同一用户并发触发重复跑同一批会话。
+var backfilling sync.Map // studentID -> struct{}
 
 // CreateSession 为用户新建一段会话，paperID 可空表示跨库问答。
 // agentType 空为默认论文助教，pioneer 为小云雀会话。
@@ -36,6 +42,56 @@ func truncateTitle(title string) string {
 // ListSessions 列出学生的全部会话。
 func ListSessions(ctx context.Context, studentID string) ([]model.Session, error) {
 	return chatdao.ListSessions(ctx, studentID)
+}
+
+// ListPioneerTopics 列出学生的小云雀会话主题,供前端按主题分组渲染。
+func ListPioneerTopics(ctx context.Context, studentID string) ([]model.Topic, error) {
+	return topicdao.ListTopics(ctx, studentID, constant.AgentPioneer)
+}
+
+// ClearPioneerTopics 清空当前用户的全部小云雀主题,会话退回未归类,返回删除的主题数。
+// 供演示重置归类:清空后点整理可重新归类。
+func ClearPioneerTopics(ctx context.Context, studentID string) (int, error) {
+	n, err := topicdao.ClearTopics(ctx, studentID, constant.AgentPioneer)
+	if err != nil {
+		return 0, err
+	}
+	zlog.Info("清空会话主题", "student_id", studentID, "removed", n)
+	return int(n), nil
+}
+
+// BackfillPioneerTopics 异步把当前用户尚未归类的小云雀会话逐个归类,返回待处理会话数。
+// 存量(上线前已有)会话不会被发消息链路触达,经本接口手动回填。
+// 串行跑避免并发建重复主题;Classify 幂等,重复触发或服务重启再跑都只补未归类的。
+// 同一用户已在回填时返回 ErrTopicBackfillBusy,防并发重入。
+func BackfillPioneerTopics(ctx context.Context, studentID string) (int, error) {
+	sessions, err := topicdao.ListSessionsToClassify(ctx, studentID, constant.AgentPioneer)
+	if err != nil {
+		return 0, err
+	}
+	if len(sessions) == 0 {
+		return 0, nil
+	}
+	if _, busy := backfilling.LoadOrStore(studentID, struct{}{}); busy {
+		return 0, errs.ErrTopicBackfillBusy
+	}
+
+	ids := make([]string, len(sessions))
+	for i, s := range sessions {
+		ids[i] = s.ID
+	}
+	zlog.Info("开始回填会话主题", "student_id", studentID, "count", len(ids))
+	bg := context.WithoutCancel(ctx) // 脱离请求生命周期,保住身份不被取消
+	go func() {
+		defer backfilling.Delete(studentID)
+		for _, id := range ids {
+			if err := topic.Classify(bg, studentID, id); err != nil {
+				zlog.Warn("回填会话主题失败", "session_id", id, "err", err)
+			}
+		}
+		zlog.Info("会话主题回填完成", "student_id", studentID, "count", len(ids))
+	}()
+	return len(ids), nil
 }
 
 // DeleteSession 删除会话，仅限本人。会话元数据软删，历史事件从 Session 清理。

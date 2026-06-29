@@ -94,6 +94,9 @@ func Init(mode string) *gin.Engine {
 			authed.DELETE("/sessions/:id", chathandler.DeleteSession)
 			authed.GET("/sessions/:id/messages", chathandler.ListMessages)
 			authed.POST("/sessions/:id/messages", chathandler.SendMessage)
+			authed.GET("/topics", chathandler.ListTopics)
+			authed.POST("/topics/backfill", chathandler.BackfillTopics)
+			authed.DELETE("/topics", chathandler.ClearTopics)
 		}
 
 		adminAuthed := api.Group("/admin")

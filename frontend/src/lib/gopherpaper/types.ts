@@ -62,7 +62,20 @@ export interface Session {
   paper_id?: string;
   // 空为默认论文助教,"pioneer" 为小云雀会话(独立页 /pioneer)。
   agent_type?: string;
+  // 自动归类的主题 ID,空表示尚未归类。仅小云雀会话归类。
+  topic_id?: string;
   title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Topic 是小云雀会话的自动归类主题,供侧边栏按主题分组。
+export interface Topic {
+  id: string;
+  student_id: string;
+  agent_type?: string;
+  name: string;
+  member_count: number;
   created_at: string;
   updated_at: string;
 }

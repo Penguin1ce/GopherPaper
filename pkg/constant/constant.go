@@ -184,6 +184,22 @@ const (
 	PioneerMaxHistoryRuns = 40
 )
 
+// 会话主题自动归类参数。新会话向量与已有主题质心比余弦相似度,
+// 超 TopicAssignThreshold 并入最相似主题,否则新建;两主题质心相似度超 TopicMergeThreshold 时合并。
+const (
+	// TopicAssignThreshold 是并入既有主题的余弦相似度下限,低于则新建主题。bge-m3 余弦空间,可调。
+	TopicAssignThreshold = 0.62
+	// TopicMergeThreshold 是两主题质心合并的余弦相似度下限,防相近主题碎裂成多个。
+	TopicMergeThreshold = 0.9
+	// TopicNameMaxRunes 是小模型所起主题名的字符上限,须与 model.Topic.Name 的 gorm size 对齐。
+	TopicNameMaxRunes = 16
+	// TopicEmbedMaxRunes 是归类取会话累计文本喂 embedder 的字符上限,防长会话撑爆向量化输入。
+	TopicEmbedMaxRunes = 2000
+	// TopicRefineMaxTurns 是会话主题可重排(refine)的最大轮数。前几轮内容变厚后允许重新归类
+	// (含搬到更贴切的主题),超过则锁定不再动,避免主题在 UI 里反复横跳。
+	TopicRefineMaxTurns = 3
+)
+
 // PioneerSessionKeyPrefix 是小云雀工作记忆在 Redis 里的键前缀,与展示历史(MySQL)分库,互不污染。
 const PioneerSessionKeyPrefix = "gp-sess"
 

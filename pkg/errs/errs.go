@@ -15,9 +15,10 @@ var (
 	ErrAvatarInvalid  = errors.New("auth: invalid avatar image")
 	ErrAvatarTooLarge = errors.New("auth: avatar image too large")
 
-	ErrSessionNotFound  = errors.New("chat: 会话不存在")
-	ErrSessionForbidden = errors.New("chat: 无权访问该会话")
-	ErrAgentTypeInvalid = errors.New("chat: 不支持的会话 agent 类型")
+	ErrSessionNotFound   = errors.New("chat: 会话不存在")
+	ErrSessionForbidden  = errors.New("chat: 无权访问该会话")
+	ErrAgentTypeInvalid  = errors.New("chat: 不支持的会话 agent 类型")
+	ErrTopicBackfillBusy = errors.New("chat: 会话主题整理正在进行中")
 
 	ErrPaperNotFound    = errors.New("paper: 论文不存在")
 	ErrPaperForbidden   = errors.New("paper: 无权访问该论文")

@@ -24,6 +24,7 @@ import type {
   ResetPasswordPayload,
   SendMessageResponse,
   Session,
+  Topic,
   UpdateEmailPayload,
   UpdateProfilePayload,
   UserProfile,
@@ -306,6 +307,20 @@ export function relatedPapers(id: string, limit = 10) {
 
 export function listSessions() {
   return request<Session[]>("/sessions");
+}
+
+export function listTopics() {
+  return request<Topic[]>("/topics");
+}
+
+// backfillTopics 触发存量小云雀会话的主题回填,返回待处理会话数。后端异步处理。
+export function backfillTopics() {
+  return request<{ count: number }>("/topics/backfill", { method: "POST" });
+}
+
+// clearTopics 清空当前用户的全部小云雀主题,会话退回未归类。演示重置归类用。
+export function clearTopics() {
+  return request<{ removed: number }>("/topics", { method: "DELETE" });
 }
 
 export function createSession(title: string, paperID?: string, agentType?: string) {
