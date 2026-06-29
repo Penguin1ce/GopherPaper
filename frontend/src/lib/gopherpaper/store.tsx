@@ -914,7 +914,10 @@ function AppProviderInner({ children }: { children: ReactNode }) {
               if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
             },
             // 思路图骨架推达:立即挂到占位消息,气泡内先画出结构(节点待点亮)。
+            // 兜底防重:同一论文本轮已收到骨架则忽略后续重复推送,避免把已点亮的图打回占位再重画
+            // (清空重画闪烁)。后端已对重复调用幂等,这里再防一层任何来源的重复骨架。
             onPaperFlow: (payload) => {
+              if (capturedFlow && capturedFlow.paper_id === payload.paper_id) return;
               capturedFlow = payload;
               patch((m) => ({ ...m, flow: payload }));
             },

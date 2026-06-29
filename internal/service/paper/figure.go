@@ -70,6 +70,7 @@ func buildFigureChunks(task parseTask, doc *core.ParsedDoc) []knowledge.Chunk {
 			Metadata: map[string]any{
 				constant.MilvusFieldBlockType: constant.BlockTypeImage,
 				constant.MilvusFieldImgURI:    fig.ImgURI,
+				"section":                     fig.SectionPath,
 			},
 		})
 	}
@@ -457,14 +458,17 @@ func runeLen(text string) int {
 	return len([]rune(text))
 }
 
-// figureContent 把 caption 与 vlm 描述拼成图块向量化文本,两者去空合并。
+// figureContent 把章节、caption、MinerU 图表文本与 VLM 描述拼成图块向量化文本。
 func figureContent(fig core.Figure) string {
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 4)
 	if s := strings.TrimSpace(fig.SectionPath); s != "" {
 		parts = append(parts, s) // 章节语境进 embedding,与正文/代码块统一
 	}
 	if c := strings.TrimSpace(fig.Caption); c != "" {
 		parts = append(parts, c)
+	}
+	if t := strings.TrimSpace(fig.Text); t != "" {
+		parts = append(parts, t)
 	}
 	if d := strings.TrimSpace(fig.Desc); d != "" {
 		parts = append(parts, d)

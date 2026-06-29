@@ -103,6 +103,21 @@ func generatePaperFlow(ctx context.Context, in paperFlowInput) (paperFlowOutput,
 		return paperFlowOutput{}, fmt.Errorf("generate_paper_flow: paper_id 不能为空")
 	}
 
+	// 本轮幂等:同一论文已生成过思路图(骨架与逐节点都已推前端、FlowSink 已记)则直接返回缓存摘要。
+	// React planner replan 后常会再调一次,若放行会重推一份新骨架——前端整体覆盖把已点亮的图打回
+	// 占位再逐节点重画(用户看到的「清空重画」),还白跑一遍检索与生成。命中即短路,既止闪烁又省开销。
+	if sink := core.FlowSinkFrom(ctx); sink != nil {
+		if prev, ok := sink.Get().(paperFlow); ok && prev.PaperID == paperID {
+			zlog.Info("generate_paper_flow 本轮已生成,跳过重复生成", "paper_id", paperID)
+			return paperFlowOutput{
+				Title:     prev.Title,
+				NodeCount: len(prev.Nodes),
+				Status:    "rendered",
+				Message:   fmt.Sprintf("《%s》的研究思路图本轮已生成并展示在前端,无需重复生成,可直接据图向用户讲解。", prev.Title),
+			}, nil
+		}
+	}
+
 	p, err := getPaperForTool(ctx, paperID)
 	if err != nil {
 		return paperFlowOutput{}, fmt.Errorf("generate_paper_flow: 查询论文失败: %w", err)
@@ -132,7 +147,8 @@ func generatePaperFlow(ctx context.Context, in paperFlowInput) (paperFlowOutput,
 	zlog.Info("generate_paper_flow 骨架已推送,开始逐节点补细节", "paper_id", paperID, "nodes", len(flow.Nodes))
 
 	// 阶段二:按节点顺序逐个检索原文补 detail,边补边推前端逐个点亮。
-	// 每节点限时,卡住即超时跳过,不冻住整张图。usedFigs 全局去重,同一张图最多挂一个节点。
+	// 每节点限时,卡住即超时跳过,不冻住整张图。usedFigs 全局去重:既拦精确同文件,
+	// 也按「页码+图说签名」拦同一张图的不同子面板(MinerU 常把一图抽成多文件),同图最多挂一个节点。
 	usedFigs := map[string]bool{}
 	for i := range flow.Nodes {
 		n := &flow.Nodes[i]
@@ -300,6 +316,16 @@ func nodeFigure(ctx context.Context, paperID, owner string, n *flowNode, used ma
 		if used[key] {
 			continue
 		}
+		// 同图去重:MinerU 常把一张图的多个子面板抽成不同文件(文件名不同,exact-name 拦不住),
+		// 但它们共享 caption 与页码。按「页码+图说签名」判同图,命中即标记此文件已弃并跳过,
+		// 避免同一张图的不同面板挂到相邻节点上「看着重复」。签名存进同一 used 表(带 sig: 前缀)。
+		if sig := figureSig(ref, img); sig != "" {
+			if used["sig:"+sig] {
+				used[key] = true
+				continue
+			}
+			used["sig:"+sig] = true
+		}
 		used[key] = true
 		return &flowFigure{
 			ID:      "fig-" + n.ID,
@@ -311,6 +337,26 @@ func nodeFigure(ctx context.Context, paperID, owner string, n *flowNode, used ma
 		}
 	}
 	return nil
+}
+
+// figureSig 给图块算「图身份签名」:页码 + 归一化的图说前缀(剥掉章节路径,只取 caption 起始片段)。
+// 同一张图被 MinerU 抽成多个子面板/重复文件时共享 caption 与页码,签名相同即判同图、跨节点去重;
+// 不同图 caption 不同则签名不同,不误伤。caption 取不到时返回空串,退回仅按文件名去重。
+// 取前 48 字符作指纹:figureContent 把 caption 排在 VLM 描述之前,故前缀落在真实图说内、不受描述差异影响。
+func figureSig(ref retrieval.Reference, img *retrieval.Doc) string {
+	content := strings.TrimSpace(img.Content)
+	if section := strings.TrimSpace(retrieval.MetaString(img, "section")); section != "" {
+		content = strings.TrimSpace(strings.TrimPrefix(content, section))
+	}
+	content = strings.ToLower(strings.Join(strings.Fields(content), " "))
+	if content == "" {
+		return ""
+	}
+	r := []rune(content)
+	if len(r) > 48 {
+		r = r[:48]
+	}
+	return fmt.Sprintf("%d|%s", ref.PageNo, string(r))
 }
 
 // typeKeyword 把节点类型映射成检索/提示用的中文关键词。

@@ -43,6 +43,7 @@ type Paragraph struct {
 // ImgURI 在 worker 把图片落盘后回填为本地路径,供建图块与带图问答用。
 type Figure struct {
 	Caption     string `json:"caption"`
+	Text        string `json:"text,omitempty"` // MinerU/VLM 后端给出的图表正文描述,与 caption/Desc 一起入库
 	PageNo      int    `json:"page_no"`
 	SectionPath string `json:"section_path,omitempty"` // 所属章节标题链,前缀进图块文本提升召回
 	ImgPath     string `json:"img_path,omitempty"`

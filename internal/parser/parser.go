@@ -35,8 +35,10 @@ type contentBlock struct {
 	TableBody     string     `json:"table_body"` // 表格 HTML,MinerU 已结构化识别,转 Markdown 走文本不返图
 	ChartCaption  stringList `json:"chart_caption"`
 	ChartFootnote stringList `json:"chart_footnote"`
+	ChartText     string     `json:"content"` // 图表块的 OCR/VLM 文本描述,用于图块 RAG 召回
 	CodeBody      string     `json:"code_body"`
 	CodeCaption   stringList `json:"code_caption"`
+	CodeFootnote  stringList `json:"code_footnote"`
 	CodeLanguage  string     `json:"code_language"`
 	SubType       string     `json:"sub_type"`
 }
@@ -352,6 +354,7 @@ func convertV2Blocks(pages [][]contentListV2Block) []contentBlock {
 					Type:          "chart",
 					ChartCaption:  v2InlineListField(content, "chart_caption"),
 					ChartFootnote: v2InlineListField(content, "chart_footnote"),
+					ChartText:     v2StringField(content, "content"),
 					ImgPath:       v2ImageSourcePath(content),
 					PageIdx:       pageIdx,
 				})
@@ -360,6 +363,7 @@ func convertV2Blocks(pages [][]contentListV2Block) []contentBlock {
 					Type:          "image",
 					ImageCaption:  v2InlineListField(content, "image_caption"),
 					ImageFootnote: v2InlineListField(content, "image_footnote"),
+					ChartText:     v2StringField(content, "content"),
 					ImgPath:       v2ImageSourcePath(content),
 					PageIdx:       pageIdx,
 				})
@@ -368,7 +372,17 @@ func convertV2Blocks(pages [][]contentListV2Block) []contentBlock {
 					Type:         "code",
 					CodeBody:     v2InlineTextField(content, "code_content", true),
 					CodeCaption:  v2InlineListField(content, "code_caption"),
+					CodeFootnote: v2InlineListField(content, "code_footnote"),
 					CodeLanguage: v2StringField(content, "code_language"),
+					PageIdx:      pageIdx,
+				})
+			case "algorithm":
+				blocks = append(blocks, contentBlock{
+					Type:         "code",
+					CodeBody:     v2InlineTextField(content, "algorithm_content", true),
+					CodeCaption:  v2InlineListField(content, "algorithm_caption"),
+					CodeFootnote: v2InlineListField(content, "algorithm_footnote"),
+					CodeLanguage: "algorithm",
 					PageIdx:      pageIdx,
 				})
 			case "page_footnote":
@@ -540,7 +554,7 @@ func mapBlocks(blocks []contentBlock, images map[string][]byte) *core.ParsedDoc 
 		case b.Type == "code":
 			if body := strings.TrimSpace(b.CodeBody); body != "" && !inReferences {
 				doc.CodeBlocks = append(doc.CodeBlocks, core.CodeBlock{
-					Caption:     strings.TrimSpace(strings.Join(nonEmpty(b.CodeCaption), " ")),
+					Caption:     codeCaption(b),
 					Body:        body,
 					Language:    strings.TrimSpace(firstNonEmpty(b.CodeLanguage, b.SubType)),
 					PageNo:      page,
@@ -639,11 +653,18 @@ func blockCaption(b contentBlock) string {
 }
 
 func figureFromBlock(b contentBlock, caption string, page int, section string, images map[string][]byte) core.Figure {
-	fig := core.Figure{Caption: caption, PageNo: page, SectionPath: section, ImgPath: b.ImgPath}
+	fig := core.Figure{Caption: caption, Text: strings.TrimSpace(b.ChartText), PageNo: page, SectionPath: section, ImgPath: b.ImgPath}
 	if b.ImgPath != "" {
 		fig.ImgData = images[baseName(b.ImgPath)]
 	}
 	return fig
+}
+
+func codeCaption(b contentBlock) string {
+	parts := make([]string, 0, len(b.CodeCaption)+len(b.CodeFootnote))
+	parts = append(parts, b.CodeCaption...)
+	parts = append(parts, b.CodeFootnote...)
+	return strings.TrimSpace(strings.Join(nonEmpty(parts), " "))
 }
 
 func firstNonEmpty(values ...string) string {
