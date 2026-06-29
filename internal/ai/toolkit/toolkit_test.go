@@ -3,6 +3,7 @@ package toolkit
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"trpc.group/trpc-go/trpc-agent-go/tool"
 
+	"GopherPaper/internal/ai/ragtools"
 	"GopherPaper/internal/config"
 	"GopherPaper/internal/credential"
 	"GopherPaper/pkg/constant"
@@ -47,11 +49,27 @@ func TestBuiltinFunctionToolsHaveDisplayNames(t *testing.T) {
 		TavilyAPIKey:          "tavily-key",
 		SemanticScholarAPIKey: "s2-key",
 		OpenAlexAPIKey:        "openalex-key",
+		SciVerseAPIKey:        "sciverse-key",
 	}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 
 	for _, tl := range ToolsFor(constant.AgentPioneer) {
+		decl := tl.Declaration()
+		if decl == nil || decl.Name == "" {
+			t.Fatalf("工具声明缺少名称: %#v", decl)
+		}
+		if got := DisplayName(decl.Name); got == decl.Name {
+			t.Errorf("工具 %s 缺少中文显示名", decl.Name)
+		}
+	}
+}
+
+func TestRAGFunctionToolsHaveDisplayNames(t *testing.T) {
+	oldDisplayNames := displayNames
+	defer func() { displayNames = oldDisplayNames }()
+	displayNames = maps.Clone(builtinToolDisplayNames)
+	for _, tl := range ragtools.All() {
 		decl := tl.Declaration()
 		if decl == nil || decl.Name == "" {
 			t.Fatalf("工具声明缺少名称: %#v", decl)
