@@ -385,6 +385,7 @@ export default function PioneerPage() {
   const [token, setToken] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
+  const [topicsSupported, setTopicsSupported] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [backfilling, setBackfilling] = useState(false);
   const [search, setSearch] = useState("");
@@ -440,7 +441,15 @@ export default function PioneerPage() {
   const reloadSidebar = useCallback(
     async (openFirst = false) => {
       try {
-        const [list, topicList] = await Promise.all([api.listSessions(), api.listTopics()]);
+        const list = await api.listSessions();
+        let topicList: Topic[] = [];
+        try {
+          topicList = await api.listTopics();
+          setTopicsSupported(true);
+        } catch (e) {
+          if (!(e instanceof api.ApiError && e.status === 404)) throw e;
+          setTopicsSupported(false);
+        }
         if (!mountedRef.current) return;
         const mine = (Array.isArray(list) ? list : []).filter((s) => s.agent_type === AGENT_TYPE);
         setSessions(mine);
@@ -771,34 +780,36 @@ export default function PioneerPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="flex-1 justify-start text-muted-foreground"
-              disabled={backfilling}
-              onClick={() => void runBackfill()}
-            >
-              {backfilling ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="size-3.5" />
-              )}
-              {backfilling ? "正在整理…" : "整理历史会话"}
-            </Button>
-            {topics.length > 0 && (
+          {topicsSupported && (
+            <div className="flex items-center gap-1">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-7 shrink-0 px-2 text-xs text-muted-foreground/45 hover:text-muted-foreground"
-                onClick={() => void runClear()}
+                className="flex-1 justify-start text-muted-foreground"
+                disabled={backfilling}
+                onClick={() => void runBackfill()}
               >
-                清除归类
+                {backfilling ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="size-3.5" />
+                )}
+                {backfilling ? "正在整理…" : "整理历史会话"}
               </Button>
-            )}
-          </div>
+              {topics.length > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 px-2 text-xs text-muted-foreground/45 hover:text-muted-foreground"
+                  onClick={() => void runClear()}
+                >
+                  清除归类
+                </Button>
+              )}
+            </div>
+          )}
         </div>
         <div className="relative min-h-0 flex-1">
         <ScrollArea className="absolute! inset-0 px-3">
