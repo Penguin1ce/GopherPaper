@@ -11,11 +11,15 @@ import type {
   AvatarResponse,
   Message,
   NameCount,
+  AnnotationRect,
   Paper,
+  PaperAnnotation,
   PaperDeleteConfirmPayload,
   PaperDetail,
   PaperFlow,
   PaperFlowNodeDetail,
+  PaperProgressPayload,
+  PaperProgressResponse,
   PasswordResetCodePayload,
   RegisterPayload,
   RelatedPaper,
@@ -64,6 +68,53 @@ export function translate(id: string, text: string) {
   return request<{ translation: string }>(
     `/papers/${encodeURIComponent(id)}/translate`,
     { method: "POST", body: JSON.stringify({ text }) },
+  );
+}
+
+export function updatePaperProgress(id: string, payload: PaperProgressPayload) {
+  return request<PaperProgressResponse>(`/papers/${encodeURIComponent(id)}/progress`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listAnnotations(id: string) {
+  return request<PaperAnnotation[]>(`/papers/${encodeURIComponent(id)}/annotations`);
+}
+
+export function createAnnotation(
+  id: string,
+  payload: {
+    page_no: number;
+    text: string;
+    note?: string;
+    translation?: string;
+    color?: string;
+    bounding_rect: AnnotationRect;
+    rects: AnnotationRect[];
+  },
+) {
+  return request<PaperAnnotation>(`/papers/${encodeURIComponent(id)}/annotations`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAnnotation(
+  id: string,
+  annotationID: number,
+  payload: { note?: string; translation?: string; color?: string },
+) {
+  return request<PaperAnnotation>(
+    `/papers/${encodeURIComponent(id)}/annotations/${encodeURIComponent(annotationID)}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
+  );
+}
+
+export function deleteAnnotation(id: string, annotationID: number) {
+  return request<null>(
+    `/papers/${encodeURIComponent(id)}/annotations/${encodeURIComponent(annotationID)}`,
+    { method: "DELETE" },
   );
 }
 
@@ -236,6 +287,13 @@ export function paperStatus(id: string) {
 
 export function paperDetail(id: string) {
   return request<PaperDetail>(`/papers/${encodeURIComponent(id)}`);
+}
+
+export function rebuildPaperSections(id: string) {
+  return request<NonNullable<PaperDetail["sections"]>>(
+    `/papers/${encodeURIComponent(id)}/sections/rebuild`,
+    { method: "POST" },
+  );
 }
 
 export function deletePaper(id: string) {

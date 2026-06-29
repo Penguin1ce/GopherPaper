@@ -19,6 +19,7 @@ export interface Paper {
   parse_progress?: number;
   parsed_pages?: number;
   total_pages?: number;
+  last_read_page?: number;
   keywords?: string[];
   created_at: string;
   updated_at: string;
@@ -194,6 +195,41 @@ export interface ChatResponse {
   intent: string;
   content: string;
   meta?: Record<string, unknown>;
+}
+
+export interface AnnotationRect {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  width: number;
+  height: number;
+  pageNumber: number;
+}
+
+export interface PaperAnnotation {
+  id: number;
+  paper_id: string;
+  owner_id: string;
+  page_no: number;
+  text: string;
+  note?: string;
+  translation?: string;
+  color: "yellow" | "blue" | "green" | "pink" | "purple" | "orange" | string;
+  bounding_rect: AnnotationRect;
+  rects: AnnotationRect[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaperProgressPayload {
+  last_page: number;
+  total_pages?: number;
+}
+
+export interface PaperProgressResponse {
+  progress: number;
+  last_read_page: number;
 }
 
 export interface LoginResponse {

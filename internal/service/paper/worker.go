@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"GopherPaper/internal/ai"
 	"GopherPaper/internal/ai/core"
@@ -25,6 +27,10 @@ import (
 )
 
 var getPaperForPipeline = paperdao.Get
+
+var sectionNumberRe = regexp.MustCompile(`^\s*((?:\d+(?:\.\d+)*|[IVXLC]+|[A-Z])[.)]?)\s+(.+?)\s*$`)
+var tableCaseSectionRe = regexp.MustCompile(`(?i)^\s*case\s+\d+\s*:\s+.+\s[×x]\s.+$`)
+var metricOnlySectionRe = regexp.MustCompile(`(?i)^\s*(?:[a-z]{1,4}\s*=\s*[-+]?\d+(?:\.\d+)?\s*){2,}$`)
 
 // startParseWorker 起后台 goroutine 消费解析队列。连接关闭时通道随之关闭,goroutine 退出。
 func startParseWorker(ctx context.Context) error {
@@ -171,7 +177,7 @@ func saveStructured(ctx context.Context, paperID string, s *core.PaperStructured
 	if err := paperdao.SaveMeta(ctx, meta); err != nil {
 		return err
 	}
-	if err := paperdao.SaveSections(ctx, paperID, toSections(paperID, doc)); err != nil {
+	if err := paperdao.SaveSections(ctx, paperID, toSections(paperID, doc, s.Title)); err != nil {
 		return err
 	}
 	return paperdao.UpdateInfo(ctx, paperID, s.Title, doc.PageCount)
@@ -278,18 +284,174 @@ func graphSemanticText(s *core.PaperStructured) string {
 }
 
 // toSections 把解析出的章节转成落库模型。
-func toSections(paperID string, doc *core.ParsedDoc) []model.PaperSection {
-	out := make([]model.PaperSection, 0, len(doc.Sections))
-	for _, sec := range doc.Sections {
+func toSections(paperID string, doc *core.ParsedDoc, paperTitle string) []model.PaperSection {
+	source := filterPaperTitleSections(doc.Sections, paperTitle)
+	baseLevel := minSectionLevel(source)
+	out := make([]model.PaperSection, 0, len(source))
+	prevLevel := 0
+	for _, sec := range source {
+		level := normalizedSectionLevel(sec, baseLevel, prevLevel)
+		prevLevel = level
 		out = append(out, model.PaperSection{
 			PaperID:  paperID,
-			Level:    sec.Level,
+			Level:    level,
 			Title:    sec.Title,
 			PageNo:   sec.PageNo,
 			OrderIdx: sec.OrderIdx,
 		})
 	}
 	return out
+}
+
+func filterPaperTitleSections(sections []core.Section, paperTitle string) []core.Section {
+	titleKey := compactSectionTitle(paperTitle)
+	noisyKeys := repeatedNoisySectionKeys(sections)
+	out := make([]core.Section, 0, len(sections))
+	for _, sec := range sections {
+		sec.Title = strings.TrimSpace(sec.Title)
+		if sec.Title == "" {
+			continue
+		}
+		if titleKey != "" && compactSectionTitle(sec.Title) == titleKey {
+			continue
+		}
+		if isNoisySectionTitle(sec.Title, noisyKeys) {
+			continue
+		}
+		out = append(out, sec)
+	}
+	return out
+}
+
+func repeatedNoisySectionKeys(sections []core.Section) map[string]bool {
+	counts := map[string]int{}
+	titles := map[string]string{}
+	for _, sec := range sections {
+		title := strings.TrimSpace(sec.Title)
+		key := compactSectionTitle(title)
+		if key == "" {
+			continue
+		}
+		counts[key]++
+		titles[key] = title
+	}
+	out := map[string]bool{}
+	for key, count := range counts {
+		title := titles[key]
+		if count < 2 || isStandaloneTopLevelSection(title) {
+			continue
+		}
+		if _, ok := sectionNumber(title); ok {
+			continue
+		}
+		if len([]rune(title)) <= 80 {
+			out[key] = true
+		}
+	}
+	return out
+}
+
+func isNoisySectionTitle(title string, repeatedKeys map[string]bool) bool {
+	if repeatedKeys[compactSectionTitle(title)] {
+		return true
+	}
+	if tableCaseSectionRe.MatchString(title) {
+		return true
+	}
+	return metricOnlySectionRe.MatchString(title)
+}
+
+func minSectionLevel(sections []core.Section) int {
+	min := 0
+	for _, sec := range sections {
+		if sec.Level <= 0 {
+			continue
+		}
+		if min == 0 || sec.Level < min {
+			min = sec.Level
+		}
+	}
+	if min <= 0 {
+		return 1
+	}
+	return min
+}
+
+func normalizedSectionLevel(sec core.Section, baseLevel, prevLevel int) int {
+	level := sec.Level
+	if level <= 0 {
+		level = 1
+	}
+	level = level - baseLevel + 1
+	if level < 1 {
+		level = 1
+	}
+	if number, ok := sectionNumber(sec.Title); ok {
+		switch {
+		case strings.Contains(number, "."):
+			level = len(strings.Split(number, "."))
+		case isDigits(number), isRoman(number), len(number) == 1:
+			level = 1
+		}
+	} else if isStandaloneTopLevelSection(sec.Title) {
+		level = 1
+	}
+	if prevLevel > 0 && level > prevLevel+1 {
+		level = prevLevel + 1
+	}
+	return level
+}
+
+func sectionNumber(title string) (string, bool) {
+	matches := sectionNumberRe.FindStringSubmatch(title)
+	if len(matches) != 3 {
+		return "", false
+	}
+	return strings.TrimRight(matches[1], ".)"), true
+}
+
+func isStandaloneTopLevelSection(title string) bool {
+	title = strings.ToLower(strings.TrimRight(strings.TrimSpace(title), ".:\uFF1A"))
+	switch title {
+	case "abstract", "acknowledgment", "acknowledgement", "acknowledgments", "acknowledgements",
+		"references", "bibliography", "appendix", "appendices", "supplementary materials",
+		"limitation", "limitations", "ethics statement", "broader impact", "broader impacts",
+		"impact statement", "data availability", "funding", "conflict of interest", "conflicts of interest":
+		return true
+	default:
+		return false
+	}
+}
+
+func compactSectionTitle(title string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(title)) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func isDigits(s string) bool {
+	for _, r := range s {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return s != ""
+}
+
+func isRoman(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range strings.ToUpper(s) {
+		if !strings.ContainsRune("IVXLC", r) {
+			return false
+		}
+	}
+	return true
 }
 
 // buildMetaChunks 把详细页结构化字段写入知识库,补足正文中不一定逐字出现的关键词与摘要。

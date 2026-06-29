@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -109,6 +110,8 @@ var imgExtRe = regexp.MustCompile(`(?i)\.(jpe?g|png|gif|webp|bmp)$`)
 
 var refTitleRe = regexp.MustCompile(`(?i)^\s*(references|bibliography|参考文献)\s*$`)
 
+var ErrArtifactContentListNotFound = errors.New("parser: 归档中未找到 content_list.json")
+
 // Parse 把本地 PDF 解析为 ParsedDoc。
 func Parse(ctx context.Context, fileURI string) (*core.ParsedDoc, error) {
 	return ParseWithProgress(ctx, fileURI, nil)
@@ -149,6 +152,7 @@ func ParseWithProgress(ctx context.Context, fileURI string, onProgress func(Prog
 }
 
 // ParseArtifactDir 从已归档的 MinerU 产物目录重建 ParsedDoc,不重新调用 MinerU 在线 API。
+// 目录通常来自 service/paper 的 data/papers/mineru/<paperID>,用于离线补章节目录。
 func ParseArtifactDir(dir string) (*core.ParsedDoc, error) {
 	blocks, images, detailRefs, err := readArtifactDir(dir)
 	if err != nil {
@@ -217,7 +221,7 @@ func readArtifacts(zipData []byte) ([]contentBlock, map[string][]byte, []string,
 	if foundV2 {
 		return blocksV2, images, refs, nil
 	}
-	return nil, nil, nil, fmt.Errorf("parser: 产物中未找到 content_list.json")
+	return nil, nil, nil, ErrArtifactContentListNotFound
 }
 
 func readArtifactDir(dir string) ([]contentBlock, map[string][]byte, []string, error) {
@@ -290,7 +294,7 @@ func readArtifactDir(dir string) ([]contentBlock, map[string][]byte, []string, e
 	if foundV2 {
 		return blocksV2, images, refs, nil
 	}
-	return nil, nil, nil, fmt.Errorf("parser: 归档目录中未找到 content_list.json")
+	return nil, nil, nil, ErrArtifactContentListNotFound
 }
 
 // readZipFile 读出 zip 内单个文件的全部字节。
