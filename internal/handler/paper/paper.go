@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -16,6 +17,7 @@ import (
 	"GopherPaper/internal/ai"
 	"GopherPaper/internal/auth"
 	"GopherPaper/internal/dto"
+	"GopherPaper/internal/model"
 	"GopherPaper/internal/response"
 	paperservice "GopherPaper/internal/service/paper"
 	"GopherPaper/internal/tenant"
@@ -172,6 +174,30 @@ func Detail(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"paper": p, "meta": meta, "sections": sections})
+}
+
+// RebuildSections 从已归档的 MinerU 产物重建论文目录。
+// POST /api/v1/papers/:id/sections/rebuild
+//
+// @Summary 重建论文目录
+// @Description 从本地归档的 MinerU content_list.json 重建章节目录，不重跑完整解析流水线。
+// @Tags papers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "论文 ID"
+// @Success 200 {object} dto.Response{data=[]model.PaperSection}
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /papers/{id}/sections/rebuild [post]
+func RebuildSections(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	sections, err := paperservice.RebuildSections(c.Request.Context(), ownerID, c.Param("id"))
+	if err != nil {
+		writePaperErr(c, err, "重建目录失败")
+		return
+	}
+	response.OK(c, sections)
 }
 
 // Delete 删除当前用户拥有的论文及其派生数据。
@@ -403,10 +429,222 @@ func Translate(c *gin.Context) {
 	response.OK(c, gin.H{"translation": translation})
 }
 
+// UpdateProgress 保存精读页最近阅读页与百分比进度。
+// PATCH /api/v1/papers/:id/progress
+//
+// @Summary 保存阅读进度
+// @Description 保存某篇论文的最近阅读页，并按总页数计算阅读百分比。
+// @Tags papers
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "论文 ID"
+// @Param request body dto.PaperProgressRequest true "阅读进度"
+// @Success 200 {object} dto.Response{data=dto.PaperProgressResponse}
+// @Failure 400 {object} dto.Response
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /papers/{id}/progress [patch]
+func UpdateProgress(c *gin.Context) {
+	var req dto.PaperProgressRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	p, err := paperservice.UpdateReadProgress(c.Request.Context(), ownerID, c.Param("id"), req.LastPage, req.TotalPages)
+	if err != nil {
+		if writePaperAccessErr(c, err, "保存失败") {
+			return
+		}
+		response.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.OK(c, dto.PaperProgressResponse{Progress: p.Progress, LastReadPage: p.LastReadPage})
+}
+
+// ListAnnotations 列出某篇论文的精读批注。
+// GET /api/v1/papers/:id/annotations
+//
+// @Summary 列出精读批注
+// @Description 返回某篇论文当前用户保存的全部高亮与批注。
+// @Tags papers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "论文 ID"
+// @Success 200 {object} dto.Response{data=[]model.PaperAnnotation}
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /papers/{id}/annotations [get]
+func ListAnnotations(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	annotations, err := paperservice.ListAnnotations(c.Request.Context(), ownerID, c.Param("id"))
+	if err != nil {
+		writePaperErr(c, err, "查询失败")
+		return
+	}
+	response.OK(c, annotations)
+}
+
+// CreateAnnotation 新建一条精读批注。
+// POST /api/v1/papers/:id/annotations
+//
+// @Summary 新建精读批注
+// @Description 保存一段 PDF 原文的高亮坐标与可选笔记。
+// @Tags papers
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "论文 ID"
+// @Param request body dto.AnnotationCreateRequest true "批注内容"
+// @Success 200 {object} dto.Response{data=model.PaperAnnotation}
+// @Failure 400 {object} dto.Response
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /papers/{id}/annotations [post]
+func CreateAnnotation(c *gin.Context) {
+	var req dto.AnnotationCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	annotation, err := paperservice.CreateAnnotation(c.Request.Context(), ownerID, c.Param("id"), paperservice.AnnotationInput{
+		PageNo:       req.PageNo,
+		Text:         req.Text,
+		Note:         req.Note,
+		Translation:  req.Translation,
+		Color:        req.Color,
+		BoundingRect: dtoRectToModel(req.BoundingRect),
+		Rects:        dtoRectsToModel(req.Rects),
+	})
+	if err != nil {
+		if writePaperAccessErr(c, err, "保存失败") {
+			return
+		}
+		response.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.OK(c, annotation)
+}
+
+// UpdateAnnotation 更新精读批注的笔记或颜色。
+// PATCH /api/v1/papers/:id/annotations/:annotation_id
+//
+// @Summary 更新精读批注
+// @Description 更新某条精读批注的笔记或颜色。
+// @Tags papers
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "论文 ID"
+// @Param annotation_id path int true "批注 ID"
+// @Param request body dto.AnnotationUpdateRequest true "批注更新内容"
+// @Success 200 {object} dto.Response{data=model.PaperAnnotation}
+// @Failure 400 {object} dto.Response
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /papers/{id}/annotations/{annotation_id} [patch]
+func UpdateAnnotation(c *gin.Context) {
+	annotationID, ok := parseAnnotationID(c)
+	if !ok {
+		return
+	}
+	var req dto.AnnotationUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	annotation, err := paperservice.UpdateAnnotation(c.Request.Context(), ownerID, c.Param("id"), annotationID, req.Note, req.Translation, req.Color)
+	if err != nil {
+		if writePaperAccessErr(c, err, "更新失败") {
+			return
+		}
+		response.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.OK(c, annotation)
+}
+
+// DeleteAnnotation 删除一条精读批注。
+// DELETE /api/v1/papers/:id/annotations/:annotation_id
+//
+// @Summary 删除精读批注
+// @Description 删除某条高亮或批注。
+// @Tags papers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "论文 ID"
+// @Param annotation_id path int true "批注 ID"
+// @Success 200 {object} dto.Response
+// @Failure 400 {object} dto.Response
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /papers/{id}/annotations/{annotation_id} [delete]
+func DeleteAnnotation(c *gin.Context) {
+	annotationID, ok := parseAnnotationID(c)
+	if !ok {
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	if err := paperservice.DeleteAnnotation(c.Request.Context(), ownerID, c.Param("id"), annotationID); err != nil {
+		writePaperErr(c, err, "删除失败")
+		return
+	}
+	response.OK(c, nil)
+}
+
+func parseAnnotationID(c *gin.Context) (uint64, bool) {
+	id, err := strconv.ParseUint(c.Param("annotation_id"), 10, 64)
+	if err != nil || id == 0 {
+		response.Fail(c, http.StatusBadRequest, "批注 ID 无效")
+		return 0, false
+	}
+	return id, true
+}
+
+func dtoRectsToModel(rects []dto.AnnotationRect) model.AnnotationRects {
+	out := make(model.AnnotationRects, 0, len(rects))
+	for _, r := range rects {
+		out = append(out, dtoRectToModel(r))
+	}
+	return out
+}
+
+func dtoRectToModel(r dto.AnnotationRect) model.AnnotationRect {
+	return model.AnnotationRect{
+		X1:         r.X1,
+		Y1:         r.Y1,
+		X2:         r.X2,
+		Y2:         r.Y2,
+		Width:      r.Width,
+		Height:     r.Height,
+		PageNumber: r.PageNumber,
+	}
+}
+
+func writePaperAccessErr(c *gin.Context, err error, fallback string) bool {
+	switch {
+	case errors.Is(err, errs.ErrPaperNotFound), errors.Is(err, errs.ErrPaperForbidden), errors.Is(err, errs.ErrAnnotationNotFound):
+		writePaperErr(c, err, fallback)
+		return true
+	default:
+		return false
+	}
+}
+
 // writePaperErr 把论文错误映射为对应 HTTP 状态。
 func writePaperErr(c *gin.Context, err error, fallback string) {
 	switch {
 	case errors.Is(err, errs.ErrPaperNotFound):
+		response.Fail(c, http.StatusNotFound, err.Error())
+	case errors.Is(err, errs.ErrAnnotationNotFound):
 		response.Fail(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, errs.ErrPaperForbidden):
 		response.Fail(c, http.StatusForbidden, err.Error())

@@ -75,9 +75,15 @@ func Init(mode string) *gin.Engine {
 			authed.GET("/papers/:id", paperhandler.Detail)
 			authed.DELETE("/papers/:id", paperhandler.Delete)
 			authed.GET("/papers/:id/status", paperhandler.Status)
+			authed.POST("/papers/:id/sections/rebuild", paperhandler.RebuildSections)
 			authed.GET("/papers/:id/reports", paperhandler.Reports)
 			authed.POST("/papers/:id/report", paperhandler.Report)
 			authed.POST("/papers/:id/translate", paperhandler.Translate)
+			authed.PATCH("/papers/:id/progress", paperhandler.UpdateProgress)
+			authed.GET("/papers/:id/annotations", paperhandler.ListAnnotations)
+			authed.POST("/papers/:id/annotations", paperhandler.CreateAnnotation)
+			authed.PATCH("/papers/:id/annotations/:annotation_id", paperhandler.UpdateAnnotation)
+			authed.DELETE("/papers/:id/annotations/:annotation_id", paperhandler.DeleteAnnotation)
 
 			// 知识图谱：论文关系发现与研究趋势,按用户隔离。
 			authed.GET("/graph/overview", graphhandler.Overview) // 图谱规模总览

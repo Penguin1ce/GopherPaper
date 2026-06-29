@@ -76,6 +76,75 @@ func (m *JSONMap) Scan(src any) error {
 	return json.Unmarshal(b, m)
 }
 
+// AnnotationRect 是 react-pdf-highlighter-plus 的 scaled 坐标矩形。
+type AnnotationRect struct {
+	X1         float64 `json:"x1"`
+	Y1         float64 `json:"y1"`
+	X2         float64 `json:"x2"`
+	Y2         float64 `json:"y2"`
+	Width      float64 `json:"width"`
+	Height     float64 `json:"height"`
+	PageNumber int     `json:"pageNumber"`
+}
+
+func (r AnnotationRect) Value() (driver.Value, error) {
+	b, err := json.Marshal(r)
+	return string(b), err
+}
+
+func (r *AnnotationRect) Scan(src any) error {
+	if src == nil {
+		*r = AnnotationRect{}
+		return nil
+	}
+	var b []byte
+	switch v := src.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
+		return fmt.Errorf("model: AnnotationRect 不支持的类型 %T", src)
+	}
+	if len(b) == 0 {
+		*r = AnnotationRect{}
+		return nil
+	}
+	return json.Unmarshal(b, r)
+}
+
+// AnnotationRects 落库为 JSON 文本,用于保存一个文本高亮的多行矩形。
+type AnnotationRects []AnnotationRect
+
+func (r AnnotationRects) Value() (driver.Value, error) {
+	if r == nil {
+		return "[]", nil
+	}
+	b, err := json.Marshal(r)
+	return string(b), err
+}
+
+func (r *AnnotationRects) Scan(src any) error {
+	if src == nil {
+		*r = nil
+		return nil
+	}
+	var b []byte
+	switch v := src.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
+		return fmt.Errorf("model: AnnotationRects 不支持的类型 %T", src)
+	}
+	if len(b) == 0 {
+		*r = nil
+		return nil
+	}
+	return json.Unmarshal(b, r)
+}
+
 // Paper 是一篇上传的论文，归属某个用户,主键 UUID 便于对外暴露。
 // Status 是从上传到就绪的解析状态机。
 type Paper struct {
@@ -93,6 +162,7 @@ type Paper struct {
 	ParsedPages   int                  `json:"parsed_pages"`                // MinerU parsed pages
 	TotalPages    int                  `json:"total_pages"`                 // MinerU total pages
 	Progress      int                  `json:"progress"`                    // 阅读进度 0-100
+	LastReadPage  int                  `json:"last_read_page"`              // 最近阅读到的页码
 	Keywords      JSONStrings          `gorm:"-" json:"keywords,omitempty"` // 非表列 从 paper_meta 回填供前端筛选
 	CreatedAt     time.Time            `json:"created_at"`
 	UpdatedAt     time.Time            `json:"updated_at"`
@@ -158,6 +228,24 @@ type PaperReport struct {
 }
 
 func (PaperReport) TableName() string { return "paper_reports" }
+
+// PaperAnnotation 是精读页保存的文本高亮与可选笔记。
+type PaperAnnotation struct {
+	ID           uint64          `gorm:"primaryKey" json:"id"`
+	PaperID      string          `gorm:"size:36;not null;index" json:"paper_id"`
+	OwnerID      string          `gorm:"size:64;not null;index" json:"owner_id"`
+	PageNo       int             `gorm:"not null;index" json:"page_no"`
+	Text         string          `gorm:"type:text" json:"text"`
+	Note         string          `gorm:"type:text" json:"note,omitempty"`
+	Translation  string          `gorm:"type:text" json:"translation,omitempty"`
+	Color        string          `gorm:"size:32;not null" json:"color"`
+	BoundingRect AnnotationRect  `gorm:"type:text" json:"bounding_rect"`
+	Rects        AnnotationRects `gorm:"type:text" json:"rects"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+}
+
+func (PaperAnnotation) TableName() string { return "paper_annotations" }
 
 // Tag 是用户自定义的论文标签。
 type Tag struct {

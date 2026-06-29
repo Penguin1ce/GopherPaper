@@ -11,6 +11,11 @@ const (
 	ProviderOpenAI Provider = "openai"
 )
 
+const (
+	DefaultVolcengineBaseURL   = "https://ark.cn-beijing.volces.com/api/v3"
+	DefaultVolcengineMiniModel = "doubao-seed-2-0-mini-260215"
+)
+
 // IntentType 标识一次论文问答的处理路径。
 // chitchat/summary/method 是聊天框的意图子类,由意图分类模型选择;
 // 研读报告是显式动作，由前端按钮带 ReportType 触发，不经分类器。
@@ -424,6 +429,9 @@ const PaperFlowSkeletonPrompt = `你是科研论文的思路梳理专家。下�
 const PaperFlowNodeDetailPrompt = `你是论文精读助手。下面给出某篇论文思路图里某一个环节的小标题与类型,以及从该论文检索到的相关原文片段。请用 2 到 4 句话(约 60~120 字)写出这个环节的具体内容:做了什么、用了什么方法/数据/设定、得到什么结论或数字,让没读过原文的人也能看懂这一步。
 
 只依据给定材料,不臆测、不编造数字;只输出这段说明文字本身,不要小标题、不要 Markdown、不要任何前后缀。`
+
+// TranslateCacheTTL 是精读页选段翻译结果的短期内存缓存时间。
+const TranslateCacheTTL = 30 * time.Minute
 
 // PioneerInstruction 是小云雀 agent 的 system prompt。小云雀不走 RAG 链路,
 // 靠挂载的 mcp 工具与 skill 完成查论文、点咖啡等任务。

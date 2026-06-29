@@ -7,7 +7,7 @@ func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&User{}, &Session{}, &Topic{},
 		&Admin{}, &ServiceCallLog{},
-		&Paper{}, &PaperMeta{}, &PaperSection{}, &PaperReport{}, &Tag{}, &PaperTag{},
+		&Paper{}, &PaperMeta{}, &PaperSection{}, &PaperReport{}, &PaperAnnotation{}, &Tag{}, &PaperTag{},
 		&PaperSemanticRelation{},
 	)
 }

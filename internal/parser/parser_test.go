@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -310,5 +311,40 @@ func TestParseArtifactDir(t *testing.T) {
 	}
 	if len(doc.References) != 1 || doc.References[0] != "[1] ref" {
 		t.Fatalf("归档参考文献解析错误 %+v", doc.References)
+	}
+}
+
+func TestParseArtifactDir_RebuildsSections(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "paper_content_list.json"), []byte(`[
+		{"type":"text","text":"Introduction","text_level":1,"page_idx":0},
+		{"type":"text","text":"Threat Model","text_level":2,"page_idx":1},
+		{"type":"text","text":"This paper studies X.","page_idx":1}
+	]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "paper_model.json"), []byte(`{"pdf_info":[{"para_blocks":[{"blocks":[{"type":"ref_text","lines":[{"spans":[{"type":"text","content":"[1] A cited paper."}]}]}]}]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	doc, err := ParseArtifactDir(dir)
+	if err != nil {
+		t.Fatalf("ParseArtifactDir() error = %v", err)
+	}
+	if len(doc.Sections) != 2 {
+		t.Fatalf("sections = %d, want 2", len(doc.Sections))
+	}
+	if doc.Sections[1].Title != "Threat Model" || doc.Sections[1].Level != 2 || doc.Sections[1].PageNo != 2 {
+		t.Fatalf("section mapping mismatch %+v", doc.Sections[1])
+	}
+	if len(doc.References) != 1 {
+		t.Fatalf("references = %d, want 1", len(doc.References))
+	}
+}
+
+func TestParseArtifactDir_MissingContentList(t *testing.T) {
+	_, err := ParseArtifactDir(t.TempDir())
+	if !errors.Is(err, ErrArtifactContentListNotFound) {
+		t.Fatalf("error = %v, want ErrArtifactContentListNotFound", err)
 	}
 }

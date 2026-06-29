@@ -273,4 +273,34 @@ func (c *Config) applyDefaults() {
 	if c.Parser.PollTimeout == 0 {
 		c.Parser.PollTimeout = 600
 	}
+	if c.Models.Translate.Provider == "" {
+		c.Models.Translate.Provider = constant.ProviderOpenAI
+	}
+	if c.Models.Translate.BaseURL == "" {
+		if c.Models.Translate.Provider == constant.ProviderOpenAI && c.Models.Intent.BaseURL != "" {
+			c.Models.Translate.BaseURL = c.Models.Intent.BaseURL
+		} else if c.Models.Translate.Provider == constant.ProviderOllama {
+			c.Models.Translate.BaseURL = "http://localhost:11434/v1"
+		} else {
+			c.Models.Translate.BaseURL = constant.DefaultVolcengineBaseURL
+		}
+	}
+	if c.Models.Translate.APIKey == "" &&
+		c.Models.Translate.Provider == constant.ProviderOpenAI &&
+		c.Models.Intent.APIKey != "" {
+		c.Models.Translate.APIKey = c.Models.Intent.APIKey
+	}
+	if c.Models.Translate.Model == "" {
+		if c.Models.Translate.Provider == constant.ProviderOllama {
+			c.Models.Translate.Model = "qwen2.5:1.5b-instruct"
+		} else {
+			c.Models.Translate.Model = constant.DefaultVolcengineMiniModel
+		}
+	}
+	if c.Models.Translate.MaxTokens == 0 {
+		c.Models.Translate.MaxTokens = 4096
+	}
+	if c.Models.Translate.Thinking == "" && c.Models.Translate.Provider == constant.ProviderOpenAI {
+		c.Models.Translate.Thinking = "disabled"
+	}
 }
