@@ -16,21 +16,15 @@ import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { useApp } from "@/lib/gopherpaper/store";
 import { cn } from "@/lib/utils";
 import { AvatarDialog } from "./avatar-dialog";
 import { Empty } from "./app-ui";
 import { WorkspaceFrame, WorkspacePanel } from "./workspace-frame";
+
+type ProfileIcon = typeof UserRound;
 
 function fieldFallback(value: string | undefined, fallback = "未设置") {
   return value && value.trim() ? value : fallback;
@@ -62,6 +56,9 @@ export function ProfileCenter() {
 
   const fallback = (user?.name || user?.student_id || "G").slice(0, 1).toUpperCase();
   const displayName = fieldFallback(user?.name, user?.student_id || "GopherPaper 用户");
+  const studentID = fieldFallback(user?.student_id);
+  const email = fieldFallback(user?.email);
+  const classID = fieldFallback(user?.class_id);
 
   useEffect(() => {
     setName(user?.name || "");
@@ -77,7 +74,9 @@ export function ProfileCenter() {
   useEffect(() => {
     if (!authed) return;
     setRefreshing(true);
-    refreshUser().catch(() => {}).finally(() => setRefreshing(false));
+    refreshUser()
+      .catch(() => {})
+      .finally(() => setRefreshing(false));
   }, [authed, refreshUser]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -95,15 +94,15 @@ export function ProfileCenter() {
   }
 
   async function sendEmailCode() {
-    const email = nextEmail.trim();
+    const emailValue = nextEmail.trim();
     setEmailError("");
-    if (!email) {
+    if (!emailValue) {
       setEmailError("请输入新邮箱");
       return;
     }
     setEmailSending(true);
     try {
-      await sendCode(email);
+      await sendCode(emailValue);
     } catch (err) {
       setEmailError(err instanceof Error ? err.message : "验证码发送失败");
     } finally {
@@ -139,10 +138,13 @@ export function ProfileCenter() {
   }
 
   return (
-    <WorkspaceFrame>
-      <WorkspacePanel as="aside" className="hidden w-96 flex-col lg:flex">
-        <div className="space-y-5 border-b p-4">
-          <div className="flex items-center gap-3">
+    <WorkspaceFrame className="bg-muted/40">
+      <WorkspacePanel as="aside" className="hidden w-80 flex-col lg:flex">
+        <div className="relative overflow-hidden border-b p-5">
+          <div className="absolute -right-16 -top-16 size-36 rounded-full bg-primary/10 blur-2xl" />
+          <div className="absolute -bottom-14 left-10 size-28 rounded-full bg-sienna/10 blur-2xl" />
+
+          <div className="relative flex items-center gap-3">
             <Link
               href="/"
               className={buttonVariants({ variant: "ghost", size: "icon" })}
@@ -153,228 +155,248 @@ export function ProfileCenter() {
             </Link>
             <div className="min-w-0">
               <div className="truncate text-sm font-medium">个人中心</div>
-              <div className="truncate text-xs text-muted-foreground">
-                账号资料 · 头像设置 · 绑定状态
-              </div>
+              <div className="truncate text-xs text-muted-foreground">资料、头像与账号安全</div>
             </div>
           </div>
 
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
-            <div className="flex items-start gap-3">
-              <Avatar key={user?.avatar_url || fallback} className="size-16 rounded-xl">
-                {user?.avatar_url && (
-                  <AvatarImage src={user.avatar_url} alt="用户头像" className="rounded-xl" />
-                )}
-                <AvatarFallback className="rounded-xl bg-primary font-serif text-xl font-semibold text-primary-foreground">
-                  {fallback}
-                </AvatarFallback>
-              </Avatar>
+          <div className="relative mt-6 rounded-3xl border bg-card/90 p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <ProfileAvatar avatarUrl={user?.avatar_url} fallback={fallback} className="size-14 rounded-2xl" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-base font-semibold">{displayName}</div>
-                <div className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                  {user?.student_id}
-                </div>
+                <div className="mt-1 truncate font-mono text-xs text-muted-foreground">{studentID}</div>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="space-y-2 p-4">
-          <InfoRow icon={IdCard} label="学号" value={fieldFallback(user?.student_id)} />
-          <InfoRow icon={Mail} label="邮箱" value={fieldFallback(user?.email)} />
-          <InfoRow icon={ShieldCheck} label="状态" value="已登录" />
+        <nav className="space-y-2 p-4">
+          <SidebarLink href="#profile-card" icon={UserRound} label="个人名片" />
+          <SidebarLink href="#profile-info" icon={IdCard} label="资料设置" />
+          <SidebarLink href="#account-security" icon={ShieldCheck} label="账号安全" />
+        </nav>
+
+        <div className="mt-auto p-4">
+          <div className="rounded-2xl border bg-muted/30 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <ShieldCheck className="size-4 text-primary" />
+              已登录
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              学号作为论文归属和知识库隔离键保持只读。邮箱修改成功后需要重新登录。
+            </p>
+          </div>
         </div>
       </WorkspacePanel>
 
       <WorkspacePanel className="min-w-0 flex-1 overflow-auto">
-        <section className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-4 lg:p-6">
-          <div className="flex flex-col gap-3 rounded-2xl border bg-card p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-semibold tracking-tight">个人中心</h1>
-                {refreshing && <Badge variant="secondary">同步中</Badge>}
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                管理头像和基础资料。学号是知识库隔离键，当前版本保持只读。
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Link href="/" className={buttonVariants({ variant: "outline" })}>
-                <ArrowLeft className="size-4" />
-                返回工作台
-              </Link>
-              <Button type="button" variant="ghost" onClick={() => logout()}>
-                <LogOut className="size-4" />
-                退出
-              </Button>
-            </div>
-          </div>
+        <section className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 lg:p-6">
+          <header
+            id="profile-card"
+            className="relative overflow-hidden rounded-[2rem] border bg-card p-5 shadow-sm sm:p-6"
+          >
+            <div className="absolute -right-20 -top-24 size-56 rounded-full bg-primary/10 blur-3xl" />
+            <div className="absolute -bottom-24 left-1/3 size-52 rounded-full bg-sienna/10 blur-3xl" />
 
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <Card>
-              <CardHeader>
-                <CardTitle>基础资料</CardTitle>
-                <CardDescription>当前先支持修改显示姓名，账号 ID 暂不开放直接修改。</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form className="space-y-5" onSubmit={submit}>
-                  <div className="space-y-4">
-                    <div className="max-w-xl space-y-2">
-                      <Label htmlFor="profile-student-id">用户 ID / 学号</Label>
-                      <Input id="profile-student-id" value={user?.student_id || ""} readOnly />
-                      <p className="text-xs text-muted-foreground">
-                        该字段用于论文归属、RAG 隔离和登录凭证，不能在普通资料页修改。
-                      </p>
-                    </div>
-                    <div className="max-w-xl space-y-2">
-                      <Label htmlFor="profile-name">显示姓名</Label>
-                      <Input
-                        id="profile-name"
-                        value={name}
-                        maxLength={64}
-                        placeholder="输入你的姓名或昵称"
-                        onChange={(event) => setName(event.target.value)}
-                      />
-                    </div>
-                    <div className="max-w-xl space-y-2">
-                      <Label htmlFor="profile-class">班级</Label>
-                      <Input id="profile-class" value={user?.class_id || "未设置"} readOnly />
-                    </div>
+            <div className="relative flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                <button
+                  type="button"
+                  className="group relative w-fit rounded-[1.75rem] outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                  onClick={() => setAvatarOpen(true)}
+                  aria-label="调整头像"
+                >
+                  <ProfileAvatar
+                    avatarUrl={user?.avatar_url}
+                    fallback={fallback}
+                    className="size-24 rounded-[1.75rem] ring-1 ring-border transition-transform group-hover:scale-[1.02]"
+                  />
+                  <span className="absolute -bottom-2 -right-2 grid size-9 place-items-center rounded-full border bg-primary text-primary-foreground shadow-sm">
+                    <Camera className="size-4" />
+                  </span>
+                </button>
+
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="truncate font-serif text-3xl font-semibold tracking-tight">
+                      {displayName}
+                    </h1>
+                    {refreshing && <Badge variant="secondary">同步中</Badge>}
                   </div>
-                  <Separator />
-                  {error && (
-                    <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                      {error}
-                    </p>
-                  )}
-                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  <div className="mt-2 flex flex-wrap gap-2 text-sm text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border bg-background/70 px-3 py-1">
+                      <IdCard className="size-3.5" />
+                      {studentID}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-full border bg-background/70 px-3 py-1">
+                      <Mail className="size-3.5" />
+                      {email}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-full border bg-primary/10 px-3 py-1 text-primary">
+                      <CheckCircle2 className="size-3.5" />
+                      邮箱已绑定
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" onClick={() => setAvatarOpen(true)}>
+                  <Camera className="size-4" />
+                  调整头像
+                </Button>
+                <Link href="/" className={buttonVariants({ variant: "outline" })}>
+                  <ArrowLeft className="size-4" />
+                  返回工作台
+                </Link>
+                <Button type="button" variant="ghost" onClick={() => logout()}>
+                  <LogOut className="size-4" />
+                  退出
+                </Button>
+              </div>
+            </div>
+          </header>
+
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(22rem,0.95fr)]">
+            <form
+              id="profile-info"
+              className="rounded-[1.75rem] border bg-card p-5 shadow-sm sm:p-6"
+              onSubmit={submit}
+            >
+              <SectionTitle
+                title="资料设置"
+                description="只把能修改的内容做成表单，身份字段保持只读展示。"
+              />
+
+              <div className="mt-6 space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="profile-name">显示姓名</Label>
+                  <Input
+                    id="profile-name"
+                    value={name}
+                    maxLength={64}
+                    placeholder="输入你的姓名或昵称"
+                    onChange={(event) => setName(event.target.value)}
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ReadOnlyField icon={IdCard} label="用户 ID / 学号" value={studentID} />
+                  <ReadOnlyField icon={UserRound} label="班级" value={classID} />
+                </div>
+
+                <p className="rounded-2xl border bg-muted/30 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+                  学号用于论文归属、RAG 隔离和登录凭证，当前版本不在资料页开放修改。
+                </p>
+
+                {error && (
+                  <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
+
+                <div className="flex flex-col gap-2 border-t pt-5 sm:flex-row sm:justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setName(user?.name || "")}
+                    disabled={saving}
+                  >
+                    重置
+                  </Button>
+                  <Button type="submit" disabled={saving}>
+                    {saving ? "保存中..." : "保存资料"}
+                  </Button>
+                </div>
+              </div>
+            </form>
+
+            <section
+              id="account-security"
+              className="rounded-[1.75rem] border bg-card p-5 shadow-sm sm:p-6"
+            >
+              <SectionTitle
+                title="账号安全"
+                description="管理邮箱绑定与登录账号。修改邮箱后，当前登录态会失效。"
+              />
+
+              <div className="mt-6 space-y-4">
+                <BindingRow
+                  icon={Mail}
+                  label="邮箱"
+                  value={email}
+                  action={
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => setName(user?.name || "")}
-                      disabled={saving}
+                      size="sm"
+                      onClick={() => setEmailEditing((value) => !value)}
                     >
-                      重置
+                      {emailEditing ? "取消" : "编辑"}
                     </Button>
-                    <Button type="submit" disabled={saving}>
-                      {saving ? "保存中..." : "保存资料"}
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
+                  }
+                />
 
-            <div className="space-y-5">
-              <Card>
-                <CardHeader>
-                  <CardTitle>头像</CardTitle>
-                  <CardDescription>头像会保存到后端，换设备登录后同步显示。</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-4">
-                    <Avatar key={user?.avatar_url || fallback} className="size-20 rounded-2xl">
-                      {user?.avatar_url && (
-                        <AvatarImage src={user.avatar_url} alt="用户头像" className="rounded-2xl" />
-                      )}
-                      <AvatarFallback className="rounded-2xl bg-primary font-serif text-2xl font-semibold text-primary-foreground">
-                        {fallback}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium">当前头像</div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        可上传图片、拖动裁剪位置，也可恢复默认首字母头像。
-                      </p>
-                      <Button className="mt-3" type="button" onClick={() => setAvatarOpen(true)}>
-                        <Camera className="size-4" />
-                        调整头像
-                      </Button>
+                {emailEditing && (
+                  <form className="space-y-3 rounded-2xl border bg-muted/20 p-4" onSubmit={submitEmail}>
+                    <div className="space-y-2">
+                      <Label htmlFor="profile-new-email">新邮箱</Label>
+                      <Input
+                        id="profile-new-email"
+                        type="email"
+                        value={nextEmail}
+                        placeholder="输入新的绑定邮箱"
+                        onChange={(event) => setNextEmail(event.target.value)}
+                      />
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>账号绑定</CardTitle>
-                  <CardDescription>邮箱修改需要验证新邮箱，成功后需要重新登录。</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <BindingRow
-                    icon={Mail}
-                    label="邮箱"
-                    value={fieldFallback(user?.email)}
-                    action={
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                      <div className="space-y-2">
+                        <Label htmlFor="profile-email-code">验证码</Label>
+                        <Input
+                          id="profile-email-code"
+                          value={emailCode}
+                          maxLength={6}
+                          placeholder="6 位验证码"
+                          onChange={(event) => setEmailCode(event.target.value)}
+                        />
+                      </div>
                       <Button
                         type="button"
                         variant="outline"
-                        size="sm"
-                        onClick={() => setEmailEditing((value) => !value)}
+                        className="self-end"
+                        disabled={emailSending || emailSaving}
+                        onClick={sendEmailCode}
                       >
-                        {emailEditing ? "取消" : "编辑"}
+                        {emailSending ? "发送中..." : "发送验证码"}
                       </Button>
-                    }
-                  />
-                  {emailEditing && (
-                    <form className="space-y-3 rounded-lg border bg-muted/20 p-3" onSubmit={submitEmail}>
-                      <div className="space-y-2">
-                        <Label htmlFor="profile-new-email">新邮箱</Label>
-                        <Input
-                          id="profile-new-email"
-                          type="email"
-                          value={nextEmail}
-                          placeholder="输入新的绑定邮箱"
-                          onChange={(event) => setNextEmail(event.target.value)}
-                        />
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                        <div className="space-y-2">
-                          <Label htmlFor="profile-email-code">验证码</Label>
-                          <Input
-                            id="profile-email-code"
-                            value={emailCode}
-                            maxLength={6}
-                            placeholder="6 位验证码"
-                            onChange={(event) => setEmailCode(event.target.value)}
-                          />
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="self-end"
-                          disabled={emailSending || emailSaving}
-                          onClick={sendEmailCode}
-                        >
-                          {emailSending ? "发送中..." : "发送验证码"}
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        验证码会发送到新邮箱。绑定成功后当前登录会失效，需要重新登录。
+                    </div>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      验证码会发送到新邮箱。绑定成功后需要重新登录。
+                    </p>
+                    {emailError && (
+                      <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                        {emailError}
                       </p>
-                      {emailError && (
-                        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                          {emailError}
-                        </p>
-                      )}
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={emailSaving}
-                          onClick={() => setEmailEditing(false)}
-                        >
-                          取消
-                        </Button>
-                        <Button type="submit" disabled={emailSaving}>
-                          {emailSaving ? "绑定中..." : "确认绑定"}
-                        </Button>
-                      </div>
-                    </form>
-                  )}
-                  <BindingRow icon={UserRound} label="登录账号" value={fieldFallback(user?.student_id)} />
-                </CardContent>
-              </Card>
-            </div>
+                    )}
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={emailSaving}
+                        onClick={() => setEmailEditing(false)}
+                      >
+                        取消
+                      </Button>
+                      <Button type="submit" disabled={emailSaving}>
+                        {emailSaving ? "绑定中..." : "确认绑定"}
+                      </Button>
+                    </div>
+                  </form>
+                )}
+
+                <BindingRow icon={UserRound} label="登录账号" value={studentID} />
+              </div>
+            </section>
           </div>
         </section>
       </WorkspacePanel>
@@ -391,22 +413,73 @@ export function ProfileCenter() {
   );
 }
 
-function InfoRow({
+function ProfileAvatar({
+  avatarUrl,
+  fallback,
+  className,
+}: {
+  avatarUrl?: string;
+  fallback: string;
+  className?: string;
+}) {
+  return (
+    <Avatar key={avatarUrl || fallback} className={className}>
+      {avatarUrl && <AvatarImage src={avatarUrl} alt="用户头像" />}
+      <AvatarFallback className="bg-primary font-serif text-2xl font-semibold text-primary-foreground">
+        {fallback}
+      </AvatarFallback>
+    </Avatar>
+  );
+}
+
+function SidebarLink({
+  href,
+  icon: Icon,
+  label,
+}: {
+  href: string;
+  icon: ProfileIcon;
+  label: string;
+}) {
+  return (
+    <a
+      href={href}
+      className="flex items-center gap-3 rounded-2xl px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      <Icon className="size-4" />
+      {label}
+    </a>
+  );
+}
+
+function SectionTitle({ title, description }: { title: string; description: string }) {
+  return (
+    <div>
+      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
+    </div>
+  );
+}
+
+function ReadOnlyField({
   icon: Icon,
   label,
   value,
 }: {
-  icon: typeof IdCard;
+  icon: ProfileIcon;
   label: string;
   value: string;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg px-2 py-2 text-sm">
-      <Icon className="size-4 text-muted-foreground" />
-      <div className="min-w-0">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="truncate">{value}</div>
+    <div className="rounded-2xl border bg-muted/20 p-4">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Icon className="size-3.5" />
+        {label}
       </div>
+      <div className="mt-2 truncate font-mono text-sm">{value}</div>
+      <Badge variant="outline" className="mt-3">
+        只读
+      </Badge>
     </div>
   );
 }
@@ -417,15 +490,17 @@ function BindingRow({
   value,
   action,
 }: {
-  icon: typeof Mail;
+  icon: ProfileIcon;
   label: string;
   value: string;
   action?: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 px-3 py-2">
+    <div className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/20 px-4 py-3">
       <div className="flex min-w-0 items-center gap-3">
-        <Icon className="size-4 text-muted-foreground" />
+        <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-background text-muted-foreground">
+          <Icon className="size-4" />
+        </div>
         <div className="min-w-0">
           <div className="text-sm font-medium">{label}</div>
           <div className="truncate text-xs text-muted-foreground">{value}</div>

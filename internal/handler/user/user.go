@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -81,11 +82,11 @@ func Register(c *gin.Context) {
 	response.OKMsg(c, "注册成功", nil)
 }
 
-// Login 校验学号密码并签发 JWT。
+// Login 校验账号密码并签发 JWT。
 // POST /api/v1/user/login
 //
 // @Summary 登录
-// @Description 按学号和密码登录，返回 JWT 与用户基本信息。
+// @Description 按学号或绑定邮箱和密码登录，返回 JWT 与用户基本信息。
 // @Tags user
 // @Accept json
 // @Produce json
@@ -101,13 +102,21 @@ func Login(c *gin.Context) {
 		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
 	}
-	token, user, err := userservice.Login(c.Request.Context(), req.StudentID, req.Password)
+	account := strings.TrimSpace(req.Account)
+	if account == "" {
+		account = strings.TrimSpace(req.StudentID)
+	}
+	if account == "" {
+		response.Fail(c, http.StatusBadRequest, "账号不能为空")
+		return
+	}
+	token, user, err := userservice.Login(c.Request.Context(), account, req.Password)
 	if err != nil {
 		switch {
 		case errors.Is(err, errs.ErrUserNotFound), errors.Is(err, errs.ErrWrongPassword):
 			response.Fail(c, http.StatusUnauthorized, err.Error())
 		default:
-			zlog.Error("登录失败", "student_id", req.StudentID, "err", err)
+			zlog.Error("登录失败", "account", account, "err", err)
 			response.Fail(c, http.StatusInternalServerError, "登录失败")
 		}
 		return

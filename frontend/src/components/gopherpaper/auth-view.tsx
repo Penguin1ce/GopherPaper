@@ -140,7 +140,7 @@ export function AuthView() {
   const [mode, setMode] = useState<AuthMode>("landing");
   const [busy, setBusy] = useState(false);
   const [codeBusy, setCodeBusy] = useState(false);
-  const [loginForm, setLoginForm] = useState({ student_id: "", password: "" });
+  const [loginForm, setLoginForm] = useState({ account: "", password: "" });
   const [resetForm, setResetForm] = useState({
     student_id: "",
     email: "",
@@ -161,8 +161,8 @@ export function AuthView() {
     e.preventDefault();
     if (busy) return;
     setBusy(true);
-    guard(() => login(loginForm.student_id.trim(), loginForm.password)).finally(
-      () => setBusy(false),
+    guard(() => login(loginForm.account.trim(), loginForm.password)).finally(() =>
+      setBusy(false),
     );
   };
 
@@ -216,7 +216,7 @@ export function AuthView() {
         code: resetForm.code.trim(),
         password: resetForm.password,
       });
-      setLoginForm({ student_id: resetForm.student_id.trim(), password: "" });
+      setLoginForm({ account: resetForm.student_id.trim(), password: "" });
       setMode("login");
     }).finally(() => setBusy(false));
   };
@@ -594,8 +594,8 @@ type AuthPanelProps = {
   setMode: (m: AuthMode) => void;
   busy: boolean;
   codeBusy: boolean;
-  loginForm: { student_id: string; password: string };
-  setLoginForm: React.Dispatch<React.SetStateAction<{ student_id: string; password: string }>>;
+  loginForm: { account: string; password: string };
+  setLoginForm: React.Dispatch<React.SetStateAction<{ account: string; password: string }>>;
   reg: {
     student_id: string;
     name: string;
@@ -764,13 +764,14 @@ function LoginForm({ busy, loginForm, setLoginForm, setMode, onLogin }: AuthPane
   return (
     <form className="space-y-4" onSubmit={onLogin}>
       <div className="space-y-2">
-        <Label htmlFor="student_id">学号</Label>
+        <Label htmlFor="login_account">学号 / 邮箱</Label>
         <Input
-          id="student_id"
-          value={loginForm.student_id}
+          id="login_account"
+          value={loginForm.account}
           autoComplete="username"
+          placeholder="输入学号或邮箱"
           required
-          onChange={(e) => setLoginForm({ ...loginForm, student_id: e.target.value })}
+          onChange={(e) => setLoginForm({ ...loginForm, account: e.target.value })}
         />
       </div>
       <div className="space-y-2">
