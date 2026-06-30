@@ -226,6 +226,31 @@
     @apply text-[13px] leading-6;
   }
 
+  .gp-outline-title .gp-markdown {
+    color: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  .gp-outline-title .gp-markdown > * + * {
+    margin-top: 0;
+  }
+
+  .gp-outline-title .gp-markdown p {
+    color: inherit;
+    display: inline;
+  }
+
+  .gp-outline-title .gp-markdown .katex {
+    font-size: 0.96em;
+  }
+
+  .gp-outline-title .gp-markdown .katex-display {
+    display: inline;
+    margin: 0;
+    text-align: left;
+  }
+
   .react-pdf__Page {
     @apply mb-4 overflow-hidden rounded-lg border bg-white shadow-sm;
   }
