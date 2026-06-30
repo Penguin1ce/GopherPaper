@@ -7,7 +7,9 @@ package aimodel
 
 import (
 	"fmt"
+	"net/http"
 	"sync"
+	"time"
 
 	trpcembedder "trpc.group/trpc-go/trpc-agent-go/knowledge/embedder/openai"
 	trpcreranker "trpc.group/trpc-go/trpc-agent-go/knowledge/reranker"
@@ -75,6 +77,8 @@ func NewReranker(rc config.RerankConfig) trpcreranker.Reranker {
 		trpcinfinity.WithModel(rc.Model),
 		trpcinfinity.WithAPIKey(rc.APIKey),
 		trpcinfinity.WithTopN(constant.RecallTopK),
+		// 自定义超时:组件默认 30s,精排卡顿会拖满整轮问答。精排 best-effort,超时即退化为向量序,宜短失败快回退。
+		trpcinfinity.WithHTTPClient(&http.Client{Timeout: time.Duration(rc.Timeout) * time.Second}),
 	)
 	if err != nil {
 		zlog.Error("rerank 初始化失败,退化为纯向量召回", "err", err)

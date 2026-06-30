@@ -15,6 +15,9 @@ import { cn } from "@/lib/utils";
 // 后端 react planner 的阶段名 → 论文助教面向用户的中文标签。action 在 RAG 语境即检索。
 const PHASE_LABEL: Record<string, string> = {
   preparing: "准备",
+  researching: "找资料",
+  writing: "写报告",
+  reviewing: "评审",
   planning: "规划",
   replanning: "重新规划",
   action: "检索",

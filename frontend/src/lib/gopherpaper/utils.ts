@@ -1,4 +1,4 @@
-import type { Paper, PaperStatus, Session } from "./types";
+import type { Message, Paper, PaperStatus, PlanStep, Session } from "./types";
 
 export const READY_STATUSES: PaperStatus[] = ["ready"];
 
@@ -12,6 +12,26 @@ export function paperTitle(paper: Paper): string {
 
 export function sessionTitle(session: Session): string {
   return session.title || "未命名会话";
+}
+
+export function metaPlanSteps(meta?: Record<string, unknown>): PlanStep[] {
+  const raw = meta?.steps;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const step = item as Record<string, unknown>;
+      const phase = typeof step.phase === "string" ? step.phase.trim() : "";
+      const text = typeof step.text === "string" ? step.text.trim() : "";
+      return phase && text ? { phase, text } : null;
+    })
+    .filter((step): step is PlanStep => Boolean(step));
+}
+
+export function messagePlan(message?: Message | null): PlanStep[] {
+  if (!message) return [];
+  if (message.plan && message.plan.length > 0) return message.plan;
+  return metaPlanSteps(message.meta);
 }
 
 function sessionTime(s: Session): number {
@@ -55,11 +75,11 @@ export function formatSize(bytes?: number): string {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  uploaded: "已上传",
+  uploaded: "待解析",
   parsing: "解析中",
-  extracted: "已抽取",
-  indexed: "已索引",
-  ready: "可提问",
+  extracted: "抽取中",
+  indexed: "索引中",
+  ready: "完成",
   failed: "失败",
 };
 
@@ -70,8 +90,7 @@ export function statusLabel(status?: string): string {
 export type StatusTone = "ready" | "working" | "failed";
 
 export function statusTone(status?: PaperStatus): StatusTone {
-  if (status === "ready" || status === "indexed" || status === "extracted")
-    return "ready";
+  if (status === "ready") return "ready";
   if (status === "failed") return "failed";
   return "working";
 }

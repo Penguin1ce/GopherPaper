@@ -2,13 +2,15 @@
 
 import {
   AlertTriangle,
+  ArrowUp,
   ArrowLeft,
   ChevronDown,
   Coffee,
   FileText,
   Loader2,
   Plus,
-  Send,
+  Search,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
@@ -17,6 +19,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -43,9 +46,10 @@ import type {
   PaperFlow,
   PlanStep,
   Session,
+  Topic,
 } from "@/lib/gopherpaper/types";
 import { toolStatusText } from "@/lib/gopherpaper/tool-status";
-import { formatTime, sessionTitle } from "@/lib/gopherpaper/utils";
+import { formatTime, messagePlan, metaPlanSteps, sessionTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty } from "@/components/gopherpaper/app-ui";
 import { Markdown } from "@/components/gopherpaper/markdown";
@@ -344,9 +348,46 @@ const PROMPT_HINTS = [
   "画一个思路流程图",
 ];
 
+interface SessionGroup {
+  key: string;
+  name: string;
+  sessions: Session[];
+  latest: number;
+}
+
+// groupSessionsByTopic 把会话按主题分组:组内会话按时间倒序,组间按各组最新会话时间倒序。
+// 未归类(无 topic_id 或主题已被合并删除)的会话归「未归类」组,一同参与时间排序。
+function groupSessionsByTopic(sessions: Session[], topics: Topic[]): SessionGroup[] {
+  const topicName = new Map(topics.map((t) => [t.id, t.name]));
+  const ms = (s: Session) => new Date(s.updated_at || s.created_at).getTime() || 0;
+  const buckets = new Map<string, Session[]>();
+  for (const s of sessions) {
+    const tid = s.topic_id && topicName.has(s.topic_id) ? s.topic_id : "";
+    const arr = buckets.get(tid);
+    if (arr) arr.push(s);
+    else buckets.set(tid, [s]);
+  }
+  const groups: SessionGroup[] = [];
+  for (const [tid, list] of buckets) {
+    list.sort((a, b) => ms(b) - ms(a));
+    groups.push({
+      key: tid || "__none__",
+      name: tid ? (topicName.get(tid) ?? "未归类") : "未归类",
+      sessions: list,
+      latest: ms(list[0]),
+    });
+  }
+  groups.sort((a, b) => b.latest - a.latest);
+  return groups;
+}
+
 export default function PioneerPage() {
   const [token, setToken] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [backfilling, setBackfilling] = useState(false);
+  const [search, setSearch] = useState("");
   const [activeID, setActiveID] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [sending, setSending] = useState(false);
@@ -395,22 +436,27 @@ export default function PioneerPage() {
     }
   }, [fail]);
 
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    api
-      .listSessions()
-      .then((list) => {
-        if (cancelled || !mountedRef.current) return;
+  // reloadSidebar 重拉会话与主题,供归类异步完成后刷新分组。openFirst 仅首次进页时定位首个会话。
+  const reloadSidebar = useCallback(
+    async (openFirst = false) => {
+      try {
+        const [list, topicList] = await Promise.all([api.listSessions(), api.listTopics()]);
+        if (!mountedRef.current) return;
         const mine = (Array.isArray(list) ? list : []).filter((s) => s.agent_type === AGENT_TYPE);
         setSessions(mine);
-        if (mine.length > 0) void openSession(mine[0].id);
-      })
-      .catch(fail);
-    return () => {
-      cancelled = true;
-    };
-  }, [token, openSession, fail]);
+        setTopics(Array.isArray(topicList) ? topicList : []);
+        if (openFirst && mine.length > 0) void openSession(mine[0].id);
+      } catch (e) {
+        fail(e);
+      }
+    },
+    [openSession, fail],
+  );
+
+  useEffect(() => {
+    if (!token) return;
+    void reloadSidebar(true);
+  }, [token, reloadSidebar]);
 
   const startNewSession = () => {
     setActiveID("");
@@ -418,6 +464,32 @@ export default function PioneerPage() {
     setStreamPlan([]);
     setError("");
     setInput("");
+  };
+
+  // runBackfill 触发存量会话回填,后端异步逐个归类,分几次重拉让分组陆续刷新。
+  const runBackfill = async () => {
+    if (backfilling) return;
+    setBackfilling(true);
+    try {
+      await api.backfillTopics();
+      [2000, 5000, 9000].forEach((d) => window.setTimeout(() => void reloadSidebar(), d));
+    } catch (e) {
+      fail(e);
+    } finally {
+      window.setTimeout(() => {
+        if (mountedRef.current) setBackfilling(false);
+      }, 9000);
+    }
+  };
+
+  // runClear 清空所有主题归类(演示重置),会话退回未归类,随后重拉刷新分组。
+  const runClear = async () => {
+    try {
+      await api.clearTopics();
+      await reloadSidebar();
+    } catch (e) {
+      fail(e);
+    }
   };
 
   const removeSession = async (id: string) => {
@@ -569,15 +641,20 @@ export default function PioneerPage() {
       cancelFlush();
       if (!mountedRef.current) return;
       setStreamPlan([]);
+      const finalMeta = data.meta ?? data.message.meta;
+      const finalPlan = planSteps.length > 0 ? planSteps : metaPlanSteps(finalMeta);
       setMessages((list) => [
         ...list.filter((m) => m.id !== placeholderID),
         {
           ...data.message,
           id: data.message.id || `local-a-${Date.now()}`,
-          plan: planSteps.length > 0 ? planSteps : undefined,
+          meta: finalMeta,
+          plan: finalPlan.length > 0 ? finalPlan : undefined,
           flow: capturedFlow,
         },
       ]);
+      // 主题归类在后端异步进行,延时重拉一次让侧边栏分组刷新。
+      window.setTimeout(() => void reloadSidebar(), 1800);
     } catch (e) {
       cancelFlush();
       if (!mountedRef.current) return;
@@ -645,10 +722,23 @@ export default function PioneerPage() {
   }
 
   const activeSession = sessions.find((s) => s.id === activeID);
+  const q = search.trim().toLowerCase();
+  const visibleSessions = q
+    ? sessions.filter((s) => sessionTitle(s).toLowerCase().includes(q))
+    : sessions;
+  const sessionGroups = groupSessionsByTopic(visibleSessions, topics);
+  const toggleCollapse = (key: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-  const railSteps = sending ? streamPlan : (lastAssistant?.plan ?? []);
+  const railSteps = sending ? streamPlan : messagePlan(lastAssistant);
   const railLive = sending && streamPlan.length > 0;
   const railPending = sending && streamPlan.length === 0;
+  const hasDraft = input.trim().length > 0;
 
   return (
     <WorkspaceFrame>
@@ -671,44 +761,114 @@ export default function PioneerPage() {
             <Plus className="size-4" />
             新会话
           </Button>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              value={search}
+              placeholder="搜索会话"
+              className="h-9 pl-9"
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="flex-1 justify-start text-muted-foreground"
+              disabled={backfilling}
+              onClick={() => void runBackfill()}
+            >
+              {backfilling ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="size-3.5" />
+              )}
+              {backfilling ? "正在整理…" : "整理历史会话"}
+            </Button>
+            {topics.length > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 shrink-0 px-2 text-xs text-muted-foreground/45 hover:text-muted-foreground"
+                onClick={() => void runClear()}
+              >
+                清除归类
+              </Button>
+            )}
+          </div>
         </div>
         <div className="relative min-h-0 flex-1">
         <ScrollArea className="absolute! inset-0 px-3">
-          <div className="space-y-1 py-3">
+          <div className="py-3">
             {sessions.length === 0 ? (
               <Empty title="还没有会话" text="发送一条消息后会自动创建云雀会话。" compact />
+            ) : sessionGroups.length === 0 ? (
+              <Empty title="没有匹配的会话" text={`没有标题包含「${search.trim()}」的会话。`} compact />
             ) : (
-              sessions.map((s) => (
-                <div
-                  key={s.id}
-                  className={cn(
-                    "group relative flex items-center gap-1 rounded-md p-1",
-                    s.id === activeID
-                      ? "bg-card shadow-sm before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sienna"
-                      : "hover:bg-accent/60",
-                  )}
-                >
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 rounded-md px-2 py-2 text-left"
-                    onClick={() => void openSession(s.id)}
-                  >
-                    <div className="truncate text-sm font-medium">{sessionTitle(s)}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      {formatTime(s.updated_at || s.created_at)}
-                    </div>
-                  </button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="opacity-0 group-hover:opacity-100"
-                    onClick={() => void removeSession(s.id)}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              ))
+              sessionGroups.map((g) => {
+                const isOpen = !collapsed.has(g.key);
+                return (
+                  <section key={g.key} className="mb-3 last:mb-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleCollapse(g.key)}
+                      className="group/topic flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50"
+                    >
+                      <ChevronDown
+                        className={cn(
+                          "size-3 shrink-0 text-muted-foreground/60 transition-transform",
+                          !isOpen && "-rotate-90",
+                        )}
+                        aria-hidden
+                      />
+                      <span className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide text-muted-foreground">
+                        {g.name}
+                      </span>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground/60">
+                        {g.sessions.length}
+                      </span>
+                    </button>
+                    {isOpen && (
+                      <div className="mt-0.5 space-y-1">
+                        {g.sessions.map((s) => (
+                          <div
+                            key={s.id}
+                            className={cn(
+                              "group relative flex items-center gap-1 rounded-md p-1",
+                              s.id === activeID
+                                ? "bg-card shadow-sm before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sienna"
+                                : "hover:bg-accent/60",
+                            )}
+                          >
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 rounded-md px-2 py-2 text-left"
+                              onClick={() => void openSession(s.id)}
+                            >
+                              <div className="truncate text-sm font-medium">{sessionTitle(s)}</div>
+                              <div className="mt-0.5 text-xs text-muted-foreground">
+                                {formatTime(s.updated_at || s.created_at)}
+                              </div>
+                            </button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="opacity-0 group-hover:opacity-100"
+                              onClick={() => void removeSession(s.id)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                );
+              })
             )}
           </div>
         </ScrollArea>
@@ -798,15 +958,22 @@ export default function PioneerPage() {
                   }
                 }}
               />
-              <Button
-                type="submit"
-                size="icon"
-                className="size-9 shrink-0 rounded-full"
-                disabled={sending || !input.trim()}
-                title="发送"
-              >
-                {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-              </Button>
+              {(hasDraft || sending) && (
+                <Button
+                  type="submit"
+                  size="icon"
+                  className="size-9 shrink-0 rounded-full"
+                  disabled={sending || !hasDraft}
+                  title={sending ? "正在发送" : "发送"}
+                  aria-label={sending ? "正在发送" : "发送"}
+                >
+                  {sending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <ArrowUp className="size-4 stroke-[2.6]" />
+                  )}
+                </Button>
+              )}
             </div>
           </div>
         </form>

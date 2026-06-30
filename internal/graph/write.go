@@ -27,6 +27,8 @@ type PaperGraph struct {
 	Limitations       []string
 	FutureWork        []string
 	Embedding         []float64
+	SemanticProfile   string
+	SemanticEmbedding []float64
 }
 
 const upsertPaperBaseCypher = `
@@ -36,6 +38,8 @@ SET p.title=$title,
     p.year=$year,
     p.venue=$venue,
     p.embedding=$embedding,
+    p.semantic_profile=$semanticProfile,
+    p.semantic_embedding=$semanticEmbedding,
     p.updated_at=timestamp()
 WITH p
 OPTIONAL MATCH (p)-[r:AUTHORED_BY|HAS_KEYWORD|FROM_AFFILIATION|PUBLISHED_IN|HAS_RESEARCH_QUESTION|USES_METHOD|HAS_EXPERIMENT|HAS_RESULT|HAS_INNOVATION|HAS_LIMITATION|HAS_FUTURE_WORK]->()
@@ -82,6 +86,10 @@ func UpsertPaperMetadata(ctx context.Context, p PaperGraph) error {
 	if embedding == nil {
 		embedding = []float64{}
 	}
+	semanticEmbedding := p.SemanticEmbedding
+	if semanticEmbedding == nil {
+		semanticEmbedding = []float64{}
+	}
 	params := map[string]any{
 		"owner":             p.Owner,
 		"id":                p.ID,
@@ -90,6 +98,8 @@ func UpsertPaperMetadata(ctx context.Context, p PaperGraph) error {
 		"year":              p.Year,
 		"venue":             strings.TrimSpace(p.Venue),
 		"embedding":         embedding,
+		"semanticProfile":   strings.TrimSpace(p.SemanticProfile),
+		"semanticEmbedding": semanticEmbedding,
 		"authors":           cleanTerms(p.Authors),
 		"keywords":          cleanTerms(p.Keywords),
 		"affiliations":      cleanTerms(p.Affiliations),
@@ -160,6 +170,119 @@ func relinkSimilar(ctx context.Context, owner, id string) error {
 		"topK":      constant.GraphSimilarTopK,
 	})
 	return err
+}
+
+type SemanticCandidate struct {
+	ID      string
+	Title   string
+	Score   float64
+	Profile string
+}
+
+type SemanticMatch struct {
+	TargetID                   string
+	Score                      float64
+	MatchedFields              []string
+	Summary                    string
+	KeywordSimilarity          string
+	ResearchQuestionSimilarity string
+	MethodSimilarity           string
+	ExperimentSimilarity       string
+	InnovationSimilarity       string
+	Model                      string
+}
+
+const semanticCandidatesCypher = `
+MATCH (p:Paper {owner:$owner, id:$id})
+WHERE p.semantic_embedding IS NOT NULL AND size(p.semantic_embedding) > 0
+MATCH (q:Paper {owner:$owner})
+WHERE q.id <> p.id AND q.semantic_embedding IS NOT NULL AND size(q.semantic_embedding) > 0
+WITH q, vector.similarity.cosine(p.semantic_embedding, q.semantic_embedding) AS sim
+WHERE sim >= $threshold
+RETURN q.id AS id, coalesce(q.title, q.id) AS title, sim AS score, coalesce(q.semantic_profile, '') AS profile
+ORDER BY sim DESC LIMIT $topK`
+
+func SemanticCandidates(ctx context.Context, owner, paperID string, topK int, threshold float64) ([]SemanticCandidate, error) {
+	if topK <= 0 {
+		topK = constant.GraphSimilarTopK
+	}
+	if threshold <= 0 {
+		threshold = constant.GraphSimilarThreshold
+	}
+	res, err := exec(ctx, semanticCandidatesCypher, map[string]any{
+		"owner":     owner,
+		"id":        paperID,
+		"topK":      topK,
+		"threshold": threshold,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SemanticCandidate, 0, len(res.Records))
+	for _, r := range res.Records {
+		score := 0.0
+		if v, ok := r.Get("score"); ok {
+			switch n := v.(type) {
+			case float64:
+				score = n
+			case float32:
+				score = float64(n)
+			}
+		}
+		out = append(out, SemanticCandidate{
+			ID:      asStr(r, "id"),
+			Title:   asStr(r, "title"),
+			Score:   score,
+			Profile: asStr(r, "profile"),
+		})
+	}
+	return out, nil
+}
+
+const deleteSemanticSimilarCypher = `
+MATCH (p:Paper {owner:$owner, id:$id})-[s:SEMANTIC_SIMILAR]->() DELETE s`
+
+const upsertSemanticSimilarCypher = `
+MATCH (p:Paper {owner:$owner, id:$id})
+MATCH (q:Paper {owner:$owner, id:$targetID})
+MERGE (p)-[s:SEMANTIC_SIMILAR]->(q)
+SET s.score=$score,
+    s.matched_fields=$matchedFields,
+    s.summary=$summary,
+    s.keyword_similarity=$keywordSimilarity,
+    s.research_question_similarity=$researchQuestionSimilarity,
+    s.method_similarity=$methodSimilarity,
+    s.experiment_similarity=$experimentSimilarity,
+    s.innovation_similarity=$innovationSimilarity,
+    s.model=$model,
+    s.updated_at=timestamp()`
+
+func UpsertSemanticSimilar(ctx context.Context, owner, paperID string, matches []SemanticMatch) error {
+	if _, err := exec(ctx, deleteSemanticSimilarCypher, map[string]any{"owner": owner, "id": paperID}); err != nil {
+		return err
+	}
+	for _, m := range matches {
+		if strings.TrimSpace(m.TargetID) == "" {
+			continue
+		}
+		if _, err := exec(ctx, upsertSemanticSimilarCypher, map[string]any{
+			"owner":                      owner,
+			"id":                         paperID,
+			"targetID":                   m.TargetID,
+			"score":                      m.Score,
+			"matchedFields":              cleanStringList(m.MatchedFields),
+			"summary":                    truncateRunes(strings.TrimSpace(m.Summary), 1200),
+			"keywordSimilarity":          truncateRunes(strings.TrimSpace(m.KeywordSimilarity), 1200),
+			"researchQuestionSimilarity": truncateRunes(strings.TrimSpace(m.ResearchQuestionSimilarity), 1200),
+			"methodSimilarity":           truncateRunes(strings.TrimSpace(m.MethodSimilarity), 1200),
+			"experimentSimilarity":       truncateRunes(strings.TrimSpace(m.ExperimentSimilarity), 1200),
+			"innovationSimilarity":       truncateRunes(strings.TrimSpace(m.InnovationSimilarity), 1200),
+			"model":                      truncateRunes(strings.TrimSpace(m.Model), 120),
+		}); err != nil {
+			return fmt.Errorf("upsert semantic similar: %w", err)
+		}
+	}
+	return nil
 }
 
 const deleteCitationsCypher = `

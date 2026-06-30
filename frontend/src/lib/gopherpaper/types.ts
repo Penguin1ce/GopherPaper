@@ -1,12 +1,7 @@
 // 与后端 internal/model 与 internal/dto 一一对应的前端类型。
 
 export type PaperStatus =
-  | "uploaded"
-  | "parsing"
-  | "extracted"
-  | "indexed"
-  | "ready"
-  | "failed";
+  "uploaded" | "parsing" | "extracted" | "indexed" | "ready" | "failed";
 
 export interface Paper {
   id: string;
@@ -17,9 +12,14 @@ export interface Paper {
   size: number;
   status: PaperStatus;
   fail_reason?: string;
+  status_detail?: string;
   page_count: number;
   category?: string;
   progress: number;
+  parse_progress?: number;
+  parsed_pages?: number;
+  total_pages?: number;
+  last_read_page?: number;
   keywords?: string[];
   created_at: string;
   updated_at: string;
@@ -62,7 +62,20 @@ export interface Session {
   paper_id?: string;
   // 空为默认论文助教,"pioneer" 为小云雀会话(独立页 /pioneer)。
   agent_type?: string;
+  // 自动归类的主题 ID,空表示尚未归类。仅小云雀会话归类。
+  topic_id?: string;
   title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Topic 是小云雀会话的自动归类主题,供侧边栏按主题分组。
+export interface Topic {
+  id: string;
+  student_id: string;
+  agent_type?: string;
+  name: string;
+  member_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -80,9 +93,9 @@ export interface Message {
   meta?: Record<string, unknown>;
   // 前端瞬态字段,仅 SSE 进行中的占位消息使用,不来自后端。
   streaming?: boolean;
-  // 先锋者执行计划段,仅本轮内存保留(不入库、刷新即失),用于气泡内折叠回看。
+  // 执行计划段:流式中在本轮内存累积;完成后也会从 meta.steps 持久化还原。
   plan?: PlanStep[];
-  // 论文思路图谱,小云雀调 generate_paper_flow 时经 SSE 推送,仅本轮内存保留(不入库、刷新即失)。
+  // 论文思路图谱,小云雀调 generate_paper_flow 时经 SSE 推送,完成后从 meta.flow 持久化还原。
   flow?: PaperFlow;
 }
 
@@ -184,6 +197,41 @@ export interface ChatResponse {
   meta?: Record<string, unknown>;
 }
 
+export interface AnnotationRect {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  width: number;
+  height: number;
+  pageNumber: number;
+}
+
+export interface PaperAnnotation {
+  id: number;
+  paper_id: string;
+  owner_id: string;
+  page_no: number;
+  text: string;
+  note?: string;
+  translation?: string;
+  color: "yellow" | "blue" | "green" | "pink" | "purple" | "orange" | string;
+  bounding_rect: AnnotationRect;
+  rects: AnnotationRect[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaperProgressPayload {
+  last_page: number;
+  total_pages?: number;
+}
+
+export interface PaperProgressResponse {
+  progress: number;
+  last_read_page: number;
+}
+
 export interface LoginResponse {
   token: string;
   student_id: string;
@@ -227,11 +275,7 @@ export interface ResetPasswordPayload extends PasswordResetCodePayload {
 }
 
 export type ReportType =
-  | "quickread"
-  | "method"
-  | "result"
-  | "innovation"
-  | "future";
+  "quickread" | "method" | "result" | "innovation" | "future";
 
 export interface RegisterPayload {
   student_id: string;
@@ -299,6 +343,7 @@ export interface EntityGraphEdge {
   target: string;
   type: string;
   label: string;
+  details?: Record<string, string>;
 }
 
 export interface EntityGraph {

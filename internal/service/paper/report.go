@@ -198,6 +198,7 @@ func ensureReport(ctx context.Context, paperID string, t constant.ReportType) (*
 		metricErr = err
 		return nil, err
 	}
+	attachReportProgressSteps(ctx, paperID, t, reply)
 	rec := &model.PaperReport{PaperID: paperID, ReportType: t, Content: reply.Content}
 	if reply.Meta != nil {
 		rec.Meta = model.JSONMap(reply.Meta)
@@ -223,6 +224,24 @@ func cachedReport(ctx context.Context, paperID string, t constant.ReportType) (*
 		return nil, false, err
 	}
 	return &core.Reply{Content: cached.Content, Meta: cached.Meta}, true, nil
+}
+
+func attachReportProgressSteps(ctx context.Context, paperID string, t constant.ReportType, reply *core.Reply) {
+	if reply == nil {
+		return
+	}
+	run, ok, err := loadReportProgress(ctx, paperID, t)
+	if err != nil {
+		zlog.Error("读取报告进度快照失败", "paper_id", paperID, "type", string(t), "err", err)
+		return
+	}
+	if !ok || len(run.Steps) == 0 {
+		return
+	}
+	if reply.Meta == nil {
+		reply.Meta = map[string]any{}
+	}
+	reply.Meta[constant.MetaKeyExecutionSteps] = run.Steps
 }
 
 func reportLockKey(paperID string, t constant.ReportType) string {
@@ -282,9 +301,11 @@ func appendReportProgress(ctx context.Context, paperID string, t constant.Report
 	steps := run.Steps
 	last := len(steps) - 1
 	if last >= 0 && steps[last].Phase == phase {
-		steps[last].Text += detail
+		steps[last].Text = appendReportStepText(steps[last].Text, detail)
+	} else if len(steps) < constant.MaxExecutionSteps {
+		steps = append(steps, ReportProgressStep{Phase: phase, Text: trimReportStepText(detail)})
 	} else {
-		steps = append(steps, ReportProgressStep{Phase: phase, Text: detail})
+		return saveReportProgress(context.WithoutCancel(ctx), paperID, t, run)
 	}
 	run.Steps = steps
 	return saveReportProgress(context.WithoutCancel(ctx), paperID, t, run)
@@ -339,4 +360,19 @@ func saveReportProgress(ctx context.Context, paperID string, t constant.ReportTy
 		return fmt.Errorf("service/paper: 序列化报告进度快照失败: %w", err)
 	}
 	return dao.SetTTL(ctx, reportProgressKey(paperID, t), blob, constant.ReportProgressCacheTTL)
+}
+
+func appendReportStepText(base, extra string) string {
+	return trimReportStepText(base + extra)
+}
+
+func trimReportStepText(s string) string {
+	r := []rune(s)
+	if len(r) <= constant.MaxExecutionStepTextRunes {
+		return s
+	}
+	if constant.MaxExecutionStepTextRunes <= 3 {
+		return string(r[:constant.MaxExecutionStepTextRunes])
+	}
+	return string(r[:constant.MaxExecutionStepTextRunes-3]) + "..."
 }

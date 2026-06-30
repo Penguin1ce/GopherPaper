@@ -145,10 +145,24 @@ func UpdateInfo(ctx context.Context, id, title string, pageCount int) error {
 	return nil
 }
 
-// UpdateProgress 记录阅读进度 0-100。
-func UpdateProgress(ctx context.Context, id string, progress int) error {
+// UpdateParseProgress records MinerU parse progress 0-100.
+func UpdateParseProgress(ctx context.Context, id string, progress, parsedPages, totalPages int) error {
+	fields := map[string]any{
+		"parse_progress": progress,
+		"parsed_pages":   parsedPages,
+		"total_pages":    totalPages,
+	}
+	if err := dao.DB.WithContext(ctx).Model(&model.Paper{}).Where("id = ?", id).Updates(fields).Error; err != nil {
+		return fmt.Errorf("dao/paper: update parse progress failed: %w", err)
+	}
+	return nil
+}
+
+// UpdateProgress 记录阅读进度 0-100 与最近阅读页。
+func UpdateProgress(ctx context.Context, id string, progress, lastReadPage int) error {
+	fields := map[string]any{"progress": progress, "last_read_page": lastReadPage}
 	if err := dao.DB.WithContext(ctx).Model(&model.Paper{}).Where("id = ?", id).
-		Update("progress", progress).Error; err != nil {
+		Updates(fields).Error; err != nil {
 		return fmt.Errorf("dao/paper: 更新阅读进度失败: %w", err)
 	}
 	return nil
@@ -166,7 +180,13 @@ func Delete(ctx context.Context, id string) error {
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperReport{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperAnnotation{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperTag{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("source_paper_id = ? or target_paper_id = ?", id, id).Delete(&model.PaperSemanticRelation{}).Error; err != nil {
 			return err
 		}
 		return tx.Where("id = ?", id).Delete(&model.Paper{}).Error
@@ -261,4 +281,58 @@ func ListSections(ctx context.Context, paperID string) ([]model.PaperSection, er
 		return nil, fmt.Errorf("dao/paper: 查询章节失败: %w", err)
 	}
 	return sections, nil
+}
+
+// ListAnnotations 按页码与更新时间列出某篇论文的全部精读批注。
+func ListAnnotations(ctx context.Context, paperID string) ([]model.PaperAnnotation, error) {
+	var annotations []model.PaperAnnotation
+	err := dao.DB.WithContext(ctx).
+		Where("paper_id = ?", paperID).
+		Order("page_no asc, updated_at desc, id desc").
+		Find(&annotations).Error
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询批注失败: %w", err)
+	}
+	return annotations, nil
+}
+
+// CreateAnnotation 新建一条精读批注。
+func CreateAnnotation(ctx context.Context, annotation *model.PaperAnnotation) error {
+	if err := dao.DB.WithContext(ctx).Create(annotation).Error; err != nil {
+		return fmt.Errorf("dao/paper: 创建批注失败: %w", err)
+	}
+	return nil
+}
+
+// GetAnnotation 按 id 取一条批注，不存在返回 errs.ErrAnnotationNotFound。
+func GetAnnotation(ctx context.Context, id uint64) (*model.PaperAnnotation, error) {
+	var annotation model.PaperAnnotation
+	err := dao.DB.WithContext(ctx).Where("id = ?", id).First(&annotation).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errs.ErrAnnotationNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询批注失败: %w", err)
+	}
+	return &annotation, nil
+}
+
+// UpdateAnnotation 更新批注的可编辑字段。
+func UpdateAnnotation(ctx context.Context, id uint64, fields map[string]any) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	if err := dao.DB.WithContext(ctx).Model(&model.PaperAnnotation{}).
+		Where("id = ?", id).Updates(fields).Error; err != nil {
+		return fmt.Errorf("dao/paper: 更新批注失败: %w", err)
+	}
+	return nil
+}
+
+// DeleteAnnotation 删除一条批注。
+func DeleteAnnotation(ctx context.Context, id uint64) error {
+	if err := dao.DB.WithContext(ctx).Where("id = ?", id).Delete(&model.PaperAnnotation{}).Error; err != nil {
+		return fmt.Errorf("dao/paper: 删除批注失败: %w", err)
+	}
+	return nil
 }

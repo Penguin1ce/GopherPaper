@@ -12,6 +12,7 @@ import (
 	paperdao "GopherPaper/internal/dao/paper"
 	graphstore "GopherPaper/internal/graph"
 	"GopherPaper/internal/response"
+	"GopherPaper/internal/service/graphsemantic"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/errs"
@@ -196,6 +197,7 @@ func repairPaperGraphFromMeta(ctx context.Context, owner, paperID string) error 
 	if err != nil {
 		return err
 	}
+	pg = graphsemantic.PreparePaperGraph(ctx, pg)
 	return graphstore.UpsertPaperMetadata(ctx, pg)
 }
 
@@ -224,7 +226,11 @@ func rebuildPaperGraphFromMeta(ctx context.Context, owner, paperID string) error
 	if err != nil {
 		return err
 	}
-	return graphstore.UpsertPaperMetadata(ctx, pg)
+	pg = graphsemantic.PreparePaperGraph(ctx, pg)
+	if err := graphstore.UpsertPaperMetadata(ctx, pg); err != nil {
+		return err
+	}
+	return graphsemantic.RefreshPaper(ctx, owner, paperID)
 }
 
 func buildPaperGraphFromMeta(ctx context.Context, owner, paperID string) (graphstore.PaperGraph, error) {

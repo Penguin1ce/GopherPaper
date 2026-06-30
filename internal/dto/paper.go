@@ -7,9 +7,12 @@ import (
 
 // PaperStatusResponse 是论文解析状态查询响应。
 type PaperStatusResponse struct {
-	ID         string               `json:"id"`
-	Status     constant.PaperStatus `json:"status"`
-	FailReason string               `json:"fail_reason"`
+	ID            string               `json:"id"`
+	Status        constant.PaperStatus `json:"status"`
+	FailReason    string               `json:"fail_reason"`
+	ParseProgress int                  `json:"parse_progress"`
+	ParsedPages   int                  `json:"parsed_pages"`
+	TotalPages    int                  `json:"total_pages"`
 }
 
 // PaperDetailResponse 是论文详情页响应。
@@ -42,6 +45,47 @@ type ReadyReportsResponse struct {
 // TranslateResponse 是选段翻译响应。
 type TranslateResponse struct {
 	Translation string `json:"translation"`
+}
+
+// PaperProgressRequest 是精读页保存阅读进度的请求。
+type PaperProgressRequest struct {
+	LastPage   int `json:"last_page" binding:"min=0"`
+	TotalPages int `json:"total_pages"`
+}
+
+// PaperProgressResponse 是精读页阅读进度保存后的响应。
+type PaperProgressResponse struct {
+	Progress     int `json:"progress"`
+	LastReadPage int `json:"last_read_page"`
+}
+
+// AnnotationRect 是前端 PDF 高亮库的 scaled 矩形坐标。
+type AnnotationRect struct {
+	X1         float64 `json:"x1"`
+	Y1         float64 `json:"y1"`
+	X2         float64 `json:"x2"`
+	Y2         float64 `json:"y2"`
+	Width      float64 `json:"width"`
+	Height     float64 `json:"height"`
+	PageNumber int     `json:"pageNumber"`
+}
+
+// AnnotationCreateRequest 是创建精读批注的请求。
+type AnnotationCreateRequest struct {
+	PageNo       int              `json:"page_no" binding:"required,min=1"`
+	Text         string           `json:"text" binding:"required"`
+	Note         string           `json:"note"`
+	Translation  string           `json:"translation"`
+	Color        string           `json:"color"`
+	BoundingRect AnnotationRect   `json:"bounding_rect" binding:"required"`
+	Rects        []AnnotationRect `json:"rects" binding:"required"`
+}
+
+// AnnotationUpdateRequest 是更新精读批注可编辑字段的请求。
+type AnnotationUpdateRequest struct {
+	Note        *string `json:"note"`
+	Translation *string `json:"translation"`
+	Color       *string `json:"color"`
 }
 
 // GraphStats 是某用户知识图谱的总览统计。

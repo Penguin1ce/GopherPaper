@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -35,8 +36,10 @@ type contentBlock struct {
 	TableBody     string     `json:"table_body"` // 表格 HTML,MinerU 已结构化识别,转 Markdown 走文本不返图
 	ChartCaption  stringList `json:"chart_caption"`
 	ChartFootnote stringList `json:"chart_footnote"`
+	ChartText     string     `json:"content"` // 图表块的 OCR/VLM 文本描述,用于图块 RAG 召回
 	CodeBody      string     `json:"code_body"`
 	CodeCaption   stringList `json:"code_caption"`
+	CodeFootnote  stringList `json:"code_footnote"`
 	CodeLanguage  string     `json:"code_language"`
 	SubType       string     `json:"sub_type"`
 }
@@ -107,8 +110,14 @@ var imgExtRe = regexp.MustCompile(`(?i)\.(jpe?g|png|gif|webp|bmp)$`)
 
 var refTitleRe = regexp.MustCompile(`(?i)^\s*(references|bibliography|参考文献)\s*$`)
 
+var ErrArtifactContentListNotFound = errors.New("parser: 归档中未找到 content_list.json")
+
 // Parse 把本地 PDF 解析为 ParsedDoc。
 func Parse(ctx context.Context, fileURI string) (*core.ParsedDoc, error) {
+	return ParseWithProgress(ctx, fileURI, nil)
+}
+
+func ParseWithProgress(ctx context.Context, fileURI string, onProgress func(Progress)) (*core.ParsedDoc, error) {
 	if httpClient == nil {
 		return nil, fmt.Errorf("parser: 未初始化")
 	}
@@ -124,7 +133,7 @@ func Parse(ctx context.Context, fileURI string) (*core.ParsedDoc, error) {
 	if err := uploadFile(ctx, putURL, data); err != nil {
 		return nil, err
 	}
-	zipURL, err := pollBatch(ctx, batchID)
+	zipURL, err := pollBatchProgress(ctx, batchID, onProgress)
 	if err != nil {
 		return nil, err
 	}
@@ -143,6 +152,7 @@ func Parse(ctx context.Context, fileURI string) (*core.ParsedDoc, error) {
 }
 
 // ParseArtifactDir 从已归档的 MinerU 产物目录重建 ParsedDoc,不重新调用 MinerU 在线 API。
+// 目录通常来自 service/paper 的 data/papers/mineru/<paperID>,用于离线补章节目录。
 func ParseArtifactDir(dir string) (*core.ParsedDoc, error) {
 	blocks, images, detailRefs, err := readArtifactDir(dir)
 	if err != nil {
@@ -211,7 +221,7 @@ func readArtifacts(zipData []byte) ([]contentBlock, map[string][]byte, []string,
 	if foundV2 {
 		return blocksV2, images, refs, nil
 	}
-	return nil, nil, nil, fmt.Errorf("parser: 产物中未找到 content_list.json")
+	return nil, nil, nil, ErrArtifactContentListNotFound
 }
 
 func readArtifactDir(dir string) ([]contentBlock, map[string][]byte, []string, error) {
@@ -284,7 +294,7 @@ func readArtifactDir(dir string) ([]contentBlock, map[string][]byte, []string, e
 	if foundV2 {
 		return blocksV2, images, refs, nil
 	}
-	return nil, nil, nil, fmt.Errorf("parser: 归档目录中未找到 content_list.json")
+	return nil, nil, nil, ErrArtifactContentListNotFound
 }
 
 // readZipFile 读出 zip 内单个文件的全部字节。
@@ -352,6 +362,7 @@ func convertV2Blocks(pages [][]contentListV2Block) []contentBlock {
 					Type:          "chart",
 					ChartCaption:  v2InlineListField(content, "chart_caption"),
 					ChartFootnote: v2InlineListField(content, "chart_footnote"),
+					ChartText:     v2StringField(content, "content"),
 					ImgPath:       v2ImageSourcePath(content),
 					PageIdx:       pageIdx,
 				})
@@ -360,6 +371,7 @@ func convertV2Blocks(pages [][]contentListV2Block) []contentBlock {
 					Type:          "image",
 					ImageCaption:  v2InlineListField(content, "image_caption"),
 					ImageFootnote: v2InlineListField(content, "image_footnote"),
+					ChartText:     v2StringField(content, "content"),
 					ImgPath:       v2ImageSourcePath(content),
 					PageIdx:       pageIdx,
 				})
@@ -368,7 +380,17 @@ func convertV2Blocks(pages [][]contentListV2Block) []contentBlock {
 					Type:         "code",
 					CodeBody:     v2InlineTextField(content, "code_content", true),
 					CodeCaption:  v2InlineListField(content, "code_caption"),
+					CodeFootnote: v2InlineListField(content, "code_footnote"),
 					CodeLanguage: v2StringField(content, "code_language"),
+					PageIdx:      pageIdx,
+				})
+			case "algorithm":
+				blocks = append(blocks, contentBlock{
+					Type:         "code",
+					CodeBody:     v2InlineTextField(content, "algorithm_content", true),
+					CodeCaption:  v2InlineListField(content, "algorithm_caption"),
+					CodeFootnote: v2InlineListField(content, "algorithm_footnote"),
+					CodeLanguage: "algorithm",
 					PageIdx:      pageIdx,
 				})
 			case "page_footnote":
@@ -540,7 +562,7 @@ func mapBlocks(blocks []contentBlock, images map[string][]byte) *core.ParsedDoc 
 		case b.Type == "code":
 			if body := strings.TrimSpace(b.CodeBody); body != "" && !inReferences {
 				doc.CodeBlocks = append(doc.CodeBlocks, core.CodeBlock{
-					Caption:     strings.TrimSpace(strings.Join(nonEmpty(b.CodeCaption), " ")),
+					Caption:     codeCaption(b),
 					Body:        body,
 					Language:    strings.TrimSpace(firstNonEmpty(b.CodeLanguage, b.SubType)),
 					PageNo:      page,
@@ -639,11 +661,18 @@ func blockCaption(b contentBlock) string {
 }
 
 func figureFromBlock(b contentBlock, caption string, page int, section string, images map[string][]byte) core.Figure {
-	fig := core.Figure{Caption: caption, PageNo: page, SectionPath: section, ImgPath: b.ImgPath}
+	fig := core.Figure{Caption: caption, Text: strings.TrimSpace(b.ChartText), PageNo: page, SectionPath: section, ImgPath: b.ImgPath}
 	if b.ImgPath != "" {
 		fig.ImgData = images[baseName(b.ImgPath)]
 	}
 	return fig
+}
+
+func codeCaption(b contentBlock) string {
+	parts := make([]string, 0, len(b.CodeCaption)+len(b.CodeFootnote))
+	parts = append(parts, b.CodeCaption...)
+	parts = append(parts, b.CodeFootnote...)
+	return strings.TrimSpace(strings.Join(nonEmpty(parts), " "))
 }
 
 func firstNonEmpty(values ...string) string {

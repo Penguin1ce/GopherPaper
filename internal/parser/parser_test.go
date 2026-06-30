@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -222,8 +223,9 @@ func TestReadArtifacts_PrefersContentListV2(t *testing.T) {
 		`{"type":"title","content":{"title_content":[{"type":"text","content":"V2 Intro"}],"level":1}},` +
 		`{"type":"paragraph","content":{"paragraph_content":[{"type":"text","content":"v2 body"}]}},` +
 		`{"type":"table","content":{"html":"<table><tr><td>A</td><td>B</td></tr><tr><td>1</td><td>2</td></tr></table>","image_source":{"path":"images/table.png"},"table_caption":[{"type":"text","content":"Table V2"}],"table_footnote":[]}},` +
-		`{"type":"chart","content":{"image_source":{"path":"images/chart.png"},"chart_caption":[{"type":"text","content":"Figure V2"}],"chart_footnote":[]}},` +
+		`{"type":"chart","content":{"image_source":{"path":"images/chart.png"},"content":"chart trend rises","chart_caption":[{"type":"text","content":"Figure V2"}],"chart_footnote":[]}},` +
 		`{"type":"code","content":{"code_caption":[{"type":"text","content":"Algorithm V2"}],"code_content":[{"type":"text","content":"line 1\nline 2"}],"code_language":"txt"}},` +
+		`{"type":"algorithm","content":{"algorithm_caption":[{"type":"text","content":"Algorithm Real V2"}],"algorithm_content":[{"type":"text","content":"step 1"},{"type":"equation_inline","content":"x+1"}],"algorithm_footnote":[{"type":"text","content":"stop on EOS"}]}},` +
 		`{"type":"list","content":{"list_type":"reference_list","list_items":[{"item_content":[{"type":"text","content":"[1] V2 Ref"}]}]}}` +
 		`]]`
 	if _, err := v2.Write([]byte(v2JSON)); err != nil {
@@ -263,8 +265,14 @@ func TestReadArtifacts_PrefersContentListV2(t *testing.T) {
 	if len(doc.Figures) != 2 || string(doc.Figures[0].ImgData) != "tablepng" || string(doc.Figures[1].ImgData) != "chartpng" {
 		t.Fatalf("v2 图表图片映射错误 %+v", doc.Figures)
 	}
-	if len(doc.CodeBlocks) != 1 || doc.CodeBlocks[0].Caption != "Algorithm V2" || doc.CodeBlocks[0].Body != "line 1\nline 2" {
+	if doc.Figures[1].Text != "chart trend rises" {
+		t.Fatalf("v2 图表 content 未映射 %+v", doc.Figures[1])
+	}
+	if len(doc.CodeBlocks) != 2 || doc.CodeBlocks[0].Caption != "Algorithm V2" || doc.CodeBlocks[0].Body != "line 1\nline 2" {
 		t.Fatalf("v2 代码块映射错误 %+v", doc.CodeBlocks)
+	}
+	if doc.CodeBlocks[1].Caption != "Algorithm Real V2 stop on EOS" || doc.CodeBlocks[1].Language != "algorithm" || doc.CodeBlocks[1].Body != "step 1 $x+1$" {
+		t.Fatalf("v2 algorithm 块映射错误 %+v", doc.CodeBlocks[1])
 	}
 	if len(doc.References) != 1 || doc.References[0] != "[1] V2 Ref" {
 		t.Fatalf("v2 reference_list 映射错误 %+v", doc.References)
@@ -303,5 +311,40 @@ func TestParseArtifactDir(t *testing.T) {
 	}
 	if len(doc.References) != 1 || doc.References[0] != "[1] ref" {
 		t.Fatalf("归档参考文献解析错误 %+v", doc.References)
+	}
+}
+
+func TestParseArtifactDir_RebuildsSections(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "paper_content_list.json"), []byte(`[
+		{"type":"text","text":"Introduction","text_level":1,"page_idx":0},
+		{"type":"text","text":"Threat Model","text_level":2,"page_idx":1},
+		{"type":"text","text":"This paper studies X.","page_idx":1}
+	]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "paper_model.json"), []byte(`{"pdf_info":[{"para_blocks":[{"blocks":[{"type":"ref_text","lines":[{"spans":[{"type":"text","content":"[1] A cited paper."}]}]}]}]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	doc, err := ParseArtifactDir(dir)
+	if err != nil {
+		t.Fatalf("ParseArtifactDir() error = %v", err)
+	}
+	if len(doc.Sections) != 2 {
+		t.Fatalf("sections = %d, want 2", len(doc.Sections))
+	}
+	if doc.Sections[1].Title != "Threat Model" || doc.Sections[1].Level != 2 || doc.Sections[1].PageNo != 2 {
+		t.Fatalf("section mapping mismatch %+v", doc.Sections[1])
+	}
+	if len(doc.References) != 1 {
+		t.Fatalf("references = %d, want 1", len(doc.References))
+	}
+}
+
+func TestParseArtifactDir_MissingContentList(t *testing.T) {
+	_, err := ParseArtifactDir(t.TempDir())
+	if !errors.Is(err, ErrArtifactContentListNotFound) {
+		t.Fatalf("error = %v, want ErrArtifactContentListNotFound", err)
 	}
 }

@@ -94,6 +94,10 @@ type ToolsConfig struct {
 	// OpenAlex 现按调用计费(免费 key 每天 $1 额度),留空则不登记该工具,不裸调。
 	// 覆盖 2.5 亿+ 文献且引用图谱完整,作 Semantic Scholar 的冗余/平替,限流远松。
 	OpenAlexAPIKey string `toml:"openalex_api_key"`
+	// SciVerseAPIKey SciVerse(OpenDataLab)语义检索密钥,非空时给小云雀挂 search_sciverse 工具。
+	// 按调用计费且 initialize 即需鉴权,留空则不登记该工具,不裸调。
+	// 走 /agentic-search 召回正文片段,与按元数据检索的 OpenAlex/S2 互补。
+	SciVerseAPIKey string `toml:"sciverse_api_key"`
 	// ToolNames 工具显示名映射:原始工具名 → 前端展示名,SSE 推送工具状态时换用,
 	// 未配置的工具回退原始名。
 	ToolNames map[string]string `toml:"tool_names"`
@@ -139,7 +143,8 @@ type RerankConfig struct {
 	Enabled bool   `toml:"enabled"`
 	BaseURL string `toml:"base_url"` // 完整 /rerank 端点，如 https://api.siliconflow.cn/v1/rerank
 	APIKey  string `toml:"api_key"`
-	Model   string `toml:"model"` // cross-encoder 模型名，如 BAAI/bge-reranker-v2-m3
+	Model   string `toml:"model"`   // cross-encoder 模型名，如 BAAI/bge-reranker-v2-m3
+	Timeout int    `toml:"timeout"` // 单次精排 HTTP 超时，秒。精排是 best-effort，超时即退化为向量序，故宜短以免拖慢问答
 }
 
 type MilvusConfig struct {
@@ -253,6 +258,9 @@ func (c *Config) applyDefaults() {
 	if c.MQ.ReportConcurrency <= 0 {
 		c.MQ.ReportConcurrency = 6
 	}
+	if c.Rerank.Timeout == 0 {
+		c.Rerank.Timeout = 15
+	}
 	if c.Parser.BaseURL == "" {
 		c.Parser.BaseURL = "https://mineru.net/api/v4"
 	}
@@ -264,5 +272,35 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Parser.PollTimeout == 0 {
 		c.Parser.PollTimeout = 600
+	}
+	if c.Models.Translate.Provider == "" {
+		c.Models.Translate.Provider = constant.ProviderOpenAI
+	}
+	if c.Models.Translate.BaseURL == "" {
+		if c.Models.Translate.Provider == constant.ProviderOpenAI && c.Models.Intent.BaseURL != "" {
+			c.Models.Translate.BaseURL = c.Models.Intent.BaseURL
+		} else if c.Models.Translate.Provider == constant.ProviderOllama {
+			c.Models.Translate.BaseURL = "http://localhost:11434/v1"
+		} else {
+			c.Models.Translate.BaseURL = constant.DefaultVolcengineBaseURL
+		}
+	}
+	if c.Models.Translate.APIKey == "" &&
+		c.Models.Translate.Provider == constant.ProviderOpenAI &&
+		c.Models.Intent.APIKey != "" {
+		c.Models.Translate.APIKey = c.Models.Intent.APIKey
+	}
+	if c.Models.Translate.Model == "" {
+		if c.Models.Translate.Provider == constant.ProviderOllama {
+			c.Models.Translate.Model = "qwen2.5:1.5b-instruct"
+		} else {
+			c.Models.Translate.Model = constant.DefaultVolcengineMiniModel
+		}
+	}
+	if c.Models.Translate.MaxTokens == 0 {
+		c.Models.Translate.MaxTokens = 4096
+	}
+	if c.Models.Translate.Thinking == "" && c.Models.Translate.Provider == constant.ProviderOpenAI {
+		c.Models.Translate.Thinking = "disabled"
 	}
 }

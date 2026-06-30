@@ -30,7 +30,6 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -42,18 +41,137 @@ import {
   paperTitle,
   sessionsForPaper,
   sessionTitle,
-  statusStep,
 } from "@/lib/gopherpaper/utils";
 import { Empty, StatusBadge, useGuard } from "./app-ui";
 
-function paperProgress(paper: Paper): number {
-  if (paper.status === "failed") return 100;
-  if (paper.progress > 0) return paper.progress;
-  return Math.min(100, Math.max(8, (statusStep(paper.status) + 1) * 20));
+const PARSE_TIMELINE = [
+  { status: "uploaded", label: "上传" },
+  { status: "parsing", label: "解析" },
+  { status: "extracted", label: "抽取" },
+  { status: "indexed", label: "索引" },
+  { status: "ready", label: "完成" },
+] as const;
+
+function timelineIndex(status: Paper["status"]): number {
+  if (status === "failed") return 0;
+  return Math.max(
+    0,
+    PARSE_TIMELINE.findIndex((step) => step.status === status),
+  );
+}
+
+function currentStepProgress(paper: Paper, index: number): number {
+  const current = timelineIndex(paper.status);
+  if (paper.status === "failed") return index === current ? 100 : 0;
+  if (index < current) return 100;
+  if (index > current) return 0;
+  if (paper.status === "uploaded") return 100;
+  if (paper.status === "parsing") {
+    return Math.min(100, Math.max(8, paper.parse_progress ?? 0));
+  }
+  return 45;
+}
+
+function overallProgress(paper: Paper): number {
+  if (paper.status === "failed") return 0;
+  const index = timelineIndex(paper.status);
+  if (index === 0) return 0;
+  const stepProgress = currentStepProgress(paper, index) / 100;
+  return Math.min(
+    100,
+    Math.max(
+      0,
+      ((index - 1 + stepProgress) / (PARSE_TIMELINE.length - 1)) * 100,
+    ),
+  );
+}
+
+function parseProgressText(paper: Paper): string {
+  if (paper.status !== "parsing") return "";
+  if ((paper.parsed_pages ?? 0) > 0 && (paper.total_pages ?? 0) > 0) {
+    return `已解析 ${paper.parsed_pages}/${paper.total_pages} 页`;
+  }
+  if ((paper.parse_progress ?? 0) > 0) {
+    return `解析进度 ${paper.parse_progress}%`;
+  }
+  return "";
+}
+
+function statusDetailText(paper: Paper): string {
+  if (paper.status_detail) return paper.status_detail;
+  if (paper.status === "parsing") {
+    return parseProgressText(paper) || "MinerU 正在解析 PDF 页面";
+  }
+  if (paper.status === "extracted") {
+    return "抽取标题、摘要、作者等结构化信息";
+  }
+  if (paper.status === "indexed") {
+    return "构建知识片段并写入向量索引";
+  }
+  if (paper.status === "uploaded") {
+    return "等待解析任务启动";
+  }
+  return "";
 }
 
 // 解析中/失败时的细状态条 - 就绪后隐藏, 不与右栏头部重复
+function StepProgressDot({
+  value,
+  active,
+  done,
+}: {
+  value: number;
+  active: boolean;
+  done: boolean;
+}) {
+  const clamped = Math.min(100, Math.max(0, value));
+  const radius = 9;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - clamped / 100);
+  return (
+    <span
+      className={cn(
+        "relative z-10 flex size-7 items-center justify-center rounded-full bg-card transition-all",
+        active && "animate-pulse ring-2 ring-sienna/15",
+      )}
+    >
+      <svg className="absolute inset-0 size-7 -rotate-90" viewBox="0 0 24 24">
+        <circle
+          cx="12"
+          cy="12"
+          r={radius}
+          fill="none"
+          stroke="var(--border)"
+          strokeWidth="1.4"
+        />
+        <circle
+          cx="12"
+          cy="12"
+          r={radius}
+          fill="none"
+          stroke="var(--sienna)"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          className="transition-[stroke-dashoffset] duration-500 ease-out"
+        />
+      </svg>
+      <span
+        className={cn(
+          "size-1.5 rounded-full transition-colors",
+          done || active ? "bg-sienna" : "bg-muted-foreground/35",
+        )}
+      />
+    </span>
+  );
+}
+
 function ActiveStatusStrip({ paper }: { paper: Paper }) {
+  const current = timelineIndex(paper.status);
+  const detailText = statusDetailText(paper);
+  const lineProgress = overallProgress(paper);
+
   return (
     <div className="rounded-md border bg-card px-3 py-2">
       <div className="flex items-center justify-between gap-2">
@@ -63,9 +181,54 @@ function ActiveStatusStrip({ paper }: { paper: Paper }) {
         <StatusBadge status={paper.status} />
       </div>
       {paper.status === "failed" ? (
-        <p className="mt-1.5 text-xs text-destructive">{paper.fail_reason || "解析失败"}</p>
+        <p className="mt-1.5 text-xs text-destructive">
+          {paper.fail_reason || "解析失败"}
+        </p>
       ) : (
-        <Progress value={paperProgress(paper)} className="mt-2 h-1" />
+        <div className="mt-3">
+          <div className="relative px-1">
+            <div className="absolute left-4 right-4 top-4 h-0.5 rounded-full bg-border" />
+            <div className="absolute left-4 right-4 top-4 h-0.5 overflow-hidden rounded-full">
+              <div
+                className="h-full rounded-full bg-sienna transition-[width] duration-500 ease-out"
+                style={{ width: `${lineProgress}%` }}
+              />
+            </div>
+            <div className="relative flex items-start justify-between">
+              {PARSE_TIMELINE.map((step, index) => {
+                const active =
+                  paper.status === step.status && paper.status !== "ready";
+                const done = index < current || paper.status === "ready";
+                const value = currentStepProgress(paper, index);
+                return (
+                  <div
+                    key={step.status}
+                    className="flex w-10 flex-col items-center gap-1.5"
+                  >
+                    <StepProgressDot
+                      value={value}
+                      active={active}
+                      done={done || value >= 100}
+                    />
+                    <span
+                      className={cn(
+                        "text-[11px] leading-none transition-colors",
+                        active || done
+                          ? "font-medium text-sienna"
+                          : "text-muted-foreground/70",
+                      )}
+                    >
+                      {step.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {detailText && (
+            <p className="mt-2 text-xs text-muted-foreground">{detailText}</p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -136,7 +299,9 @@ function KeywordFilter({
         )}
       >
         <ListFilter className="size-3.5" />
-        {activeKw.length > 0 ? `筛选 ${activeKw.length}` : `关键词 ${keywords.length}`}
+        {activeKw.length > 0
+          ? `筛选 ${activeKw.length}`
+          : `关键词 ${keywords.length}`}
       </PopoverTrigger>
       <PopoverContent className="w-80 space-y-3 p-3" align="start">
         <div className="flex items-start justify-between gap-3">
@@ -191,7 +356,9 @@ function SessionPopover({
         <div className="px-1.5 py-1">
           <PopoverTitle>论文会话</PopoverTitle>
           <PopoverDescription>
-            {paperSessions.length > 0 ? "选择一个会话继续阅读" : "这篇论文还没有会话"}
+            {paperSessions.length > 0
+              ? "选择一个会话继续阅读"
+              : "这篇论文还没有会话"}
           </PopoverDescription>
         </div>
         {paperSessions.length > 0 && (
@@ -201,7 +368,9 @@ function SessionPopover({
                 key={s.id}
                 className={cn(
                   "group/s flex items-center gap-1 rounded-md transition-colors",
-                  s.id === activeSessionID ? "bg-accent/70" : "hover:bg-accent/55",
+                  s.id === activeSessionID
+                    ? "bg-accent/70"
+                    : "hover:bg-accent/55",
                 )}
               >
                 <button
@@ -212,7 +381,9 @@ function SessionPopover({
                     onOpenSession(s.id);
                   }}
                 >
-                  <span className="block truncate text-xs font-medium">{sessionTitle(s)}</span>
+                  <span className="block truncate text-xs font-medium">
+                    {sessionTitle(s)}
+                  </span>
                   <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
                     {formatTime(s.updated_at || s.created_at)}
                   </span>
@@ -239,7 +410,11 @@ function SessionPopover({
   );
 }
 
-export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void }) {
+export function PaperPane({
+  onExpandSidebar,
+}: {
+  onExpandSidebar?: () => void;
+}) {
   const {
     papers,
     activePaper,
@@ -266,8 +441,11 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
   // 当前论文集合里的关键词去重 + 计数, 按出现频次倒序铺成可点标签。
   const keywords = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const p of papers) for (const k of p.keywords ?? []) counts.set(k, (counts.get(k) ?? 0) + 1);
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }));
+    for (const p of papers)
+      for (const k of p.keywords ?? []) counts.set(k, (counts.get(k) ?? 0) + 1);
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }));
   }, [papers]);
 
   // 选中标签做 OR 过滤: 命中任一选中关键词即显示; 未选则全列。
@@ -277,7 +455,9 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
   }, [papers, activeKw]);
 
   const toggleKw = (name: string) =>
-    setActiveKw((prev) => (prev.includes(name) ? prev.filter((k) => k !== name) : [...prev, name]));
+    setActiveKw((prev) =>
+      prev.includes(name) ? prev.filter((k) => k !== name) : [...prev, name],
+    );
 
   const onUpload = (e: React.FormEvent) => {
     e.preventDefault();
@@ -302,7 +482,9 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
   };
 
   const showStrip = activePaper && activePaper.status !== "ready";
-  const deletingTarget = Boolean(deleteTarget && deletingID === deleteTarget.id);
+  const deletingTarget = Boolean(
+    deleteTarget && deletingID === deleteTarget.id,
+  );
 
   return (
     <aside className="flex min-h-0 flex-1 flex-col bg-background">
@@ -324,7 +506,9 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
             <div className="flex items-baseline gap-2">
               <h2 className="text-[15px] font-bold tracking-tight">论文库</h2>
               {papers.length > 0 && (
-                <span className="font-mono text-xs text-muted-foreground">{papers.length}</span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  {papers.length}
+                </span>
               )}
             </div>
             <KeywordFilter
@@ -388,9 +572,17 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-0.5 px-2 pb-3 pt-1">
           {papers.length === 0 ? (
-            <Empty title="还没有论文" text="点击右上角「上传」加入第一篇 PDF。" compact />
+            <Empty
+              title="还没有论文"
+              text="点击右上角「上传」加入第一篇 PDF。"
+              compact
+            />
           ) : shownPapers.length === 0 ? (
-            <Empty title="没有匹配的论文" text="当前关键词筛选下没有论文，换个标签或清除筛选。" compact />
+            <Empty
+              title="没有匹配的论文"
+              text="当前关键词筛选下没有论文，换个标签或清除筛选。"
+              compact
+            />
           ) : (
             shownPapers.map((p) => {
               const active = p.id === activePaperID;
@@ -421,7 +613,11 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
                   </div>
                   <div className="pointer-events-none relative z-10 mt-1.5 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 text-xs text-muted-foreground">
                     <span className="pointer-events-none line-clamp-1 min-w-0">
-                      {[p.file_name, formatSize(p.size), formatTime(p.updated_at || p.created_at)]
+                      {[
+                        p.file_name,
+                        formatSize(p.size),
+                        formatTime(p.updated_at || p.created_at),
+                      ]
                         .filter(Boolean)
                         .join(" · ")}
                     </span>
@@ -431,7 +627,9 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
                           paperSessions={paperSessions}
                           activeSessionID={activeSessionID}
                           onOpenSession={(id) => guard(() => openSession(id))}
-                          onRemoveSession={(id) => guard(() => removeSession(id))}
+                          onRemoveSession={(id) =>
+                            guard(() => removeSession(id))
+                          }
                         />
                       </div>
                     )}
@@ -506,7 +704,9 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
         <DialogContent>
           <DialogHeader className="min-w-0">
             <DialogTitle>上传论文</DialogTitle>
-            <DialogDescription>上传 PDF 后自动解析、抽取并进入知识库。</DialogDescription>
+            <DialogDescription>
+              上传 PDF 后自动解析、抽取并进入知识库。
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={onUpload} className="min-w-0 space-y-3">
             <label
@@ -536,10 +736,16 @@ export function PaperPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
                 {picked ? picked.name : "选择或拖入 PDF"}
               </strong>
               <small className="mt-1 max-w-full break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                {picked ? `${formatSize(picked.size)} · 等待上传` : "支持 50MB 以内 PDF"}
+                {picked
+                  ? `${formatSize(picked.size)} · 等待上传`
+                  : "支持 50MB 以内 PDF"}
               </small>
             </label>
-            <Button type="submit" className="w-full" disabled={uploading || !picked}>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={uploading || !picked}
+            >
               {uploading && <Loader2 className="size-4 animate-spin" />}
               上传论文
             </Button>

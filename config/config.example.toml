@@ -49,10 +49,12 @@ thinking = "disabled"                                 # 关思考，多轮工具
 
 # ── 翻译小模型：精读页逐段翻译，裸调不挂工具不走 RAG ──────────
 [models.translate]
-provider = "ollama"                     # 本地 ollama，openai 兼容端点
-base_url = "http://localhost:11434/v1"
-model = "qwen2.5:1.5b-instruct"         # 通用 instruct 小模型，跟随翻译指令；勿用 coder 版（只会续写）
+provider = "openai"                                   # 火山方舟 OpenAI 兼容端点
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+api_key = ""                                          # 留空复用 models.intent.api_key，也可单独填写
+model = "doubao-seed-2-0-mini-260215"                 # 小模型，精读页选段翻译延迟低
 max_tokens = 4096
+thinking = "disabled"
 
 # ── ai agent 工具来源:mcp 工具集与 skill 仓库,按 agent 分组 ──
 # agent 字段分组:留空给默认论文助教,"pioneer" 给小云雀。
@@ -68,6 +70,7 @@ tavily_api_key = ""                    # Tavily 联网搜索密钥,非空时给�
 semantic_scholar_api_key = ""          # Semantic Scholar 检索密钥,可选;官方填 s2k- key(x-api-key),走中转代理填 sk- 令牌(Bearer)
 semantic_scholar_base_url = ""          # Semantic Scholar 中转代理基址(如 https://s2api.ominiai.cn/s2),留空走官方(限流极紧)
 openalex_api_key = ""                   # OpenAlex 检索密钥,非空时给小云雀挂 search_openalex 工具
+sciverse_api_key = ""                   # SciVerse 语义检索密钥,非空时给小云雀挂 search_sciverse 工具(走 /agentic-search 召回正文片段)
 
 # 工具显示名映射:原始工具名 → 前端展示名,SSE 推工具调用状态时换用,未配置回退原始名。
 # mcp 工具名带 toolset 名前缀,key 要写完整名,如 my-coffee_queryShopList。
@@ -76,6 +79,7 @@ current_time = "当前时间"
 delete_my_paper = "删除我的论文"
 generate_paper_flow = "生成思路图"
 geocode = "地点定位"
+find_figures = "检索论文图表"
 list_my_papers = "我的论文列表"
 web_search = "联网搜索"
 search_arxiv = "arXiv 检索"
@@ -83,6 +87,9 @@ search_conference_proceedings = "官方会议录检索"
 search_openreview_papers = "OpenReview 检索"
 search_semantic_scholar = "学术检索"
 search_openalex = "OpenAlex 检索"
+search_paper = "检索论文正文"
+search_sciverse = "SciVerse 语义检索"
+read_sciverse_content = "SciVerse 原文续读"
 recommend_similar_papers = "相似论文推荐"
 get_paper_citations = "查被引论文"
 get_paper_references = "查参考文献"
@@ -120,6 +127,7 @@ enabled = true
 base_url = "https://api.siliconflow.cn/v1/rerank" # 完整 /rerank 端点（非 /v1）
 api_key = "sk-xxxx"
 model = "Qwen/Qwen3-Reranker-4B"
+timeout = 15 # 单次精排 HTTP 超时（秒），缺省 15。精排 best-effort，超时即退化为向量序，宜短以免拖慢问答
 
 # ── Milvus 向量库 ────────────────────────────────────────────
 [milvus]

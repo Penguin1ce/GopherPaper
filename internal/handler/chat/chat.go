@@ -79,6 +79,77 @@ func ListSessions(c *gin.Context) {
 	response.OK(c, sessions)
 }
 
+// ListTopics 列出当前学生的小云雀会话主题。
+// GET /api/v1/topics
+//
+// @Summary 列出会话主题
+// @Description 返回当前登录用户的小云雀会话主题，供侧边栏按主题分组渲染。
+// @Tags sessions
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} dto.Response{data=[]model.Topic}
+// @Failure 500 {object} dto.Response
+// @Router /topics [get]
+func ListTopics(c *gin.Context) {
+	studentID := tenant.MustStudentID(c.Request.Context())
+	topics, err := chatservice.ListPioneerTopics(c.Request.Context(), studentID)
+	if err != nil {
+		zlog.Error("查询会话主题失败", "student_id", studentID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "查询主题失败")
+		return
+	}
+	response.OK(c, topics)
+}
+
+// BackfillTopics 手动触发当前学生存量小云雀会话的主题回填。
+// POST /api/v1/topics/backfill
+//
+// @Summary 回填会话主题
+// @Description 把当前用户尚未归类的小云雀会话异步归类,返回待处理会话数。供上线前的存量会话补归类。
+// @Tags sessions
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} dto.Response
+// @Failure 409 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /topics/backfill [post]
+func BackfillTopics(c *gin.Context) {
+	studentID := tenant.MustStudentID(c.Request.Context())
+	n, err := chatservice.BackfillPioneerTopics(c.Request.Context(), studentID)
+	if err != nil {
+		if errors.Is(err, errs.ErrTopicBackfillBusy) {
+			response.Fail(c, http.StatusConflict, err.Error())
+			return
+		}
+		zlog.Error("回填会话主题失败", "student_id", studentID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "回填主题失败")
+		return
+	}
+	response.OKMsg(c, "已开始整理历史会话", gin.H{"count": n})
+}
+
+// ClearTopics 清空当前学生的全部小云雀主题,会话退回未归类。供演示重置归类。
+// DELETE /api/v1/topics
+//
+// @Summary 清空会话主题
+// @Description 删除当前用户的全部小云雀主题并把会话退回未归类,返回删除的主题数。
+// @Tags sessions
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /topics [delete]
+func ClearTopics(c *gin.Context) {
+	studentID := tenant.MustStudentID(c.Request.Context())
+	n, err := chatservice.ClearPioneerTopics(c.Request.Context(), studentID)
+	if err != nil {
+		zlog.Error("清空会话主题失败", "student_id", studentID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "清空主题失败")
+		return
+	}
+	response.OKMsg(c, "已清除主题归类", gin.H{"removed": n})
+}
+
 // DeleteSession 删除会话。
 // DELETE /api/v1/sessions/:id
 //

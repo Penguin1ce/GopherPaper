@@ -11,11 +11,15 @@ import type {
   AvatarResponse,
   Message,
   NameCount,
+  AnnotationRect,
   Paper,
+  PaperAnnotation,
   PaperDeleteConfirmPayload,
   PaperDetail,
   PaperFlow,
   PaperFlowNodeDetail,
+  PaperProgressPayload,
+  PaperProgressResponse,
   PasswordResetCodePayload,
   RegisterPayload,
   RelatedPaper,
@@ -24,6 +28,7 @@ import type {
   ResetPasswordPayload,
   SendMessageResponse,
   Session,
+  Topic,
   UpdateEmailPayload,
   UpdateProfilePayload,
   UserProfile,
@@ -66,6 +71,53 @@ export function translate(id: string, text: string) {
   );
 }
 
+export function updatePaperProgress(id: string, payload: PaperProgressPayload) {
+  return request<PaperProgressResponse>(`/papers/${encodeURIComponent(id)}/progress`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listAnnotations(id: string) {
+  return request<PaperAnnotation[]>(`/papers/${encodeURIComponent(id)}/annotations`);
+}
+
+export function createAnnotation(
+  id: string,
+  payload: {
+    page_no: number;
+    text: string;
+    note?: string;
+    translation?: string;
+    color?: string;
+    bounding_rect: AnnotationRect;
+    rects: AnnotationRect[];
+  },
+) {
+  return request<PaperAnnotation>(`/papers/${encodeURIComponent(id)}/annotations`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAnnotation(
+  id: string,
+  annotationID: number,
+  payload: { note?: string; translation?: string; color?: string },
+) {
+  return request<PaperAnnotation>(
+    `/papers/${encodeURIComponent(id)}/annotations/${encodeURIComponent(annotationID)}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
+  );
+}
+
+export function deleteAnnotation(id: string, annotationID: number) {
+  return request<null>(
+    `/papers/${encodeURIComponent(id)}/annotations/${encodeURIComponent(annotationID)}`,
+    { method: "DELETE" },
+  );
+}
+
 export function setUnauthorizedHandler(fn: (() => void) | null) {
   onUnauthorized = fn;
 }
@@ -74,7 +126,9 @@ export function clearUnauthorizedHandler(fn: () => void) {
   if (onUnauthorized === fn) onUnauthorized = null;
 }
 
-function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+function authHeaders(
+  extra: Record<string, string> = {},
+): Record<string, string> {
   const headers: Record<string, string> = { ...extra };
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
@@ -218,13 +272,28 @@ export function searchPapers(q: string) {
 }
 
 export function paperStatus(id: string) {
-  return request<Pick<Paper, "id" | "status" | "fail_reason">>(
-    `/papers/${encodeURIComponent(id)}/status`,
-  );
+  return request<
+    Pick<
+      Paper,
+      | "id"
+      | "status"
+      | "fail_reason"
+      | "parse_progress"
+      | "parsed_pages"
+      | "total_pages"
+    >
+  >(`/papers/${encodeURIComponent(id)}/status`);
 }
 
 export function paperDetail(id: string) {
   return request<PaperDetail>(`/papers/${encodeURIComponent(id)}`);
+}
+
+export function rebuildPaperSections(id: string) {
+  return request<NonNullable<PaperDetail["sections"]>>(
+    `/papers/${encodeURIComponent(id)}/sections/rebuild`,
+    { method: "POST" },
+  );
 }
 
 export function deletePaper(id: string) {
@@ -291,9 +360,12 @@ export function paperEntityGraph(id: string) {
 }
 
 export function rebuildPaperEntityGraph(id: string) {
-  return request<EntityGraph>(`/graph/papers/${encodeURIComponent(id)}/rebuild`, {
-    method: "POST",
-  });
+  return request<EntityGraph>(
+    `/graph/papers/${encodeURIComponent(id)}/rebuild`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export function relatedPapers(id: string, limit = 10) {
@@ -308,8 +380,28 @@ export function listSessions() {
   return request<Session[]>("/sessions");
 }
 
-export function createSession(title: string, paperID?: string, agentType?: string) {
-  const payload: { title: string; paper_id?: string; agent_type?: string } = { title };
+export function listTopics() {
+  return request<Topic[]>("/topics");
+}
+
+// backfillTopics 触发存量小云雀会话的主题回填,返回待处理会话数。后端异步处理。
+export function backfillTopics() {
+  return request<{ count: number }>("/topics/backfill", { method: "POST" });
+}
+
+// clearTopics 清空当前用户的全部小云雀主题,会话退回未归类。演示重置归类用。
+export function clearTopics() {
+  return request<{ removed: number }>("/topics", { method: "DELETE" });
+}
+
+export function createSession(
+  title: string,
+  paperID?: string,
+  agentType?: string,
+) {
+  const payload: { title: string; paper_id?: string; agent_type?: string } = {
+    title,
+  };
   if (paperID) payload.paper_id = paperID;
   if (agentType) payload.agent_type = agentType;
   return request<Session>("/sessions", {
@@ -345,7 +437,9 @@ export interface SendStreamHandlers {
 }
 
 // 解析一帧 SSE(event + data 行),返回事件名与 JSON 载荷,无 data 返回 null。
-function parseSSEFrame(frame: string): { event: string; payload: unknown } | null {
+function parseSSEFrame(
+  frame: string,
+): { event: string; payload: unknown } | null {
   let event = "message";
   const dataLines: string[] = [];
   for (const line of frame.split("\n")) {
@@ -397,10 +491,16 @@ export async function sendMessage(
     const payload = parsed.payload as Record<string, unknown>;
     switch (parsed.event) {
       case "delta":
-        stream?.onDelta?.(String(payload.content ?? ""), Boolean(payload.reset));
+        stream?.onDelta?.(
+          String(payload.content ?? ""),
+          Boolean(payload.reset),
+        );
         break;
       case "plan":
-        stream?.onPlan?.(String(payload.phase ?? ""), String(payload.content ?? ""));
+        stream?.onPlan?.(
+          String(payload.phase ?? ""),
+          String(payload.content ?? ""),
+        );
         break;
       case "tool_call":
         stream?.onTool?.(String(payload.tool ?? ""), false);
@@ -409,7 +509,9 @@ export async function sendMessage(
         stream?.onTool?.(String(payload.tool ?? ""), true);
         break;
       case "confirm_delete_paper":
-        stream?.onConfirmDeletePaper?.(parsed.payload as PaperDeleteConfirmPayload);
+        stream?.onConfirmDeletePaper?.(
+          parsed.payload as PaperDeleteConfirmPayload,
+        );
         break;
       case "paper_flow":
         stream?.onPaperFlow?.(parsed.payload as PaperFlow);
@@ -447,6 +549,9 @@ export interface PaperStatusEvent {
   paper_id: string;
   status: Paper["status"];
   detail?: string;
+  parse_progress?: number;
+  parsed_pages?: number;
+  total_pages?: number;
 }
 
 // ReportReadyEvent 是研读报告生成完成的就绪通知。
@@ -456,8 +561,8 @@ export interface ReportReadyEvent {
   report_type: ReportType;
 }
 
-// ReportProgressEvent 是研读报告生成过程的阶段进度,phase 取 planning/action/reasoning/replanning,
-// 生成失败时为 failed;detail 为该阶段的文本增量。
+// ReportProgressEvent 是研读报告生成过程的阶段进度,phase 包含 preparing/researching/writing/reviewing
+// 以及 researcher 内部的 planning/action/reasoning/replanning;生成失败时为 failed。
 export interface ReportProgressEvent {
   type: string;
   paper_id: string;
@@ -507,7 +612,8 @@ export function openStatusStream(
     if (!msg || !msg.paper_id) return;
     if (msg.type === "paper_status") onEvent(msg as PaperStatusEvent);
     else if (msg.type === "report_ready") onReport?.(msg as ReportReadyEvent);
-    else if (msg.type === "report_progress") onProgress?.(msg as ReportProgressEvent);
+    else if (msg.type === "report_progress")
+      onProgress?.(msg as ReportProgressEvent);
   });
   return source;
 }

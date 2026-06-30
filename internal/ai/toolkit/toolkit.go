@@ -43,12 +43,16 @@ var builtinToolDisplayNames = map[string]string{
 	"geocode":                       "地点定位",
 	"get_paper_citations":           "查被引论文",
 	"get_paper_references":          "查参考文献",
+	"find_figures":                  "检索论文图表",
 	"list_my_papers":                "我的论文列表",
 	"recommend_similar_papers":      "相似论文推荐",
 	"search_arxiv":                  "arXiv 检索",
 	"search_conference_proceedings": "官方会议录检索",
 	"search_my_papers":              "检索我的论文",
 	"search_openalex":               "OpenAlex 检索",
+	"search_paper":                  "检索论文正文",
+	"search_sciverse":               "SciVerse 语义检索",
+	"read_sciverse_content":         "SciVerse 原文续读",
 	"search_openreview_papers":      "OpenReview 检索",
 	"search_semantic_scholar":       "学术检索",
 	"web_search":                    "联网搜索",
@@ -112,6 +116,15 @@ func Init(c config.ToolsConfig) error {
 	if c.OpenAlexAPIKey != "" {
 		funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer], newOpenAlexTool(c.OpenAlexAPIKey))
 		zlog.Info("openalex 学术检索工具已登记", "agent", constant.AgentPioneer)
+	}
+	// SciVerse 语义检索给小云雀:走 /agentic-search 召回正文片段(带页码出处),与按元数据
+	// 检索的 OpenAlex/S2 互补。按调用计费且 initialize 即需鉴权,配了 key 才登记,留空不裸调。
+	if c.SciVerseAPIKey != "" {
+		funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer],
+			newSciVerseTool(c.SciVerseAPIKey),
+			newReadSciVerseContentTool(c.SciVerseAPIKey),
+		)
+		zlog.Info("sciverse 语义检索与续读工具已登记", "agent", constant.AgentPioneer)
 	}
 	// Tavily 联网搜索给小云雀:补足模型知识截止后的实时信息。
 	if c.TavilyAPIKey != "" {

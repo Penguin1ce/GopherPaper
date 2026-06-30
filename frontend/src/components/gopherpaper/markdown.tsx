@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { figureUrl } from "@/lib/gopherpaper/api";
 
 const FIGURE_SCHEME = "figure://";
+const SOURCE_SCHEME = "source://";
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -90,6 +91,44 @@ function escapeLinkText(value: string): string {
 
 function escapeLinkTarget(value: string): string {
   return value.replace(/\(/g, "%28").replace(/\)/g, "%29");
+}
+
+function sourceTagURL(label: string): string {
+  return `${SOURCE_SCHEME}${encodeURIComponent(label)}`;
+}
+
+function decodeSourceTag(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function compactSourceTagLabel(kind: string, detail?: string): string {
+  const text = (detail || "").trim();
+  const page = text.match(/第\s*\d+\s*页|p\.?\s*\d+/i)?.[0];
+  const chunk = text.match(/片段\s*\d+/)?.[0];
+  const shortDetail = page || chunk;
+  return [kind, shortDetail].filter(Boolean).join(" · ");
+}
+
+function inlineSourceTagMarkdown(kind: string, detail?: string): string {
+  const title = [kind, (detail || "").trim()].filter(Boolean).join(" · ");
+  const label = compactSourceTagLabel(kind, detail);
+  return `[${escapeLinkText(label)}](${sourceTagURL(title)})`;
+}
+
+function normalizeInlineSourceTags(value: string): string {
+  return value
+    .replace(
+      /\[\[(原文|出处|来源)(?:[:：]\s*([^\]\n]{1,240}))?\]\]/g,
+      (_raw, kind: string, detail?: string) => inlineSourceTagMarkdown(kind, detail),
+    )
+    .replace(
+      /\[\[(原文|出处|来源)(?:[:：]\s*([^\]\n]{1,240}))?(?=\n|$)/g,
+      (_raw, kind: string, detail?: string) => inlineSourceTagMarkdown(kind, detail),
+    );
 }
 
 function isAllowedRichURL(value: string): boolean {
@@ -279,8 +318,9 @@ export function Markdown({
   richLinks?: boolean;
   compact?: boolean;
 }) {
+  const rawChildren = richLinks ? normalizeRichMarkdown(children ?? "") : children ?? "";
   const normalizedChildren = normalizeIndentedProseAfterMath(
-    normalizeMathMarkdown(richLinks ? normalizeRichMarkdown(children ?? "") : children ?? ""),
+    normalizeMathMarkdown(normalizeInlineSourceTags(rawChildren)),
   );
   const components: Components = {
     pre({ children }) {
@@ -288,6 +328,18 @@ export function Markdown({
     },
     a({ href, children }) {
       const url = typeof href === "string" ? href : "";
+      if (url.startsWith(SOURCE_SCHEME)) {
+        const raw = url.slice(SOURCE_SCHEME.length);
+        const title = decodeSourceTag(raw || "");
+        return (
+          <span
+            className="mx-0.5 inline-flex h-5 translate-y-[-1px] items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-1.5 align-middle text-[11px] font-medium leading-none text-primary"
+            title={title}
+          >
+            {children}
+          </span>
+        );
+      }
       if (richLinks && url && isWeixinURL(url)) {
         return (
           <span className="my-3 inline-flex flex-col gap-3 rounded-lg border bg-background p-4">
@@ -361,7 +413,9 @@ export function Markdown({
         rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
         components={components}
         urlTransform={(url) =>
-          url.startsWith(FIGURE_SCHEME) || (richLinks && isAllowedRichURL(url))
+          url.startsWith(FIGURE_SCHEME) ||
+          url.startsWith(SOURCE_SCHEME) ||
+          (richLinks && isAllowedRichURL(url))
             ? url
             : defaultUrlTransform(url)
         }

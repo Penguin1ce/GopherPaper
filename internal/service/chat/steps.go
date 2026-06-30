@@ -1,0 +1,138 @@
+package chat
+
+import (
+	"context"
+	"strings"
+
+	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/ai/toolkit"
+	"GopherPaper/pkg/constant"
+)
+
+// ExecutionStep 是前端执行过程面板的一条可持久化步骤。
+type ExecutionStep struct {
+	Phase string `json:"phase"`
+	Text  string `json:"text"`
+}
+
+type executionRecorder struct {
+	steps []ExecutionStep
+}
+
+func withExecutionRecorder(ctx context.Context) (context.Context, *executionRecorder) {
+	rec := &executionRecorder{}
+	upstream := core.StreamFrom(ctx)
+	return core.WithStream(ctx, func(ev core.StreamEvent) {
+		rec.Record(ev)
+		if upstream != nil {
+			upstream(ev)
+		}
+	}), rec
+}
+
+func (r *executionRecorder) Record(ev core.StreamEvent) {
+	if r == nil {
+		return
+	}
+	switch ev.Kind {
+	case constant.StreamEventPlan:
+		r.append(ev.Phase, ev.Delta)
+	case constant.StreamEventToolCall:
+		if !r.hasPlanning() {
+			r.append("planning", "分析问题,制定检索策略")
+		}
+		text := toolStepText(ev.Tool)
+		if text == "" {
+			return
+		}
+		last := r.last()
+		if last != nil && last.Phase == "action" && strings.TrimSpace(last.Text) == text {
+			return
+		}
+		r.append("action", text)
+	case constant.StreamEventToolResult:
+		last := r.last()
+		if last == nil || last.Phase != "reasoning" {
+			r.append("reasoning", "综合检索结果,整理回答")
+		}
+	}
+}
+
+func (r *executionRecorder) Steps() []ExecutionStep {
+	if r == nil || len(r.steps) == 0 {
+		return nil
+	}
+	out := make([]ExecutionStep, 0, len(r.steps))
+	for _, s := range r.steps {
+		s.Text = strings.TrimSpace(s.Text)
+		if s.Phase == "" || s.Text == "" {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func (r *executionRecorder) append(phase, text string) {
+	phase = strings.TrimSpace(phase)
+	if phase == "" && strings.TrimSpace(text) == "" {
+		return
+	}
+	if len(r.steps) >= constant.MaxExecutionSteps {
+		return
+	}
+	if n := len(r.steps); n > 0 && r.steps[n-1].Phase == phase {
+		r.steps[n-1].Text = appendLimited(r.steps[n-1].Text, text)
+		return
+	}
+	r.steps = append(r.steps, ExecutionStep{Phase: phase, Text: trimRunes(text, constant.MaxExecutionStepTextRunes)})
+}
+
+func (r *executionRecorder) hasPlanning() bool {
+	for _, s := range r.steps {
+		if s.Phase == "planning" || s.Phase == "replanning" {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *executionRecorder) last() *ExecutionStep {
+	if r == nil || len(r.steps) == 0 {
+		return nil
+	}
+	return &r.steps[len(r.steps)-1]
+}
+
+func appendLimited(base, extra string) string {
+	if extra == "" {
+		return trimRunes(base, constant.MaxExecutionStepTextRunes)
+	}
+	return trimRunes(base+extra, constant.MaxExecutionStepTextRunes)
+}
+
+func trimRunes(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	if max <= 3 {
+		return string(r[:max])
+	}
+	return string(r[:max-3]) + "..."
+}
+
+func toolStepText(tool string) string {
+	display := strings.TrimSpace(toolkit.DisplayName(strings.TrimSpace(tool)))
+	switch display {
+	case "search_paper", "检索论文正文":
+		return "论文知识库"
+	case "find_figures", "检索论文图表":
+		return "图表与表格"
+	default:
+		return display
+	}
+}

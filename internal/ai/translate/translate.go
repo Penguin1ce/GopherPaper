@@ -4,8 +4,12 @@ package translate
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
 
@@ -15,6 +19,42 @@ import (
 	"GopherPaper/pkg/constant"
 )
 
+type cacheEntry struct {
+	translation string
+	expiresAt   time.Time
+}
+
+var resultCache sync.Map // key -> cacheEntry
+
+func cacheKey(userID, text string) string {
+	sum := sha256.Sum256([]byte(userID + "\x00" + text))
+	return hex.EncodeToString(sum[:])
+}
+
+func cachedTranslation(userID, text string, now time.Time) (string, bool) {
+	key := cacheKey(userID, text)
+	v, ok := resultCache.Load(key)
+	if !ok {
+		return "", false
+	}
+	ent, ok := v.(cacheEntry)
+	if !ok || now.After(ent.expiresAt) {
+		resultCache.Delete(key)
+		return "", false
+	}
+	return ent.translation, true
+}
+
+func storeTranslation(userID, text, translation string, now time.Time) {
+	if strings.TrimSpace(translation) == "" {
+		return
+	}
+	resultCache.Store(cacheKey(userID, text), cacheEntry{
+		translation: translation,
+		expiresAt:   now.Add(constant.TranslateCacheTTL),
+	})
+}
+
 // Translate 把英文原文 text 翻成中文。system 带翻译指令,user 给原文,裸调该用户的
 // translate 小模型聚合成文本。text 为空或超长由上层先行校验,这里只做最终保护。
 func Translate(ctx context.Context, text string) (string, error) {
@@ -22,7 +62,12 @@ func Translate(ctx context.Context, text string) (string, error) {
 	if text == "" {
 		return "", fmt.Errorf("translate: 原文为空")
 	}
-	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
+	userID := tenant.MustStudentID(ctx)
+	now := time.Now()
+	if cached, ok := cachedTranslation(userID, text, now); ok {
+		return cached, nil
+	}
+	models, err := aimodel.ModelsForUser(userID)
 	if err != nil {
 		return "", err
 	}
@@ -39,5 +84,10 @@ func Translate(ctx context.Context, text string) (string, error) {
 	if mc.MaxTokens > 0 {
 		req.MaxTokens = &mc.MaxTokens
 	}
-	return core.GenerateText(ctx, m, req)
+	out, err := core.GenerateText(ctx, m, req)
+	if err != nil {
+		return "", err
+	}
+	storeTranslation(userID, text, out, now)
+	return out, nil
 }

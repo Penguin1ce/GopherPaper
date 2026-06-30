@@ -1,23 +1,20 @@
 "use client";
 
-import { Coffee, LogOut, Network, NotebookText, PanelLeftClose, Plus } from "lucide-react";
+import { Coffee, LogOut, Network, NotebookText, PanelLeftClose } from "lucide-react";
 import Link from "next/link";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { useApp } from "@/lib/gopherpaper/store";
-import { useGuard } from "./app-ui";
 
 export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
-  const { user, logout, activePaperID, createSession } = useApp();
-  const guard = useGuard();
+  const { user, logout } = useApp();
   const fallback = (user?.name || user?.student_id || "G").slice(0, 1).toUpperCase();
 
   return (
     <div className="shrink-0 bg-background">
-      <div className="p-4">
-        <div className="flex items-center gap-3">
+      <div className="flex h-16 items-center border-b px-4">
+        <div className="flex w-full items-center gap-3">
           <Link
             href="/profile"
             className="rounded-lg outline-none ring-ring/50 transition hover:opacity-90 focus-visible:ring-3"
@@ -53,21 +50,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
           )}
         </div>
       </div>
-      <Separator />
       <div className="space-y-2 p-4">
-        <Button
-          type="button"
-          variant="default"
-          className="h-10 w-full justify-start"
-          onClick={() =>
-            guard(async () => {
-              await createSession("新会话", activePaperID || undefined);
-            })
-          }
-        >
-          <Plus className="size-4" />
-          新建对话
-        </Button>
         <Link
           className={buttonVariants({ variant: "outline", className: "h-10 w-full justify-start" })}
           href="/reports"
