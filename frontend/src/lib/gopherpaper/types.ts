@@ -93,9 +93,9 @@ export interface Message {
   meta?: Record<string, unknown>;
   // 前端瞬态字段,仅 SSE 进行中的占位消息使用,不来自后端。
   streaming?: boolean;
-  // 先锋者执行计划段,仅本轮内存保留(不入库、刷新即失),用于气泡内折叠回看。
+  // 执行计划段:流式中在本轮内存累积;完成后也会从 meta.steps 持久化还原。
   plan?: PlanStep[];
-  // 论文思路图谱,小云雀调 generate_paper_flow 时经 SSE 推送,仅本轮内存保留(不入库、刷新即失)。
+  // 论文思路图谱,小云雀调 generate_paper_flow 时经 SSE 推送,完成后从 meta.flow 持久化还原。
   flow?: PaperFlow;
 }
 

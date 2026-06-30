@@ -1,4 +1,4 @@
-import type { Paper, PaperStatus, Session } from "./types";
+import type { Message, Paper, PaperStatus, PlanStep, Session } from "./types";
 
 export const READY_STATUSES: PaperStatus[] = ["ready"];
 
@@ -12,6 +12,26 @@ export function paperTitle(paper: Paper): string {
 
 export function sessionTitle(session: Session): string {
   return session.title || "未命名会话";
+}
+
+export function metaPlanSteps(meta?: Record<string, unknown>): PlanStep[] {
+  const raw = meta?.steps;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const step = item as Record<string, unknown>;
+      const phase = typeof step.phase === "string" ? step.phase.trim() : "";
+      const text = typeof step.text === "string" ? step.text.trim() : "";
+      return phase && text ? { phase, text } : null;
+    })
+    .filter((step): step is PlanStep => Boolean(step));
+}
+
+export function messagePlan(message?: Message | null): PlanStep[] {
+  if (!message) return [];
+  if (message.plan && message.plan.length > 0) return message.plan;
+  return metaPlanSteps(message.meta);
 }
 
 function sessionTime(s: Session): number {

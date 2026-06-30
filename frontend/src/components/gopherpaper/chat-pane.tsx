@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenText, ChevronDown, Loader2, Send } from "lucide-react";
+import { ArrowUp, BookOpenText, ChevronDown, Loader2 } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { figureUrl } from "@/lib/gopherpaper/api";
 import { useApp } from "@/lib/gopherpaper/store";
 import type { Message, PaperFlow, Reference } from "@/lib/gopherpaper/types";
-import { formatTime, intentLabel, paperTitle } from "@/lib/gopherpaper/utils";
+import { formatTime, intentLabel, messagePlan, paperTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty, useGuard } from "./app-ui";
 import { Markdown } from "./markdown";
@@ -132,13 +132,14 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: Messag
   const isAssistant = message.role === "assistant";
   const refs = isAssistant ? extractSources(message.meta) : [];
   const figures = isAssistant ? buildFigureMap(refs) : undefined;
+  const steps = isAssistant ? messagePlan(message) : [];
   return (
     <article className={cn("flex flex-col gap-1.5", isAssistant ? "items-start" : "items-end")}>
       {isAssistant ? (
         // 助教答案直接铺在版面上(Perplexity 式),不套气泡框,留白拆开
         <div className="w-full">
-          {message.plan && message.plan.length > 0 && (
-            <ProcessTrace steps={message.plan} live={!!message.streaming} />
+          {steps.length > 0 && (
+            <ProcessTrace steps={steps} live={!!message.streaming} />
           )}
           <Markdown figures={figures}>{message.content}</Markdown>
           {(message.flow ?? (message.meta?.flow as PaperFlow | undefined)) && (
@@ -198,6 +199,7 @@ export function ChatPane() {
   };
 
   const hasContent = Boolean(activeSession) || messages.length > 0;
+  const hasDraft = input.trim().length > 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -252,32 +254,39 @@ export function ChatPane() {
         }}
       >
         <div className="mx-auto w-full max-w-3xl">
-        <ToolStatus note={toolNote} />
-        <div className="flex items-end gap-2 rounded-[1.625rem] border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md">
-          <Textarea
-            rows={1}
-            value={input}
-            placeholder="例如：这篇论文的核心贡献是什么?"
-            disabled={sending}
-            className="max-h-44 min-h-9 resize-none overflow-y-auto border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0"
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            className="size-9 shrink-0 rounded-full"
-            disabled={sending || !input.trim()}
-            title="发送"
-          >
-            {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-          </Button>
-        </div>
+          <ToolStatus note={toolNote} />
+          <div className="flex items-end gap-2 rounded-[1.625rem] border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md">
+            <Textarea
+              rows={1}
+              value={input}
+              placeholder=""
+              disabled={sending}
+              className="max-h-44 min-h-9 resize-none overflow-y-auto border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0"
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+            />
+            {(hasDraft || sending) && (
+              <Button
+                type="submit"
+                size="icon"
+                className="size-9 shrink-0 rounded-full"
+                disabled={sending || !hasDraft}
+                title={sending ? "正在发送" : "发送"}
+                aria-label={sending ? "正在发送" : "发送"}
+              >
+                {sending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ArrowUp className="size-4 stroke-[2.6]" />
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </form>
     </div>

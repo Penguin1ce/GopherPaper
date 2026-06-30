@@ -35,6 +35,7 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string) (*mode
 	}
 	// 会话绑定了论文时围绕该论文检索。
 	ctx = core.WithPaperID(ctx, sess.PaperID)
+	ctx, steps := withExecutionRecorder(ctx)
 	metricPaperID = sess.PaperID
 	checkMS := time.Since(start).Milliseconds()
 
@@ -58,6 +59,12 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string) (*mode
 	if err != nil {
 		metricErr = fmt.Errorf("service: 助教应答失败: %w", err)
 		return nil, nil, metricErr
+	}
+	if savedSteps := steps.Steps(); len(savedSteps) > 0 {
+		if reply.Meta == nil {
+			reply.Meta = map[string]any{}
+		}
+		reply.Meta[constant.MetaKeyExecutionSteps] = savedSteps
 	}
 	aiMS := time.Since(step).Milliseconds()
 

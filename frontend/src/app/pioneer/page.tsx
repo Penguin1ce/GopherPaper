@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  ArrowUp,
   ArrowLeft,
   ChevronDown,
   Coffee,
@@ -9,7 +10,6 @@ import {
   Loader2,
   Plus,
   Search,
-  Send,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -49,7 +49,7 @@ import type {
   Topic,
 } from "@/lib/gopherpaper/types";
 import { toolStatusText } from "@/lib/gopherpaper/tool-status";
-import { formatTime, sessionTitle } from "@/lib/gopherpaper/utils";
+import { formatTime, messagePlan, metaPlanSteps, sessionTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty } from "@/components/gopherpaper/app-ui";
 import { Markdown } from "@/components/gopherpaper/markdown";
@@ -641,12 +641,15 @@ export default function PioneerPage() {
       cancelFlush();
       if (!mountedRef.current) return;
       setStreamPlan([]);
+      const finalMeta = data.meta ?? data.message.meta;
+      const finalPlan = planSteps.length > 0 ? planSteps : metaPlanSteps(finalMeta);
       setMessages((list) => [
         ...list.filter((m) => m.id !== placeholderID),
         {
           ...data.message,
           id: data.message.id || `local-a-${Date.now()}`,
-          plan: planSteps.length > 0 ? planSteps : undefined,
+          meta: finalMeta,
+          plan: finalPlan.length > 0 ? finalPlan : undefined,
           flow: capturedFlow,
         },
       ]);
@@ -732,9 +735,10 @@ export default function PioneerPage() {
       return next;
     });
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-  const railSteps = sending ? streamPlan : (lastAssistant?.plan ?? []);
+  const railSteps = sending ? streamPlan : messagePlan(lastAssistant);
   const railLive = sending && streamPlan.length > 0;
   const railPending = sending && streamPlan.length === 0;
+  const hasDraft = input.trim().length > 0;
 
   return (
     <WorkspaceFrame>
@@ -954,15 +958,22 @@ export default function PioneerPage() {
                   }
                 }}
               />
-              <Button
-                type="submit"
-                size="icon"
-                className="size-9 shrink-0 rounded-full"
-                disabled={sending || !input.trim()}
-                title="发送"
-              >
-                {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-              </Button>
+              {(hasDraft || sending) && (
+                <Button
+                  type="submit"
+                  size="icon"
+                  className="size-9 shrink-0 rounded-full"
+                  disabled={sending || !hasDraft}
+                  title={sending ? "正在发送" : "发送"}
+                  aria-label={sending ? "正在发送" : "发送"}
+                >
+                  {sending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <ArrowUp className="size-4 stroke-[2.6]" />
+                  )}
+                </Button>
+              )}
             </div>
           </div>
         </form>
