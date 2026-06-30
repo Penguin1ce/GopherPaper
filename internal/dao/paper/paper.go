@@ -336,3 +336,25 @@ func DeleteAnnotation(ctx context.Context, id uint64) error {
 	}
 	return nil
 }
+
+// MetaStamp 是某篇论文元信息的更新时间,供知识图谱按需同步比对新鲜度。
+type MetaStamp struct {
+	PaperID   string
+	UpdatedAt time.Time
+}
+
+// ListMetaTimestamps 返回某用户每篇未删除论文的 (paperID, meta 更新时间),
+// 供知识图谱读时只同步缺失或过期的论文。无元信息的论文不返回。
+func ListMetaTimestamps(ctx context.Context, ownerID string) ([]MetaStamp, error) {
+	var stamps []MetaStamp
+	err := dao.DB.WithContext(ctx).
+		Table("paper_metas AS m").
+		Select("m.paper_id AS paper_id, m.updated_at AS updated_at").
+		Joins("JOIN papers AS p ON p.id = m.paper_id").
+		Where("p.owner_id = ? AND p.deleted_at IS NULL", ownerID).
+		Scan(&stamps).Error
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询元信息时间戳失败: %w", err)
+	}
+	return stamps, nil
+}

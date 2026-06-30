@@ -7,6 +7,7 @@ import type {
   Envelope,
   GraphStats,
   GraphTrends,
+  KeywordNetwork,
   LoginResponse,
   AvatarResponse,
   Message,
@@ -345,6 +346,12 @@ export function graphTrends(keywordTop = 8) {
 
 export function graphKeywords(top = 20) {
   return request<NameCount[]>(`/graph/keywords?top=${top}`);
+}
+
+export function keywordNetwork(top = 60, minWeight = 1) {
+  return request<KeywordNetwork>(
+    `/graph/keywords/network?top=${top}&min_weight=${minWeight}`,
+  );
 }
 
 export function graphNetwork() {

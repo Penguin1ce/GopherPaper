@@ -84,6 +84,15 @@ func TestLiveGraph(t *testing.T) {
 		t.Errorf("TopKeywords[0] 应为 vla,得 %+v", tk)
 	}
 
+	// PaperSyncState:p1/p2 都应在图谱中且 updated_at 非零。
+	state, err := PaperSyncState(ctx, owner)
+	if err != nil {
+		t.Fatalf("PaperSyncState: %v", err)
+	}
+	if len(state) != 2 || state["p1"] == 0 || state["p2"] == 0 {
+		t.Fatalf("PaperSyncState = %v, want p1/p2 均非零时间戳", state)
+	}
+
 	rel, err := RelatedPapers(ctx, owner, "p2", 10)
 	if err != nil {
 		t.Fatalf("RelatedPapers: %v", err)
@@ -96,6 +105,24 @@ func TestLiveGraph(t *testing.T) {
 		t.Errorf("相关关系 vias 偏少: %+v", rel[0].Vias)
 	}
 	t.Logf("RelatedPapers(p2) = %+v", rel)
+
+	// KeywordCoNetwork:p1(vla,vision)+p2(vla,safety) 应产出含 vla 的共现网。
+	kn, err := KeywordCoNetwork(ctx, owner, 60, 1)
+	if err != nil {
+		t.Fatalf("KeywordCoNetwork: %v", err)
+	}
+	if len(kn.Nodes) < 3 || len(kn.Edges) < 2 {
+		t.Fatalf("KeywordCoNetwork 规模偏小: nodes=%d edges=%d", len(kn.Nodes), len(kn.Edges))
+	}
+	hasVLA := false
+	for _, n := range kn.Nodes {
+		if n.ID == "vla" {
+			hasVLA = true
+		}
+	}
+	if !hasVLA {
+		t.Errorf("共现网应含 vla 节点, got %+v", kn.Nodes)
+	}
 
 	// owner 隔离:换 owner 查应为空。
 	other, err := Overview(ctx, "u2")

@@ -423,6 +423,25 @@ ORDER BY score DESC, q.title LIMIT $limit`
 	return out, nil
 }
 
+// PaperSyncState 返回某用户图谱中全部 Paper 节点的 id → updated_at(epoch 毫秒)。
+// 供 handler 读时与 MySQL 元信息时间戳比对,只同步缺失或过期的论文。
+func PaperSyncState(ctx context.Context, owner string) (map[string]int64, error) {
+	const cypher = `MATCH (p:Paper {owner:$owner}) RETURN p.id AS id, p.updated_at AS updatedAt`
+	res, err := exec(ctx, cypher, map[string]any{"owner": owner})
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]int64, len(res.Records))
+	for _, r := range res.Records {
+		id := asStr(r, "id")
+		if id == "" {
+			continue
+		}
+		out[id] = asInt64(r, "updatedAt")
+	}
+	return out, nil
+}
+
 func stringFromMap(m map[string]any, key string) string {
 	if v, ok := m[key].(string); ok {
 		return v

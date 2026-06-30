@@ -359,3 +359,24 @@ export interface RelatedPaper {
   score: number;
   vias: string[];
 }
+
+// KeywordNode 是关键词共现网的节点,community 为聚类社区号,对应后端 KeywordNode。
+export interface KeywordNode {
+  id: string;
+  label: string;
+  count: number;
+  community: number;
+}
+
+// KeywordEdge 是两关键词的共现边,weight 为共现论文数。
+export interface KeywordEdge {
+  source: string;
+  target: string;
+  weight: number;
+}
+
+// KeywordNetwork 对应 /graph/keywords/network。
+export interface KeywordNetwork {
+  nodes: KeywordNode[];
+  edges: KeywordEdge[];
+}

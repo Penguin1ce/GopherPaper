@@ -29,7 +29,12 @@ import type {
   EntityGraph,
   EntityGraphEdge,
   EntityGraphNode,
+  GraphTrends,
+  KeywordNetwork,
+  KeywordYearCount,
   NameCount,
+  RelatedPaper,
+  YearCount,
 } from "@/lib/gopherpaper/types";
 import { paperTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
@@ -56,6 +61,19 @@ const TYPE_META: Record<string, { label: string; color: string; radius: number }
   future_work: { label: "未来工作", color: "#0891b2", radius: 25 },
   venue: { label: "发表来源", color: "#475569", radius: 22 },
   entity: { label: "实体", color: "#64748b", radius: 21 },
+};
+
+const COMMUNITY_PALETTE = [
+  "#2563eb", "#16a34a", "#ea580c", "#7c3aed", "#0891b2",
+  "#db2777", "#ca8a04", "#0f766e", "#dc2626", "#475569",
+];
+
+const VIA_LABEL: Record<string, string> = {
+  author: "作者",
+  keyword: "关键词",
+  cocitation: "共被引",
+  cites: "引用",
+  similar: "相似",
 };
 
 type SimNode = EntityGraphNode & {
@@ -93,6 +111,12 @@ function shortText(s: string, n = 18) {
 }
 
 function nodeMeta(type: string) {
+  if (type.startsWith("community:")) {
+    const [, cRaw, bucket] = type.split(":");
+    const c = Number(cRaw) || 0;
+    const radius = bucket === "lg" ? 38 : bucket === "sm" ? 20 : 28;
+    return { label: `主题 ${c + 1}`, color: COMMUNITY_PALETTE[c % COMMUNITY_PALETTE.length], radius };
+  }
   return TYPE_META[type] || TYPE_META.entity;
 }
 
@@ -100,6 +124,120 @@ function collisionRadius(node: Pick<EntityGraphNode, "type" | "label">) {
   const base = nodeMeta(node.type).radius;
   const labelPad = Math.min(17, Math.max(5, [...(node.label || "")].length * 1.25));
   return base + labelPad;
+}
+
+function YearBars({ data }: { data: YearCount[] }) {
+  if (!data.length) return <p className="text-sm text-muted-foreground">暂无年度数据</p>;
+  const max = Math.max(1, ...data.map((d) => d.count));
+  return (
+    <div className="flex items-end gap-2 overflow-x-auto pb-1">
+      {data.map((d) => (
+        <div key={d.year} className="flex min-w-9 flex-col items-center gap-1">
+          <span className="text-[10px] tabular-nums text-muted-foreground">{d.count}</span>
+          <div
+            className="w-6 rounded-t bg-primary/70"
+            style={{ height: `${8 + (d.count / max) * 96}px` }}
+            title={`${d.year}: ${d.count} 篇`}
+          />
+          <span className="text-[10px] tabular-nums text-muted-foreground">{d.year}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function KeywordHeatmap({ data }: { data: KeywordYearCount[] }) {
+  if (!data.length) return <p className="text-sm text-muted-foreground">暂无关键词趋势</p>;
+  const years = [...new Set(data.map((d) => d.year))].sort((a, b) => a - b);
+  const keywords = [...new Set(data.map((d) => d.keyword))];
+  const cell = new Map<string, number>();
+  let max = 1;
+  for (const d of data) {
+    cell.set(`${d.keyword}@${d.year}`, d.count);
+    if (d.count > max) max = d.count;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="border-separate border-spacing-1 text-[11px]">
+        <thead>
+          <tr>
+            <th className="sticky left-0 bg-card" />
+            {years.map((y) => (
+              <th key={y} className="px-1 font-normal tabular-nums text-muted-foreground">
+                {y}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {keywords.map((kw) => (
+            <tr key={kw}>
+              <td
+                className="sticky left-0 max-w-[8rem] truncate bg-card pr-2 text-foreground"
+                title={kw}
+              >
+                {kw}
+              </td>
+              {years.map((y) => {
+                const v = cell.get(`${kw}@${y}`) || 0;
+                return (
+                  <td
+                    key={y}
+                    className="size-6 rounded text-center tabular-nums"
+                    style={{
+                      background: `color-mix(in srgb, var(--primary) ${v ? 12 + (v / max) * 60 : 0}%, transparent)`,
+                    }}
+                    title={`${kw} · ${y}: ${v}`}
+                  >
+                    {v || ""}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RelatedPanel({
+  items,
+  onOpen,
+}: {
+  items: RelatedPaper[];
+  onOpen: (id: string) => void;
+}) {
+  if (!items.length) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        共享作者、关键词、引用或语义相似时,相关论文会出现在这里。
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {items.map((r) => (
+        <button
+          key={r.id}
+          type="button"
+          onClick={() => onOpen(r.id)}
+          className="flex w-full flex-col items-start gap-1 rounded-md border bg-muted/30 px-3 py-2 text-left transition-colors hover:bg-muted"
+        >
+          <span className="line-clamp-2 text-sm font-medium">{r.title || "未命名论文"}</span>
+          <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            {r.year > 0 && <span className="tabular-nums">{r.year}</span>}
+            {r.vias.map((v) => (
+              <span key={v} className="rounded-full border px-1.5 py-0.5">
+                {VIA_LABEL[v] || v}
+              </span>
+            ))}
+            <span className="tabular-nums">命中 {r.score}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function ForceEntityGraph({
@@ -829,17 +967,45 @@ function mergeEntityGraphs(base: EntityGraph, addition: EntityGraph): EntityGrap
   };
 }
 
+function keywordNetworkToEntityGraph(net: KeywordNetwork): EntityGraph {
+  const nodes = Array.isArray(net.nodes) ? net.nodes : [];
+  const edges = Array.isArray(net.edges) ? net.edges : [];
+  const maxCount = Math.max(1, ...nodes.map((n) => n.count));
+  const bucket = (count: number) => {
+    const r = count / maxCount;
+    return r >= 0.66 ? "lg" : r >= 0.33 ? "md" : "sm";
+  };
+  return {
+    nodes: nodes.map((n) => ({
+      id: `kw:${n.id}`,
+      type: `community:${n.community}:${bucket(n.count)}`,
+      label: n.label || n.id,
+      details: { 频次: String(n.count), 主题: String(n.community + 1) },
+    })),
+    edges: edges.map((e) => ({
+      id: `${e.source}--${e.target}`,
+      source: `kw:${e.source}`,
+      target: `kw:${e.target}`,
+      type: "CO_OCCURS",
+      label: `共现 ${e.weight}`,
+    })),
+  };
+}
+
 export function GraphView() {
   const { authed, papers, activePaperID, selectPaper } = useApp();
 
   const [keywords, setKeywords] = useState<NameCount[]>([]);
+  const [trends, setTrends] = useState<GraphTrends | null>(null);
   const [entityGraph, setEntityGraph] = useState<EntityGraph | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
   const [rebuildingGraph, setRebuildingGraph] = useState(false);
   const [graphError, setGraphError] = useState("");
   const [graphNotice, setGraphNotice] = useState("");
-  const [graphMode, setGraphMode] = useState<"overview" | "detail">("overview");
+  const [graphMode, setGraphMode] = useState<"overview" | "detail" | "keywords">("overview");
   const [detailPaperID, setDetailPaperID] = useState("");
+  const [keywordNet, setKeywordNet] = useState<KeywordNetwork | null>(null);
+  const [related, setRelated] = useState<RelatedPaper[]>([]);
 
   useEffect(() => {
     if (!authed) return;
@@ -851,6 +1017,14 @@ export function GraphView() {
       })
       .catch(() => {
         if (!cancelled) setKeywords([]);
+      });
+    api
+      .graphTrends(12)
+      .then((value) => {
+        if (!cancelled) setTrends(value);
+      })
+      .catch(() => {
+        if (!cancelled) setTrends(null);
       });
     return () => {
       cancelled = true;
@@ -910,6 +1084,50 @@ export function GraphView() {
     };
   }, [authed, graphMode, detailPaperID]);
 
+  useEffect(() => {
+    if (!authed || graphMode !== "detail" || !detailPaperID) {
+      setRelated([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .relatedPapers(detailPaperID, 10)
+      .then((items) => {
+        if (!cancelled) setRelated(Array.isArray(items) ? items : []);
+      })
+      .catch(() => {
+        if (!cancelled) setRelated([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authed, graphMode, detailPaperID]);
+
+  useEffect(() => {
+    if (!authed || graphMode !== "keywords") return;
+    let cancelled = false;
+    setGraphError("");
+    setGraphNotice("");
+    setLoadingGraph(true);
+    api
+      .keywordNetwork(60, 1)
+      .then((net) => {
+        if (!cancelled) setKeywordNet(net);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setKeywordNet(null);
+          setGraphError(graphRequestErrorMessage(err, "关键词共现网络加载失败"));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingGraph(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authed, graphMode]);
+
   const openOverviewGraph = () => {
     setGraphMode("overview");
     setDetailPaperID("");
@@ -924,6 +1142,13 @@ export function GraphView() {
         setGraphError(graphRequestErrorMessage(err, "总览知识图谱加载失败"));
       })
       .finally(() => setLoadingGraph(false));
+  };
+
+  const openKeywordGraph = () => {
+    setGraphMode("keywords");
+    setDetailPaperID("");
+    setGraphError("");
+    setGraphNotice("");
   };
 
   const openDetailGraph = (paperID: string) => {
@@ -1008,6 +1233,11 @@ export function GraphView() {
     () => papers.find((p) => p.id === activePaperID) || null,
     [papers, activePaperID],
   );
+  const keywordEntityGraph = useMemo(
+    () => (keywordNet ? keywordNetworkToEntityGraph(keywordNet) : null),
+    [keywordNet],
+  );
+  const viewGraph = graphMode === "keywords" ? keywordEntityGraph : entityGraph;
   const detailKeywords = useMemo(() => {
     const graphKeywords =
       entityGraph?.nodes
@@ -1047,12 +1277,18 @@ export function GraphView() {
         </Link>
         <div className="min-w-0">
           <h1 className="font-serif text-base font-semibold tracking-tight">
-            {graphMode === "overview" ? "知识图谱 · 总览" : "知识图谱 · 论文实体"}
+            {graphMode === "overview"
+              ? "知识图谱 · 总览"
+              : graphMode === "keywords"
+                ? "知识图谱 · 关键词共现"
+                : "知识图谱 · 论文实体"}
           </h1>
           <p className="truncate text-xs text-muted-foreground">
             {graphMode === "overview"
               ? "双击论文节点展开详细知识图谱"
-              : centerPaper ? paperTitle(centerPaper) : "选择一篇论文"}
+              : graphMode === "keywords"
+                ? "关键词按主题社区上色,连线表示共现"
+                : centerPaper ? paperTitle(centerPaper) : "选择一篇论文"}
           </p>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -1090,6 +1326,24 @@ export function GraphView() {
                 <span className="block text-sm font-semibold">总览图谱</span>
                 <span className="block truncate text-xs text-muted-foreground">
                   论文 - 共享点 - 论文
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={openKeywordGraph}
+              className={cn(
+                "mt-2 flex w-full items-center gap-2 rounded-md border px-3 py-2.5 text-left transition-colors",
+                graphMode === "keywords"
+                  ? "border-primary/35 bg-primary/10 shadow-sm"
+                  : "border-border bg-muted/40 hover:bg-muted",
+              )}
+            >
+              <Network className="size-4 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">关键词共现</span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  关键词 - 共现 - 主题团
                 </span>
               </span>
             </button>
@@ -1134,15 +1388,32 @@ export function GraphView() {
           </ScrollArea>
         </aside>
 
-        <ScrollArea className="h-full min-h-0 bg-background">
-          <div className="h-full min-h-0 p-5">
-            <div className="grid h-full min-h-0">
-              <section className="flex min-h-[calc(100dvh-7rem)] min-w-0 flex-col rounded-lg border bg-card p-4 shadow-sm xl:min-h-0">
-                <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Network className="size-4 text-primary" />
-                    {graphMode === "overview" ? "总览知识图谱" : "论文中心图谱"}
-                  </div>
+        <ScrollArea className="min-h-0 bg-background">
+          <div className="space-y-6 p-5">
+            {graphMode === "overview" && (
+              <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="rounded-lg border bg-card p-4 shadow-sm">
+                  <div className="mb-3 text-sm font-medium">年度论文数</div>
+                  <YearBars data={trends?.by_year ?? []} />
+                </div>
+                <div className="rounded-lg border bg-card p-4 shadow-sm">
+                  <div className="mb-3 text-sm font-medium">关键词热度演化</div>
+                  <KeywordHeatmap data={trends?.keyword_trend ?? []} />
+                </div>
+              </section>
+            )}
+
+            <section className="rounded-lg border bg-card p-4 shadow-sm">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Network className="size-4 text-primary" />
+                  {graphMode === "keywords"
+                    ? "关键词共现网"
+                    : graphMode === "overview"
+                      ? "总览知识图谱"
+                      : "论文中心图谱"}
+                </div>
+                {graphMode !== "keywords" && (
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(TYPE_META)
                       .filter(([k]) => !["entity", "venue"].includes(k))
@@ -1153,46 +1424,61 @@ export function GraphView() {
                         </span>
                       ))}
                   </div>
+                )}
+              </div>
+
+              {graphError && (
+                <div className="mb-3 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {graphError}
                 </div>
+              )}
+              {graphNotice && !graphError && (
+                <div className="mb-3 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700">
+                  {graphNotice}
+                </div>
+              )}
 
-                {graphError && (
-                  <div className="mb-3 shrink-0 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {graphError}
-                  </div>
-                )}
-                {graphNotice && !graphError && (
-                  <div className="mb-3 shrink-0 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700">
-                    {graphNotice}
-                  </div>
-                )}
-
-                {graphMode === "detail" && !centerPaper ? (
-                  <Empty title="选择一篇论文" text="图谱会显示论文与结构化实体的关系。" compact />
-                ) : loadingGraph ? (
-                  <div className="flex min-h-[520px] flex-1 items-center justify-center text-sm text-muted-foreground">
-                    加载中...
-                  </div>
-                ) : !entityGraph || entityGraph.nodes.length <= 1 ? (
-                  <Empty
-                    title={graphMode === "overview" ? "暂无共享关系" : "暂无实体关系"}
-                    text={
-                      graphMode === "overview"
+              {graphMode === "detail" && !centerPaper ? (
+                <Empty title="选择一篇论文" text="图谱会显示论文与结构化实体的关系。" compact />
+              ) : loadingGraph ? (
+                <div className="flex min-h-[520px] items-center justify-center text-sm text-muted-foreground">
+                  加载中...
+                </div>
+              ) : !viewGraph || viewGraph.nodes.length < (graphMode === "keywords" ? 1 : 2) ? (
+                <Empty
+                  title={
+                    graphMode === "keywords"
+                      ? "暂无关键词共现"
+                      : graphMode === "overview"
+                        ? "暂无共享关系"
+                        : "暂无实体关系"
+                  }
+                  text={
+                    graphMode === "keywords"
+                      ? "解析多篇含关键词的论文后,这里会形成主题共现网。"
+                      : graphMode === "overview"
                         ? "当论文共享作者、关键词或机构时，会在这里形成总览关系。"
                         : "解析完成后会自动生成论文知识图谱。"
-                    }
-                    compact
-                  />
-                ) : (
-                  <ForceEntityGraph
-                    graph={entityGraph}
-                    mode={graphMode}
-                    keywordItems={graphKeywordItems}
-                    showKeywordCount={graphMode === "overview"}
-                    onPaperDoubleClick={graphMode === "overview" ? expandPaperInOverview : undefined}
-                  />
-                )}
+                  }
+                  compact
+                />
+              ) : (
+                <ForceEntityGraph
+                  graph={viewGraph}
+                  mode={graphMode === "keywords" ? "overview" : graphMode}
+                  keywordItems={graphKeywordItems}
+                  showKeywordCount={graphMode === "overview"}
+                  onPaperDoubleClick={graphMode === "overview" ? expandPaperInOverview : undefined}
+                />
+              )}
+            </section>
+
+            {graphMode === "detail" && (
+              <section className="rounded-lg border bg-card p-4 shadow-sm">
+                <div className="mb-3 text-sm font-medium">相关论文</div>
+                <RelatedPanel items={related} onOpen={openDetailGraph} />
               </section>
-            </div>
+            )}
           </div>
         </ScrollArea>
       </div>

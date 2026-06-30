@@ -93,6 +93,18 @@ func asInt(rec *neo4j.Record, key string) int {
 	return 0
 }
 
+// asInt64 从记录取 int64 值,缺失或类型不符返回 0。图谱时间戳为毫秒,用 int64 避免截断。
+func asInt64(rec *neo4j.Record, key string) int64 {
+	v, ok := rec.Get(key)
+	if !ok || v == nil {
+		return 0
+	}
+	if n, ok := v.(int64); ok {
+		return n
+	}
+	return 0
+}
+
 // asStr 从记录取字符串值,缺失返回空串。
 func asStr(rec *neo4j.Record, key string) string {
 	v, ok := rec.Get(key)

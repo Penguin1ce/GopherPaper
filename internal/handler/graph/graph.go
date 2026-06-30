@@ -112,9 +112,7 @@ func PaperGraph(c *gin.Context) {
 		response.Fail(c, http.StatusBadRequest, "缺少论文 id")
 		return
 	}
-	if repairErr := repairPaperGraphFromMeta(c.Request.Context(), owner, paperID); repairErr != nil {
-		zlog.Error("从 MySQL 元信息同步论文图谱失败", "owner", owner, "paper_id", paperID, "err", repairErr)
-	}
+	syncPaperGraphIfNeeded(c.Request.Context(), owner, paperID)
 	g, err := graphstore.PaperEntityGraph(c.Request.Context(), owner, paperID)
 	if err != nil {
 		zlog.Error("查询论文知识图谱失败", "owner", owner, "paper_id", paperID, "err", err)
@@ -128,7 +126,7 @@ func PaperGraph(c *gin.Context) {
 // GET /api/v1/graph/network
 func Network(c *gin.Context) {
 	owner := tenant.MustStudentID(c.Request.Context())
-	repairOwnerGraphsFromMeta(c.Request.Context(), owner)
+	syncOwnerGraphIfNeeded(c.Request.Context(), owner)
 	g, err := graphstore.OverviewEntityGraph(c.Request.Context(), owner)
 	if err != nil {
 		zlog.Error("查询总览知识图谱失败", "owner", owner, "err", err)
@@ -177,19 +175,6 @@ func RebuildPaper(c *gin.Context) {
 		return
 	}
 	response.OK(c, g)
-}
-
-func repairOwnerGraphsFromMeta(ctx context.Context, owner string) {
-	papers, err := paperdao.List(ctx, owner)
-	if err != nil {
-		zlog.Error("同步总览图谱前查询论文列表失败", "owner", owner, "err", err)
-		return
-	}
-	for _, p := range papers {
-		if err := repairPaperGraphFromMeta(ctx, owner, p.ID); err != nil {
-			zlog.Error("同步单篇论文图谱失败", "owner", owner, "paper_id", p.ID, "err", err)
-		}
-	}
 }
 
 func repairPaperGraphFromMeta(ctx context.Context, owner, paperID string) error {
@@ -322,6 +307,32 @@ func Keywords(c *gin.Context) {
 		return
 	}
 	response.OK(c, keywords)
+}
+
+// KeywordNetwork 返回关键词共现网络与社区聚类。
+// GET /api/v1/graph/keywords/network?top=60&min_weight=1
+//
+// @Summary 关键词共现网络
+// @Description 返回当前用户 Top-N 高频关键词的共现网络,节点带社区聚类号、边带共现权重。
+// @Tags graph
+// @Produce json
+// @Security BearerAuth
+// @Param top query int false "关键词 Top N" default(60)
+// @Param min_weight query int false "最小共现权重" default(1)
+// @Success 200 {object} dto.Response{data=dto.KeywordNetwork}
+// @Failure 500 {object} dto.Response
+// @Router /graph/keywords/network [get]
+func KeywordNetwork(c *gin.Context) {
+	owner := tenant.MustStudentID(c.Request.Context())
+	top := queryInt(c, "top", 60)
+	minWeight := queryInt(c, "min_weight", 1)
+	net, err := graphstore.KeywordCoNetwork(c.Request.Context(), owner, top, minWeight)
+	if err != nil {
+		zlog.Error("查询关键词共现网络失败", "owner", owner, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "查询关键词共现网络失败")
+		return
+	}
+	response.OK(c, net)
 }
 
 func queryInt(c *gin.Context, key string, def int) int {

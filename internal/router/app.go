@@ -86,10 +86,11 @@ func Init(mode string) *gin.Engine {
 			authed.DELETE("/papers/:id/annotations/:annotation_id", paperhandler.DeleteAnnotation)
 
 			// 知识图谱：论文关系发现与研究趋势,按用户隔离。
-			authed.GET("/graph/overview", graphhandler.Overview) // 图谱规模总览
-			authed.GET("/graph/trends", graphhandler.Trends)     // 研究趋势:年度论文数与关键词热度
-			authed.GET("/graph/keywords", graphhandler.Keywords) // 热门关键词
-			authed.GET("/graph/network", graphhandler.Network)   // 总览知识图谱
+			authed.GET("/graph/overview", graphhandler.Overview)               // 图谱规模总览
+			authed.GET("/graph/trends", graphhandler.Trends)                   // 研究趋势:年度论文数与关键词热度
+			authed.GET("/graph/keywords", graphhandler.Keywords)               // 热门关键词
+			authed.GET("/graph/keywords/network", graphhandler.KeywordNetwork) // 关键词共现网络+聚类
+			authed.GET("/graph/network", graphhandler.Network)                 // 总览知识图谱
 			authed.POST("/graph/network/rebuild", graphhandler.RebuildNetwork)
 			authed.GET("/graph/papers/:id", graphhandler.PaperGraph) // 单篇论文知识图谱
 			authed.POST("/graph/papers/:id/rebuild", graphhandler.RebuildPaper)
