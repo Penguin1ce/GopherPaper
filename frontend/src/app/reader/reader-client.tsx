@@ -621,6 +621,7 @@ function ReaderToolbar({
   title,
   currentPage,
   numPages,
+  readPercent,
   pageDraft,
   scaleValue,
   prefs,
@@ -640,6 +641,7 @@ function ReaderToolbar({
   title: string;
   currentPage: number;
   numPages: number;
+  readPercent: number;
   pageDraft: string;
   scaleValue: PdfScaleValue;
   prefs: ReaderPreferences;
@@ -687,6 +689,9 @@ function ReaderToolbar({
           />
           <span className="min-w-10">/ {numPages || "-"}</span>
         </form>
+        <span className="min-w-16 rounded-md border bg-background px-2 py-1 text-center text-xs font-medium text-muted-foreground">
+          已读 {readPercent}%
+        </span>
         <ToolbarButton
           label="下一页"
           disabled={numPages > 0 && currentPage >= numPages}
@@ -1732,6 +1737,11 @@ export function ReaderClient() {
   const gridClass = rightPanelOpen
     ? "lg:grid-cols-[minmax(0,1fr)_24rem]"
     : "lg:grid-cols-[minmax(0,1fr)]";
+  const effectivePageCount = numPages || paper?.page_count || 0;
+  const readPercent =
+    effectivePageCount > 0
+      ? clamp(Math.round((currentPage / effectivePageCount) * 100), 0, 100)
+      : 0;
 
   const updatePrefs = useCallback((patch: Partial<ReaderPreferences>) => {
     setPrefs((cur) => ({ ...cur, ...patch }));
@@ -1795,6 +1805,17 @@ export function ReaderClient() {
     const timer = window.setTimeout(() => {
       api
         .updatePaperProgress(id, { last_page: currentPage, total_pages: total })
+        .then((progress) => {
+          setPaper((cur) =>
+            cur
+              ? {
+                  ...cur,
+                  progress: progress.progress,
+                  last_read_page: progress.last_read_page,
+                }
+              : cur,
+          );
+        })
         .catch(() => {});
     }, 900);
     return () => window.clearTimeout(timer);
@@ -2035,6 +2056,7 @@ export function ReaderClient() {
         title={paperName(paper)}
         currentPage={currentPage}
         numPages={numPages}
+        readPercent={readPercent}
         pageDraft={pageDraft}
         scaleValue={scaleValue}
         prefs={prefs}

@@ -32,3 +32,10 @@ export const createRoot: typeof ReactDOMClientTypes.createRoot = (container, opt
 };
 
 export const hydrateRoot = ReactDOMClient.hydrateRoot;
+
+const ReactDOMClientExports = {
+  createRoot,
+  hydrateRoot,
+};
+
+export default ReactDOMClientExports;

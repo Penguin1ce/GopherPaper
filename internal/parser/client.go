@@ -8,8 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"GopherPaper/internal/config"
@@ -73,6 +77,8 @@ type Progress struct {
 	Parsed  int
 	Total   int
 }
+
+var pageFractionRe = regexp.MustCompile(`(\d+)\s*/\s*(\d+)`)
 
 // requestUpload 申请上传链接，返回 batchID 与单文件的 PUT 地址。
 func requestUpload(ctx context.Context, fileName string) (batchID, putURL string, err error) {
@@ -177,36 +183,68 @@ func extractProgress(raw map[string]any) (Progress, bool) {
 	if raw == nil {
 		return Progress{}, false
 	}
-	total := firstInt(raw, "total_pages", "total_page", "page_count", "pages")
-	parsed := firstInt(raw, "parsed_pages", "parse_pages", "extracted_pages", "processed_pages", "current_page", "page")
-	percent := firstInt(raw, "percent", "progress", "extract_progress", "extract_progress_percent")
-	for _, key := range []string{"progress", "extract_progress", "page_progress"} {
-		if nested, ok := raw[key].(map[string]any); ok {
-			if total == 0 {
-				total = firstInt(nested, "total_pages", "total_page", "page_count", "pages", "total")
-			}
-			if parsed == 0 {
-				parsed = firstInt(nested, "parsed_pages", "parse_pages", "extracted_pages", "processed_pages", "current_page", "done", "finished")
-			}
-			if percent == 0 {
-				percent = firstInt(nested, "percent", "progress", "rate")
+	p := progressFromMap(raw)
+	for _, key := range []string{"progress", "parse_progress", "extract_progress", "page_progress", "pages_progress", "processing_progress", "task_progress"} {
+		switch v := raw[key].(type) {
+		case map[string]any:
+			p = fillProgress(p, progressFromMap(v))
+		default:
+			if parsed, total, ok := pageFraction(v); ok {
+				p = fillProgress(p, Progress{Parsed: parsed, Total: total})
 			}
 		}
 	}
-	if total > 0 && parsed > total {
-		parsed = total
-	}
-	if percent == 0 && total > 0 && parsed > 0 {
-		percent = parsed * 100 / total
-	}
-	if percent < 0 {
-		percent = 0
-	}
-	if percent > 100 {
-		percent = 100
-	}
-	p := Progress{Percent: percent, Parsed: parsed, Total: total}
+	p = normalizeProgress(p)
 	return p, p.Percent > 0 || p.Parsed > 0 || p.Total > 0
+}
+
+func progressFromMap(m map[string]any) Progress {
+	p := Progress{
+		Percent: firstPercent(m, "percent", "percentage", "progress", "parse_progress", "extract_progress", "extract_progress_percent", "rate", "ratio"),
+		Parsed:  firstInt(m, "parsed_pages", "parse_pages", "extracted_pages", "processed_pages", "completed_pages", "current_page", "page", "done", "finished"),
+		Total:   firstInt(m, "total_pages", "total_page", "page_count", "pages", "total"),
+	}
+	for _, key := range []string{"page_progress", "pages_progress", "parsed_pages", "parse_pages", "extracted_pages", "processed_pages"} {
+		if parsed, total, ok := pageFraction(m[key]); ok {
+			p = fillProgress(p, Progress{Parsed: parsed, Total: total})
+		}
+	}
+	return p
+}
+
+func fillProgress(dst, src Progress) Progress {
+	if dst.Percent == 0 && src.Percent > 0 {
+		dst.Percent = src.Percent
+	}
+	if dst.Parsed == 0 && src.Parsed > 0 {
+		dst.Parsed = src.Parsed
+	}
+	if dst.Total == 0 && src.Total > 0 {
+		dst.Total = src.Total
+	}
+	return dst
+}
+
+func normalizeProgress(p Progress) Progress {
+	if p.Parsed < 0 {
+		p.Parsed = 0
+	}
+	if p.Total < 0 {
+		p.Total = 0
+	}
+	if p.Total > 0 && p.Parsed > p.Total {
+		p.Parsed = p.Total
+	}
+	if p.Percent == 0 && p.Total > 0 && p.Parsed > 0 {
+		p.Percent = p.Parsed * 100 / p.Total
+	}
+	if p.Percent < 0 {
+		p.Percent = 0
+	}
+	if p.Percent > 100 {
+		p.Percent = 100
+	}
+	return p
 }
 
 func firstInt(m map[string]any, keys ...string) int {
@@ -218,24 +256,143 @@ func firstInt(m map[string]any, keys ...string) int {
 	return 0
 }
 
+func firstPercent(m map[string]any, keys ...string) int {
+	for _, key := range keys {
+		if v := anyPercent(m[key], key == "ratio" || key == "rate"); v > 0 {
+			return v
+		}
+	}
+	return 0
+}
+
 func anyInt(v any) int {
 	switch n := v.(type) {
 	case int:
 		return n
+	case int8:
+		return int(n)
+	case int16:
+		return int(n)
+	case int32:
+		return int(n)
 	case int64:
+		return int(n)
+	case uint:
+		return int(n)
+	case uint8:
+		return int(n)
+	case uint16:
+		return int(n)
+	case uint32:
+		return int(n)
+	case uint64:
+		if n > uint64(^uint(0)>>1) {
+			return 0
+		}
+		return int(n)
+	case float32:
 		return int(n)
 	case float64:
 		return int(n)
 	case json.Number:
-		i, _ := n.Int64()
-		return int(i)
+		if i, err := n.Int64(); err == nil {
+			return int(i)
+		}
+		f, _ := n.Float64()
+		return int(f)
 	case string:
-		var i int
-		if _, err := fmt.Sscanf(n, "%d", &i); err == nil {
-			return i
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		if err == nil {
+			return int(f)
 		}
 	}
 	return 0
+}
+
+func anyPercent(v any, ratioKey bool) int {
+	switch n := v.(type) {
+	case int:
+		return percentNumber(float64(n), ratioKey)
+	case int8:
+		return percentNumber(float64(n), ratioKey)
+	case int16:
+		return percentNumber(float64(n), ratioKey)
+	case int32:
+		return percentNumber(float64(n), ratioKey)
+	case int64:
+		return percentNumber(float64(n), ratioKey)
+	case uint:
+		return percentNumber(float64(n), ratioKey)
+	case uint8:
+		return percentNumber(float64(n), ratioKey)
+	case uint16:
+		return percentNumber(float64(n), ratioKey)
+	case uint32:
+		return percentNumber(float64(n), ratioKey)
+	case uint64:
+		return percentNumber(float64(n), ratioKey)
+	case float32:
+		return percentNumber(float64(n), ratioKey)
+	case float64:
+		return percentNumber(n, ratioKey)
+	case json.Number:
+		f, err := n.Float64()
+		if err != nil {
+			return 0
+		}
+		return percentNumber(f, ratioKey)
+	case string:
+		return percentString(n, ratioKey)
+	}
+	return 0
+}
+
+func percentNumber(v float64, ratioKey bool) int {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0
+	}
+	if ratioKey {
+		if v > 0 && v <= 1 {
+			v *= 100
+		}
+	} else if v > 0 && v < 1 {
+		v *= 100
+	}
+	return int(math.Round(v))
+}
+
+func percentString(v string, ratioKey bool) int {
+	s := strings.TrimSpace(v)
+	if s == "" {
+		return 0
+	}
+	hasPercent := strings.HasSuffix(s, "%")
+	s = strings.TrimSpace(strings.TrimSuffix(s, "%"))
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return percentNumber(f, ratioKey && !hasPercent)
+}
+
+func pageFraction(v any) (parsed, total int, ok bool) {
+	s, ok := v.(string)
+	if !ok {
+		return 0, 0, false
+	}
+	match := pageFractionRe.FindStringSubmatch(s)
+	if len(match) != 3 {
+		return 0, 0, false
+	}
+	parsed, err1 := strconv.Atoi(match[1])
+	total, err2 := strconv.Atoi(match[2])
+	if err1 != nil || err2 != nil || total <= 0 {
+		return 0, 0, false
+	}
+	if parsed > total {
+		parsed = total
+	}
+	return parsed, total, true
 }
 
 // downloadZip 拉取产物 zip 字节。

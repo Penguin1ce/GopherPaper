@@ -590,17 +590,18 @@ func setStatus(ctx context.Context, task parseTask, status constant.PaperStatus,
 }
 
 func updateParseProgress(ctx context.Context, task parseTask, p parser.Progress) {
-	if p.Percent <= 0 && p.Total > 0 && p.Parsed > 0 {
-		p.Percent = p.Parsed * 100 / p.Total
-	}
-	if p.Percent < 0 {
-		p.Percent = 0
-	}
-	if p.Percent > 100 {
-		p.Percent = 100
-	}
-	if p.Total > 0 && p.Parsed > p.Total {
-		p.Parsed = p.Total
+	p = normalizeParseProgress(p)
+	if existing, err := getPaperForPipeline(ctx, task.PaperID); err == nil && existing != nil {
+		if existing.OwnerID != task.OwnerID {
+			zlog.Warn("论文归属已变化,跳过 MinerU 解析进度写回", "paper_id", task.PaperID, "owner", task.OwnerID, "actual_owner", existing.OwnerID)
+			return
+		}
+		p = keepParseProgressMonotonic(p, existing)
+	} else if errors.Is(err, errs.ErrPaperNotFound) {
+		zlog.Info("论文已删除,跳过 MinerU 解析进度写回", "paper_id", task.PaperID)
+		return
+	} else if err != nil {
+		zlog.Warn("读取已有 MinerU 解析进度失败,继续写入本次进度", "paper_id", task.PaperID, "err", err)
 	}
 	detail := ""
 	if p.Total > 0 && p.Parsed > 0 {
@@ -610,6 +611,47 @@ func updateParseProgress(ctx context.Context, task parseTask, p parser.Progress)
 		zlog.Error("更新 MinerU 解析进度失败", "paper_id", task.PaperID, "err", err)
 	}
 	sse.PushStatusProgress(task.OwnerID, task.PaperID, string(constant.PaperParsing), detail, p.Percent, p.Parsed, p.Total)
+}
+
+func normalizeParseProgress(p parser.Progress) parser.Progress {
+	if p.Parsed < 0 {
+		p.Parsed = 0
+	}
+	if p.Total < 0 {
+		p.Total = 0
+	}
+	if p.Total > 0 && p.Parsed > p.Total {
+		p.Parsed = p.Total
+	}
+	if p.Percent <= 0 && p.Total > 0 && p.Parsed > 0 {
+		p.Percent = p.Parsed * 100 / p.Total
+	}
+	if p.Percent < 0 {
+		p.Percent = 0
+	}
+	if p.Percent > 100 {
+		p.Percent = 100
+	}
+	return p
+}
+
+func keepParseProgressMonotonic(p parser.Progress, existing *model.Paper) parser.Progress {
+	if existing == nil {
+		return p
+	}
+	if existing.TotalPages > 0 && p.Total == 0 {
+		p.Total = existing.TotalPages
+	}
+	if existing.TotalPages > p.Total && p.Percent < 100 {
+		p.Total = existing.TotalPages
+	}
+	if existing.ParsedPages > p.Parsed && (p.Total == 0 || p.Parsed < p.Total) {
+		p.Parsed = existing.ParsedPages
+	}
+	if existing.ParseProgress > p.Percent && p.Percent < 100 {
+		p.Percent = existing.ParseProgress
+	}
+	return normalizeParseProgress(p)
 }
 
 func fail(ctx context.Context, task parseTask, msg string, err error, start time.Time) {
