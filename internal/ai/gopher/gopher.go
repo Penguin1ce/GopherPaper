@@ -13,11 +13,14 @@ import (
 	"sync"
 
 	"trpc.group/trpc-go/trpc-agent-go/agent"
+	"trpc.group/trpc-go/trpc-agent-go/agent/chainagent"
 	"trpc.group/trpc-go/trpc-agent-go/agent/llmagent"
+	"trpc.group/trpc-go/trpc-agent-go/event"
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
 	"trpc.group/trpc-go/trpc-agent-go/planner/react"
 	"trpc.group/trpc-go/trpc-agent-go/runner"
 	sessnoop "trpc.group/trpc-go/trpc-agent-go/session/noop"
+	"trpc.group/trpc-go/trpc-agent-go/tool"
 
 	"GopherPaper/internal/ai/core"
 	"GopherPaper/internal/ai/planstream"
@@ -55,11 +58,9 @@ func Generate(ctx context.Context, in *core.ReportInput) (*core.Reply, error) {
 	ctx = retrieval.WithRefSink(ctx)
 
 	focus := constant.ReportFocusFor(in.ReportType)
-	instruction := strings.ReplaceAll(constant.GopherReportPrompt, "{focus}", focus)
-	query := fmt.Sprintf("请生成本篇论文的研读报告,聚焦:%s。", focus)
+	query := reportQuery(focus)
 
-	ch, err := rt.Run(ctx, userID, sessionID, trpcmodel.NewUserMessage(query),
-		agent.WithInstruction(instruction))
+	ch, err := rt.Run(ctx, userID, sessionID, trpcmodel.NewUserMessage(query))
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +102,7 @@ func runnerForUser(userID string) (runner.Runner, error) {
 		// 自我批判、甚至重写出第二份报告。压低温度并加 frequency_penalty 抑制重复跑飞,只作用本链路。
 		gc.Temperature = trpcmodel.Float64Ptr(constant.ReportTemperature)
 		gc.FrequencyPenalty = trpcmodel.Float64Ptr(constant.ReportFrequencyPenalty)
-		opts := []llmagent.Option{
+		researcherOpts := []llmagent.Option{
 			llmagent.WithModel(models.Chat),
 			llmagent.WithGenerationConfig(gc),
 			// React planner:先规划再分步检索,输出按 PLANNING/ACTION/REASONING/REPLANNING/
@@ -110,14 +111,83 @@ func runnerForUser(userID string) (runner.Runner, error) {
 			// 报告要覆盖全文、按结构逐方面检索,迭代预算给得比问答更宽。
 			llmagent.WithMaxToolIterations(constant.AgenticMaxIterReport),
 			llmagent.WithTools(ragtools.All()),
+			llmagent.WithInstruction(constant.GopherResearcherPrompt),
 		}
 		if repo := toolkit.SkillRepoFor(constant.AgentGopher); repo != nil {
-			opts = append(opts, llmagent.WithSkills(repo))
+			researcherOpts = append(researcherOpts, llmagent.WithSkills(repo))
 		}
-		ent.rt = runner.NewRunner(appName, llmagent.New(constant.AgentGopher, opts...),
+		writerGC := gc
+		writerGC.ReasoningEffort = core.GenConfig(models.ChatMC).ReasoningEffort
+		writerOpts := []llmagent.Option{
+			llmagent.WithModel(models.Chat),
+			llmagent.WithGenerationConfig(writerGC),
+			llmagent.WithInstruction(constant.GopherWriterPrompt),
+		}
+		reviewerGC := writerGC
+		reviewerGC.Temperature = trpcmodel.Float64Ptr(constant.ReportReviewTemperature)
+		reviewerOpts := []llmagent.Option{
+			llmagent.WithModel(models.Chat),
+			llmagent.WithGenerationConfig(reviewerGC),
+			llmagent.WithInstruction(constant.GopherReviewerPrompt),
+		}
+		pipeline := chainagent.New(constant.AgentGopher, chainagent.WithSubAgents([]agent.Agent{
+			newReportStageAgent(
+				llmagent.New("gopher-researcher", researcherOpts...),
+				constant.ReportPhaseResearching,
+				"找资料:小囊鼠正在检索论文片段、图表和出处。",
+			),
+			newReportStageAgent(
+				llmagent.New("gopher-writer", writerOpts...),
+				constant.ReportPhaseWriting,
+				"写报告:正在把证据笔记整理成结构化研读报告。",
+			),
+			newReportStageAgent(
+				llmagent.New("gopher-reviewer", reviewerOpts...),
+				constant.ReportPhaseReviewing,
+				"评审:正在核对事实依据、补齐出处并压实结论。",
+			),
+		}))
+		ent.rt = runner.NewRunner(appName, pipeline,
 			runner.WithSessionService(sessnoop.NewService()))
 	})
 	return ent.rt, ent.err
+}
+
+type reportStageAgent struct {
+	inner agent.Agent
+	phase string
+	text  string
+}
+
+func newReportStageAgent(inner agent.Agent, phase, text string) agent.Agent {
+	return &reportStageAgent{inner: inner, phase: phase, text: text}
+}
+
+func (a *reportStageAgent) Run(ctx context.Context, invocation *agent.Invocation) (<-chan *event.Event, error) {
+	emitReportPhase(ctx, a.phase, a.text)
+	return a.inner.Run(ctx, invocation)
+}
+
+func (a *reportStageAgent) Tools() []tool.Tool {
+	return a.inner.Tools()
+}
+
+func (a *reportStageAgent) Info() agent.Info {
+	return a.inner.Info()
+}
+
+func (a *reportStageAgent) SubAgents() []agent.Agent {
+	return a.inner.SubAgents()
+}
+
+func (a *reportStageAgent) FindSubAgent(name string) agent.Agent {
+	return a.inner.FindSubAgent(name)
+}
+
+func emitReportPhase(ctx context.Context, phase, text string) {
+	if stream := core.StreamFrom(ctx); stream != nil {
+		stream(core.StreamEvent{Kind: constant.StreamEventPlan, Phase: phase, Delta: text})
+	}
 }
 
 // EvictUser 清除该用户缓存的小囊鼠 runner,登出时调用。下次访问 runnerForUser 重建。
@@ -128,10 +198,27 @@ func EvictUser(userID string) {
 // reportH1 匹配 Markdown 一级标题行。一份报告至多一个一级标题,出现第二个即模型跑飞重写了第二份。
 var reportH1 = regexp.MustCompile(`(?m)^#\s+\S`)
 
+func reportQuery(focus string) string {
+	brief := strings.ReplaceAll(constant.GopherReportPrompt, "{focus}", focus)
+	return brief + "\n\n当前任务: 请按小囊鼠 researcher -> writer -> reviewer 的顺序完成本篇论文研读报告。最终交付只保留 reviewer 修订后的完整 Markdown 报告。"
+}
+
 // sanitizeReport 是报告输出的最后一道防线:采样退化时模型偶发在一轮里重写出第二份报告
 // (前一份后跟思维链自语、垃圾串,再 # 重开一份)。检测到第二个一级标题即只保留第一份完整报告,
 // 截掉其后的所有内容。采样参数(ReportTemperature/FrequencyPenalty)是根因治理,这里兜底残留。
 func sanitizeReport(s string) string {
+	if idx := strings.LastIndex(s, react.FinalAnswerTag); idx >= 0 {
+		s = s[idx+len(react.FinalAnswerTag):]
+	}
+	for _, tag := range []string{
+		react.PlanningTag,
+		react.ReplanningTag,
+		react.ActionTag,
+		react.ReasoningTag,
+		react.FinalAnswerTag,
+	} {
+		s = strings.ReplaceAll(s, tag, "")
+	}
 	locs := reportH1.FindAllStringIndex(s, -1)
 	if len(locs) >= 2 {
 		s = s[:locs[1][0]]

@@ -561,8 +561,8 @@ export interface ReportReadyEvent {
   report_type: ReportType;
 }
 
-// ReportProgressEvent 是研读报告生成过程的阶段进度,phase 取 planning/action/reasoning/replanning,
-// 生成失败时为 failed;detail 为该阶段的文本增量。
+// ReportProgressEvent 是研读报告生成过程的阶段进度,phase 包含 preparing/researching/writing/reviewing
+// 以及 researcher 内部的 planning/action/reasoning/replanning;生成失败时为 failed。
 export interface ReportProgressEvent {
   type: string;
   paper_id: string;

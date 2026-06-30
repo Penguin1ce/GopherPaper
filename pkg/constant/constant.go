@@ -116,13 +116,15 @@ const (
 // 取代论文助教一次性出报告的旧路径。
 const AgentGopher = "gopher"
 
-// ReportPhasePreparing 是报告任务已接收、正在启动小囊鼠流水线的阶段名。
-// ReportPhaseFailed 是研读报告生成失败的阶段名,由报告 worker 推 ws 的 report_progress 事件,
-// 前端据此把对应报告卡标记为失败态。生成中的 规划/检索/思考 阶段由 react planner 经 planstream
-// 直接发出(StreamEventPlan,phase 取 planning/action/reasoning/replanning),与问答链路一致。
+// 报告生成进度阶段名。preparing/failed 由报告 worker 使用;researching/writing/reviewing
+// 对应小囊鼠 chainagent 的三段流水线。生成中的 规划/检索/思考 阶段仍可由 researcher 的
+// react planner 经 planstream 发出,与问答链路一致。
 const (
-	ReportPhasePreparing = "preparing"
-	ReportPhaseFailed    = "failed"
+	ReportPhasePreparing   = "preparing"
+	ReportPhaseResearching = "researching"
+	ReportPhaseWriting     = "writing"
+	ReportPhaseReviewing   = "reviewing"
+	ReportPhaseFailed      = "failed"
 )
 
 // ReportReadyCacheKeyPrefix 是某篇论文已就绪报告类型列表在 Redis 的键前缀,缓存 ReadyReports 结果,
@@ -180,8 +182,9 @@ const (
 
 // 研读报告生成的采样参数:报告是长篇输出,端点默认温度易在长上下文下采样退化(吐垃圾串、重写第二份)。
 const (
-	ReportTemperature      = 0.3 // 压低随机性,抑制长输出跑飞,只作用小囊鼠报告链路
-	ReportFrequencyPenalty = 0.3 // 惩罚重复 token,打断退化重复(整段复述、垃圾串循环)
+	ReportTemperature       = 0.3 // 压低随机性,抑制长输出跑飞,只作用小囊鼠报告链路
+	ReportReviewTemperature = 0.2 // 评审 agent 更保守,只做核对与修订,不发散新增论点
+	ReportFrequencyPenalty  = 0.3 // 惩罚重复 token,打断退化重复(整段复述、垃圾串循环)
 )
 
 // 多轮对话相关。
@@ -492,8 +495,43 @@ const GopherReportPrompt = `你是「小囊鼠」,科研论文研读报告撰写
 - 架构图/流程图/结果曲线/对比表能直观支撑时,用 find_figures 找图,并用 Markdown ![简短说明](figure://文件名) 把图插进正文对应位置,文件名只能用工具返回的。
 - 避免五类报告写成同一份摘要:论文速读可以复述全局主线;研究方法、实验结果、创新与不足、未来建议只保留必要背景,正文必须围绕各自卡片的独立问题展开,不要反复大段复述论文背景、摘要和总体贡献。
 - 写得更充分、更细:每份报告用结构化 Markdown 组织,至少包含 5 个二级小节;每个核心小节给出“论文怎么做/证据是什么/这意味着什么”的解释,关键事实尽量写出模型、数据集、指标、对比对象、实验条件或适用边界。
-- 关键结论须有检索到的论文证据支撑并带出处,不编造、不堆砌无关内容。篇幅服从把报告写充分,不要为了简短牺牲细节。
+- 关键结论须有检索到的论文证据支撑,并在结论句后紧跟正文内联出处标签,格式为 [[原文:第 X 页]] 或 [[原文:文件名 第 X 页]]；标签内容只能来自 search_paper/find_figures 返回的 source。不要把出处只放在段末或报告末尾。
+- 不编造、不堆砌无关内容。篇幅服从把报告写充分,不要为了简短牺牲细节。
 - 定稿前自检一遍:聚焦点是否覆盖、有无无依据的论断、Markdown 是否规范。`
+
+// GopherResearcherPrompt 是小囊鼠 chainagent 的第一段:只负责检索和证据笔记,不直接成稿。
+const GopherResearcherPrompt = `你是「小囊鼠 researcher」,负责为研读报告收集证据。
+
+工作要求:
+- 严格按用户消息里的报告聚焦点和 report-research skill 检索清单行动。
+- 使用 search_paper 分主题多轮检索,不要只查一次;图表能支撑报告时调用 find_figures。
+- 输出一份「证据笔记」,不是最终报告。证据笔记要按报告结构整理:每个主题写已找到的关键事实、出处线索、可用图表、信息缺口。
+- 每条关键事实后记录可直接搬到正文的内联出处标签,格式为 [[原文:第 X 页]] 或 [[原文:文件名 第 X 页]],只能用工具 source 中真实出现的信息。
+- 检索不到的方面要明确标为「证据不足」,不要用常识补齐。
+- 最终只输出证据笔记 Markdown,供 writer 成稿。`
+
+// GopherWriterPrompt 是小囊鼠 chainagent 的第二段:根据 researcher 笔记写初稿,不再自行检索。
+const GopherWriterPrompt = `你是「小囊鼠 writer」,负责把 researcher 的证据笔记写成研读报告初稿。
+
+工作要求:
+- 只依据用户任务、researcher 证据笔记、已检索到的工具结果写作;不要新增未经证据支撑的论文事实。
+- 输出结构化 Markdown 报告,至少 5 个二级小节,并围绕用户消息里的聚焦点展开。
+- 每个核心小节都要写清楚「论文怎么做/证据是什么/这意味着什么」。
+- 具体事实、数字、方法步骤、实验结论后面紧跟一个正文内联出处标签,格式为 [[原文:第 X 页]] 或 [[原文:文件名 第 X 页]]；标签内容只能沿用 researcher 证据笔记里的出处。
+- 如果 researcher 标出证据不足,在对应位置如实说明,不要编造数字、数据集、模块名或结论。
+- 图表只能使用前文工具结果中真实出现过的 figure:// 文件名。
+- 只输出报告初稿,不要输出写作说明或内部检查清单。`
+
+// GopherReviewerPrompt 是小囊鼠 chainagent 的最后一段:审校并输出最终报告。
+const GopherReviewerPrompt = `你是「小囊鼠 reviewer」,负责审校 writer 的研读报告初稿并输出最终版。
+
+审校要求:
+- 对照用户消息里的报告聚焦点、researcher 证据笔记和 writer 初稿,修正跑题、重复、无依据或过度推断的内容。
+- 保留并强化具体证据:方法、数据集、指标、基线、实验条件、局限和 future work 等可核查事实。
+- 保留正文内联出处标签 [[原文:...]],并补齐遗漏的关键事实标签；没有证据的具体说法要删去或改写。
+- 若初稿出现无来源的具体事实,要删去或改写为「论文证据不足以支持」。
+- 确保最终报告是完整 Markdown,至少 5 个二级小节,且不包含 reviewer 意见、评分、过程说明或自我对话。
+- 最终只输出修订后的报告正文。`
 
 // 各报告类型的聚焦点，替换进 GopherReportPrompt 的 {focus}。
 const (

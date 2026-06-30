@@ -20,7 +20,7 @@ import * as api from "@/lib/gopherpaper/api";
 import { printReport } from "@/lib/gopherpaper/print";
 import { useApp } from "@/lib/gopherpaper/store";
 import type { ChatResponse, PlanStep, Reference, ReportType } from "@/lib/gopherpaper/types";
-import { paperTitle } from "@/lib/gopherpaper/utils";
+import { metaPlanSteps, paperTitle } from "@/lib/gopherpaper/utils";
 import { Empty, SkeletonLines } from "./app-ui";
 import { Markdown } from "./markdown";
 import { PaperOverview } from "./paper-overview";
@@ -76,6 +76,7 @@ export function ReportPanel() {
   );
   // 当前查看/生成中报告的实时进度(执行计划/进行中/失败),由 report_progress 事件累积。
   const run = active ? reportProgress[activePaperID]?.[active] : undefined;
+  const reportSteps = report ? metaPlanSteps(report.meta) : [];
 
   useEffect(() => {
     setActive(null);
@@ -204,7 +205,9 @@ export function ReportPanel() {
             const Icon = r.icon;
             const isActive = active === r.type;
             const ready = Boolean(readySet[r.type]);
-            const isBusy = loading && isActive;
+            const reportRun = reportProgress[activePaperID]?.[r.type];
+            const isGenerating = Boolean(reportRun?.live && !reportRun.failed);
+            const isBusy = (loading && isActive) || isGenerating;
             return (
               <button
                 key={r.type}
@@ -256,14 +259,14 @@ export function ReportPanel() {
           <div className="p-6">
             {loading ? (
               <div className="space-y-4">
-                {/* 小囊鼠多 agent 长任务,生成要一分多钟,实时执行计划填补等待:规划→检索→思考。 */}
+                {/* 小囊鼠多 agent 长任务,实时显示找资料→写报告→评审,降低长等待的不确定感。 */}
                 <ProcessTrace
                   steps={run && run.steps.length > 0 ? run.steps : REPORT_LOADING_STEPS}
                   live={run?.live ?? true}
                 />
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="size-4 animate-spin" />
-                  小囊鼠正在研读论文、检索证据并撰写报告，约需一分钟…
+                  小囊鼠正在找资料、写报告并评审结论，约需一分钟…
                 </p>
                 <SkeletonLines lines={6} />
                 <SkeletonLines lines={4} />
@@ -297,8 +300,11 @@ export function ReportPanel() {
                   </Button>
                 </header>
                 {/* 生成过程的执行计划答后可折叠回看;打印只取下方 articleRef 的正文,不含此条。 */}
-                {run && run.steps.length > 0 && (
-                  <ProcessTrace steps={run.steps} live={false} />
+                {(run?.steps.length || reportSteps.length) > 0 && (
+                  <ProcessTrace
+                    steps={run?.steps.length ? run.steps : reportSteps}
+                    live={false}
+                  />
                 )}
                 <div ref={articleRef}>
                   <Markdown figures={buildFigureMap(report.meta)}>{report.content}</Markdown>
