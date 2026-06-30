@@ -51,6 +51,7 @@ import "pdfjs-dist/web/pdf_viewer.css";
 import "react-pdf-highlighter-plus/style/style.css";
 
 import { Button } from "@/components/ui/button";
+import { Markdown } from "@/components/gopherpaper/markdown";
 import {
   Dialog,
   DialogContent,
@@ -313,9 +314,35 @@ function isPaperTitleSection(section: PaperSection, paperTitle?: string) {
   return normalizedOutlineTitle(section.title) === normalizedOutlineTitle(paperTitle);
 }
 
+function normalizedOutlinePhrase(title: string) {
+  return title.replace(/\s+/g, " ").trim();
+}
+
 function isStandaloneTopLevelTitle(title: string) {
-  const normalized = title.trim().toLowerCase().replace(/[.:\uFF1A]+$/, "");
+  const normalized = normalizedOutlinePhrase(title).toLowerCase().replace(/[.:\uFF1A]+$/, "");
   return /^(abstract|acknowledg(?:e)?ments?|references|bibliography|appendix|appendices|supplementary materials?|limitations?|ethics statement|broader impacts?|impact statement|data availability|funding|conflicts? of interest)$/.test(normalized);
+}
+
+function isOutlineNoiseSection(section: PaperSection) {
+  const title = normalizedOutlinePhrase(section.title);
+  if (!title || splitSectionNumber(title) || isStandaloneTopLevelTitle(title)) return false;
+  const lower = title.toLowerCase().replace(/[。]+$/, ".");
+  if (/^(fig(?:ure)?|table|algorithm|equation|eq\.?)\s*[\divxlc]+[.:：)\s]/i.test(title)) {
+    return true;
+  }
+  if (/\b(our|main|key)?\s*contributions?\s+(are|is|can be summarized)\s+as\s+follows\b/i.test(title)) {
+    return true;
+  }
+  if (/\b(the|this)\s+(paper|article|work|section)\s+(is\s+organized|proceeds|is\s+structured)\s+as\s+follows\b/i.test(title)) {
+    return true;
+  }
+  if (/^(in\s+)?(this|our)\s+(paper|work|section|study)\b.+\.$/i.test(lower)) {
+    return true;
+  }
+  if (/^we\s+(make|propose|present|introduce|summarize|highlight|show|demonstrate|provide)\b.+\.$/i.test(lower)) {
+    return true;
+  }
+  return false;
 }
 
 function outlineLevel(section: PaperSection, parsed: ReturnType<typeof splitSectionNumber>, prevLevel: number) {
@@ -789,7 +816,9 @@ function OutlineTreeNode({
           {node.number && (
             <span className="shrink-0 tabular-nums text-muted-foreground">{node.number}</span>
           )}
-          <span className="line-clamp-2 min-w-0">{node.title}</span>
+          <span className="gp-outline-title line-clamp-2 min-w-0">
+            <Markdown compact>{node.title}</Markdown>
+          </span>
         </button>
       </div>
       {hasChildren && isOpen && (
@@ -816,12 +845,14 @@ function OutlineDrawer({
   sections,
   paperTitle,
   currentPage,
+  activeSectionId,
   onClose,
   onGoToEntry,
 }: {
   sections: PaperSection[];
   paperTitle?: string;
   currentPage: number;
+  activeSectionId?: number | null;
   onClose: () => void;
   onGoToEntry: (entry: OutlineEntry) => void;
 }) {
@@ -830,6 +861,7 @@ function OutlineDrawer({
     return sections
       .filter((section) => section.title && section.page_no > 0)
       .filter((section) => !isPaperTitleSection(section, paperTitle))
+      .filter((section) => !isOutlineNoiseSection(section))
       .slice()
       .sort((a, b) => a.order_idx - b.order_idx || a.page_no - b.page_no)
       .filter((section) => {
@@ -842,10 +874,15 @@ function OutlineDrawer({
   }, [paperTitle, sections]);
   const entries = useMemo(() => numberedOutline(sorted), [sorted]);
   const tree = useMemo(() => buildOutlineTree(entries), [entries]);
-  const active = useMemo(
+  const pageActive = useMemo(
     () => [...entries].reverse().find((entry) => entry.section.page_no <= currentPage) ?? null,
     [entries, currentPage],
   );
+  const clickedActive = useMemo(
+    () => entries.find((entry) => entry.section.id === activeSectionId) ?? null,
+    [activeSectionId, entries],
+  );
+  const active = clickedActive ?? pageActive;
   const activeId = active?.section.id ?? null;
 
   // 当前阅读位置所在节点的祖先链:折叠状态下也能在父级标题上标出“你在这里”。
@@ -1721,9 +1758,11 @@ export function ReaderClient() {
   const [busy, setBusy] = useState("");
   const [prefs, setPrefs] = useState<ReaderPreferences>(() => loadReaderPreferences());
   const [pdfUtils, setPdfUtils] = useState<PdfHighlighterUtils | null>(null);
+  const [outlineActiveSectionId, setOutlineActiveSectionId] = useState<number | null>(null);
   const translateSeq = useRef(0);
   const progressLoadedRef = useRef(false);
   const outlineFallbackTriedRef = useRef(false);
+  const outlineJumpRef = useRef<{ sectionId: number; pageNo: number; ignoreUntil: number } | null>(null);
 
   const highlights = useMemo(() => annotations.map(annotationToHighlight), [annotations]);
   const initialPage = Math.max(1, paper?.last_read_page || 1);
@@ -1804,20 +1843,48 @@ export function ReaderClient() {
     if (pages > 0) setNumPages((cur) => (cur === pages ? cur : pages));
   }, []);
 
+  const clearOutlineActive = useCallback(() => {
+    outlineJumpRef.current = null;
+    setOutlineActiveSectionId(null);
+  }, []);
+
+  const handlePdfPageChange = useCallback((page: number) => {
+    const jumped = outlineJumpRef.current;
+    if (jumped) {
+      if (page === jumped.pageNo) {
+        setCurrentPage(page);
+        return;
+      }
+      if (Date.now() < jumped.ignoreUntil) return;
+      clearOutlineActive();
+    }
+    setCurrentPage(page);
+  }, [clearOutlineActive]);
+
   const goToPage = useCallback(
-    (page: number) => {
+    (page: number, outlineEntry?: OutlineEntry) => {
       const max = numPages || paper?.page_count || page;
       const next = clamp(Math.round(page), 1, Math.max(1, max));
+      if (outlineEntry) {
+        outlineJumpRef.current = {
+          sectionId: outlineEntry.section.id,
+          pageNo: next,
+          ignoreUntil: Date.now() + 1200,
+        };
+        setOutlineActiveSectionId(outlineEntry.section.id);
+      } else {
+        clearOutlineActive();
+      }
       setCurrentPage(next);
       setPageDraft(String(next));
       pdfUtils?.goToPage(next);
     },
-    [numPages, paper?.page_count, pdfUtils],
+    [clearOutlineActive, numPages, paper?.page_count, pdfUtils],
   );
 
   const goToOutlineEntry = useCallback(
     (entry: OutlineEntry) => {
-      goToPage(entry.section.page_no);
+      goToPage(entry.section.page_no, entry);
       scrollTitleIntoView(entry.section.page_no, outlineSearchTerms(entry));
     },
     [goToPage],
@@ -2073,6 +2140,7 @@ export function ReaderClient() {
               sections={sections}
               paperTitle={paperName(paper)}
               currentPage={currentPage}
+              activeSectionId={outlineActiveSectionId}
               onClose={() => updatePrefs({ outlineOpen: false })}
               onGoToEntry={goToOutlineEntry}
             />
@@ -2084,7 +2152,7 @@ export function ReaderClient() {
                 highlights={highlights}
                 initialPage={initialPage}
                 scaleValue={scaleValue}
-                onPageChange={setCurrentPage}
+                onPageChange={handlePdfPageChange}
                 onPageCount={setPageCount}
                 onTranslateSelection={onTranslateSelection}
                 onSaveHighlight={(selection) => void saveAnnotation(selection, "", prefs.color)}
