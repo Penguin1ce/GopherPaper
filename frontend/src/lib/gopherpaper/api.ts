@@ -9,6 +9,9 @@ import type {
   GraphTrends,
   LoginResponse,
   AvatarResponse,
+  MemoryItem,
+  MemoryPayload,
+  MemorySearchPayload,
   Message,
   NameCount,
   AnnotationRect,
@@ -257,6 +260,37 @@ export async function uploadAvatar(file: File): Promise<AvatarResponse> {
 
 export function clearAvatar() {
   return request<AvatarResponse>("/user/avatar", {
+    method: "DELETE",
+  });
+}
+
+// ---- 个人记忆 ----
+
+export function listMemories(params: MemorySearchPayload = {}) {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.type) search.set("type", params.type);
+  if (params.tag) search.set("tag", params.tag);
+  const suffix = search.toString();
+  return request<MemoryItem[]>(`/memories${suffix ? `?${suffix}` : ""}`);
+}
+
+export function createMemory(payload: MemoryPayload) {
+  return request<MemoryItem>("/memories", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateMemory(id: string, payload: MemoryPayload) {
+  return request<MemoryItem>(`/memories/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteMemory(id: string) {
+  return request<null>(`/memories/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
 }

@@ -27,4 +27,7 @@ var (
 	ErrReportNotFound     = errors.New("paper: 研读报告缓存不存在")
 	ErrReportGenerating   = errors.New("paper: 研读报告正在生成中")
 	ErrAnnotationNotFound = errors.New("paper: 批注不存在")
+
+	ErrMemoryNotFound = errors.New("memory: 记忆不存在")
+	ErrMemoryInvalid  = errors.New("memory: 记忆参数无效")
 )

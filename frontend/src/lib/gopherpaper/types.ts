@@ -255,6 +255,36 @@ export interface AvatarResponse {
 
 export type UserProfile = AuthUser;
 
+export type MemoryType = string;
+
+export interface MemoryItem {
+  id: string;
+  student_id: string;
+  type: MemoryType;
+  title: string;
+  content: string;
+  tags: string[] | null;
+  source_paper_id?: string;
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MemoryPayload {
+  type: MemoryType;
+  title: string;
+  content: string;
+  tags?: string[];
+  source_paper_id?: string;
+  pinned?: boolean;
+}
+
+export interface MemorySearchPayload {
+  q?: string;
+  type?: MemoryType | "";
+  tag?: string;
+}
+
 export interface UpdateProfilePayload {
   name: string;
 }

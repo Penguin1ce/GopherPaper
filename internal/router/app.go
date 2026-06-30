@@ -13,6 +13,7 @@ import (
 	adminhandler "GopherPaper/internal/handler/admin"
 	chathandler "GopherPaper/internal/handler/chat"
 	graphhandler "GopherPaper/internal/handler/graph"
+	memoryhandler "GopherPaper/internal/handler/memory"
 	paperhandler "GopherPaper/internal/handler/paper"
 	ssehandler "GopherPaper/internal/handler/sse"
 	"GopherPaper/internal/handler/user"
@@ -103,6 +104,12 @@ func Init(mode string) *gin.Engine {
 			authed.GET("/topics", chathandler.ListTopics)
 			authed.POST("/topics/backfill", chathandler.BackfillTopics)
 			authed.DELETE("/topics", chathandler.ClearTopics)
+
+			authed.GET("/memories", memoryhandler.List)
+			authed.POST("/memories", memoryhandler.Create)
+			authed.POST("/memories/search", memoryhandler.Search)
+			authed.PATCH("/memories/:id", memoryhandler.Update)
+			authed.DELETE("/memories/:id", memoryhandler.Delete)
 		}
 
 		adminAuthed := api.Group("/admin")

@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   ArrowLeft,
+  BookMarked,
   Camera,
   CheckCircle2,
   IdCard,
@@ -174,6 +175,13 @@ export function ProfileCenter() {
           <SidebarLink href="#profile-card" icon={UserRound} label="个人名片" />
           <SidebarLink href="#profile-info" icon={IdCard} label="资料设置" />
           <SidebarLink href="#account-security" icon={ShieldCheck} label="账号安全" />
+          <Link
+            href="/memories"
+            className="flex items-center gap-3 rounded-2xl px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <BookMarked className="size-4" />
+            小囊鼠记忆
+          </Link>
         </nav>
 
         <div className="mt-auto p-4">
@@ -253,6 +261,10 @@ export function ProfileCenter() {
                   <LogOut className="size-4" />
                   退出
                 </Button>
+                <Link href="/memories" className={buttonVariants({ variant: "secondary" })}>
+                  <BookMarked className="size-4" />
+                  记忆库
+                </Link>
               </div>
             </div>
           </header>
