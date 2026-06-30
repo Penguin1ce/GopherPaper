@@ -142,7 +142,7 @@ func Network(c *gin.Context) {
 // POST /api/v1/graph/network/rebuild
 func RebuildNetwork(c *gin.Context) {
 	owner := tenant.MustStudentID(c.Request.Context())
-	if err := rebuildOwnerGraphsFromMeta(c.Request.Context(), owner); err != nil {
+	if err := rebuildOwnerSemanticGraphsFromMeta(owner); err != nil {
 		zlog.Error("手动重建总览知识图谱失败", "owner", owner, "err", err)
 		response.Fail(c, http.StatusInternalServerError, "重建总览知识图谱失败")
 		return
@@ -197,7 +197,6 @@ func repairPaperGraphFromMeta(ctx context.Context, owner, paperID string) error 
 	if err != nil {
 		return err
 	}
-	pg = graphsemantic.PreparePaperGraph(ctx, pg)
 	return graphstore.UpsertPaperMetadata(ctx, pg)
 }
 
@@ -221,7 +220,47 @@ func rebuildOwnerGraphsFromMeta(ctx context.Context, owner string) error {
 	return firstErr
 }
 
+func rebuildOwnerSemanticGraphsFromMeta(owner string) error {
+	jobCtx := tenant.With(context.Background(), tenant.Tenant{StudentID: owner})
+	papers, err := paperdao.List(jobCtx, owner)
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	paperIDs := make([]string, 0, len(papers))
+	for _, p := range papers {
+		pg, err := buildPaperGraphFromMeta(jobCtx, owner, p.ID)
+		if err != nil {
+			zlog.Error("rebuild graph metadata failed", "owner", owner, "paper_id", p.ID, "err", err)
+			if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errPaperMetaNotFound) {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		pg = graphsemantic.PreparePaperGraph(jobCtx, pg)
+		if err := graphstore.UpsertPaperMetadata(jobCtx, pg); err != nil {
+			zlog.Error("upsert graph metadata failed", "owner", owner, "paper_id", p.ID, "err", err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		paperIDs = append(paperIDs, p.ID)
+	}
+	seenPairs := map[string]bool{}
+	for _, paperID := range paperIDs {
+		if err := graphsemantic.RefreshPaperRelationsUnique(jobCtx, owner, paperID, seenPairs); err != nil {
+			zlog.Error("refresh semantic graph relations failed, degraded", "owner", owner, "paper_id", paperID, "err", err)
+		}
+	}
+	return firstErr
+}
+
 func rebuildPaperGraphFromMeta(ctx context.Context, owner, paperID string) error {
+	ctx = tenant.With(context.Background(), tenant.Tenant{StudentID: owner})
 	pg, err := buildPaperGraphFromMeta(ctx, owner, paperID)
 	if err != nil {
 		return err

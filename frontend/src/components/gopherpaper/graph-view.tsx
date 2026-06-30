@@ -41,21 +41,23 @@ const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 2.6;
 const NODE_DRAG_THRESHOLD = 8;
 const GRAPH_KEYWORD_LIMIT = 10000;
+const PAPER_NODE_COLOR = "#35A98D";
+const GRAPH_EDGE_COLOR = "#94a3b8";
 
 const TYPE_META: Record<string, { label: string; color: string; radius: number }> = {
-  paper: { label: "论文名称", color: "#2563eb", radius: 50 },
-  author: { label: "作者", color: "#16a34a", radius: 30 },
-  affiliation: { label: "机构", color: "#0f766e", radius: 30 },
-  keyword: { label: "关键词", color: "#0284c7", radius: 30 },
-  research_question: { label: "研究问题", color: "#7c3aed", radius: 30 },
-  method: { label: "方法", color: "#ea580c", radius: 28 },
-  experiment: { label: "实验", color: "#ca8a04", radius: 27 },
-  result: { label: "结果", color: "#dc2626", radius: 28 },
-  innovation: { label: "创新点", color: "#db2777", radius: 26 },
-  limitation: { label: "局限性", color: "#64748b", radius: 26 },
-  future_work: { label: "未来工作", color: "#0891b2", radius: 25 },
-  venue: { label: "发表来源", color: "#475569", radius: 22 },
-  entity: { label: "实体", color: "#64748b", radius: 21 },
+  paper: { label: "论文名称", color: PAPER_NODE_COLOR, radius: 50 },
+  author: { label: "作者", color: "#6CCB72", radius: 30 },
+  affiliation: { label: "机构", color: "#36B9B5", radius: 30 },
+  keyword: { label: "关键词", color: "#4EA8F1", radius: 30 },
+  research_question: { label: "研究问题", color: "#A88AF0", radius: 30 },
+  method: { label: "方法", color: "#F0A14A", radius: 28 },
+  experiment: { label: "实验", color: "#DDB33F", radius: 27 },
+  result: { label: "结果", color: "#E66C73", radius: 28 },
+  innovation: { label: "创新点", color: "#E578B7", radius: 26 },
+  limitation: { label: "局限性", color: "#8A94A6", radius: 26 },
+  future_work: { label: "未来工作", color: "#35BFD0", radius: 25 },
+  venue: { label: "发表来源", color: "#7184A1", radius: 22 },
+  entity: { label: "实体", color: "#8A94A6", radius: 21 },
 };
 
 type SimNode = EntityGraphNode & {
@@ -66,7 +68,6 @@ type SimNode = EntityGraphNode & {
   fx?: number;
   fy?: number;
 };
-
 type SelectedItem =
   | { kind: "node"; node: EntityGraphNode }
   | {
@@ -90,6 +91,40 @@ function shortText(s: string, n = 18) {
   if (!t) return "未命名";
   const chars = [...t];
   return chars.length > n ? `${chars.slice(0, n).join("")}...` : t;
+}
+
+function nodeLabelText(node: EntityGraphNode) {
+  const radius = nodeMeta(node.type).radius;
+  const maxChars = node.type === "paper" ? 9 : Math.max(4, Math.floor(radius / 4.6));
+  return shortText(node.label, maxChars);
+}
+
+function nodeLabelFontSize(node: EntityGraphNode) {
+  const length = [...nodeLabelText(node)].length;
+  if (node.type === "paper") return length > 7 ? 9.5 : 10.5;
+  if (length > 6) return 8.5;
+  if (length > 4) return 9.5;
+  return 10.5;
+}
+
+function edgeKey(edge: EntityGraphEdge) {
+  return edge.id || `${edge.source}:${edge.type}:${edge.target}:${edge.label}`;
+}
+
+function edgeLinePoints(a: SimNode, b: SimNode) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dist = Math.max(1, Math.hypot(dx, dy));
+  const ax = (dx / dist) * (nodeMeta(a.type).radius + 5);
+  const ay = (dy / dist) * (nodeMeta(a.type).radius + 5);
+  const bx = (dx / dist) * (nodeMeta(b.type).radius + 8);
+  const by = (dy / dist) * (nodeMeta(b.type).radius + 8);
+  return {
+    x1: a.x + ax,
+    y1: a.y + ay,
+    x2: b.x - bx,
+    y2: b.y - by,
+  };
 }
 
 function nodeMeta(type: string) {
@@ -147,12 +182,10 @@ function ForceEntityGraph({
     if (mode === "detail") {
       const others = graphNodes.filter((n) => n.type !== "paper");
       const paper = graphNodes.find((n) => n.type === "paper") || graphNodes[0];
-      if (paper) {
-        next.push({ ...paper, x: center.x, y: center.y, vx: 0, vy: 0 });
-      }
+      if (paper) next.push({ ...paper, x: center.x, y: center.y, vx: 0, vy: 0 });
       others.forEach((n, i) => {
-        const angle = (-Math.PI / 2) + (i * Math.PI * 2) / Math.max(1, others.length);
-        const ring = 80 + 20 * (i % 3);
+        const angle = -Math.PI / 2 + (i * Math.PI * 2) / Math.max(1, others.length);
+        const ring = 92 + 20 * (i % 3);
         next.push({
           ...n,
           x: center.x + Math.cos(angle) * ring,
@@ -165,10 +198,10 @@ function ForceEntityGraph({
       const paperNodes = graphNodes.filter((n) => n.type === "paper");
       const nonPaperNodes = graphNodes.filter((n) => n.type !== "paper");
       const paperPositions = new Map<string, { x: number; y: number }>();
-      const paperRing = paperNodes.length <= 1 ? 0 : clamp(40 + paperNodes.length * 10, 60, 120);
+      const paperRing = paperNodes.length <= 1 ? 0 : clamp(44 + paperNodes.length * 10, 72, 135);
 
       paperNodes.forEach((n, i) => {
-        const angle = (-Math.PI / 2) + (i * Math.PI * 2) / Math.max(1, paperNodes.length);
+        const angle = -Math.PI / 2 + (i * Math.PI * 2) / Math.max(1, paperNodes.length);
         const x = center.x + Math.cos(angle) * paperRing;
         const y = center.y + Math.sin(angle) * paperRing;
         paperPositions.set(n.id, { x, y });
@@ -196,8 +229,8 @@ function ForceEntityGraph({
           const paperID = (edgePapersByNode.get(n.id) || [])[0];
           const slot = singlePaperNodeCounts.get(paperID) || 0;
           singlePaperNodeCounts.set(paperID, slot + 1);
-          const angle = (-Math.PI / 2) + slot * 2.3999632297;
-          const ring = 74 + 18 * (slot % 3);
+          const angle = -Math.PI / 2 + slot * 2.3999632297;
+          const ring = 82 + 20 * (slot % 3);
           const base = connectedPapers[0];
           next.push({
             ...n,
@@ -211,25 +244,13 @@ function ForceEntityGraph({
         if (connectedPapers.length > 1) {
           const x = connectedPapers.reduce((sum, p) => sum + p.x, 0) / connectedPapers.length;
           const y = connectedPapers.reduce((sum, p) => sum + p.y, 0) / connectedPapers.length;
-          const angle = (-Math.PI / 2) + (i * Math.PI * 2) / Math.max(1, nonPaperNodes.length);
-          next.push({
-            ...n,
-            x: x + Math.cos(angle) * 24,
-            y: y + Math.sin(angle) * 24,
-            vx: 0,
-            vy: 0,
-          });
+          const angle = -Math.PI / 2 + (i * Math.PI * 2) / Math.max(1, nonPaperNodes.length);
+          next.push({ ...n, x: x + Math.cos(angle) * 26, y: y + Math.sin(angle) * 26, vx: 0, vy: 0 });
           return;
         }
-        const angle = (-Math.PI / 2) + (i * Math.PI * 2) / Math.max(1, graphNodes.length);
-        const ring = 70 + 15 * (i % 3);
-        next.push({
-          ...n,
-          x: center.x + Math.cos(angle) * ring,
-          y: center.y + Math.sin(angle) * ring,
-          vx: 0,
-          vy: 0,
-        });
+        const angle = -Math.PI / 2 + (i * Math.PI * 2) / Math.max(1, graphNodes.length);
+        const ring = 80 + 16 * (i % 3);
+        next.push({ ...n, x: center.x + Math.cos(angle) * ring, y: center.y + Math.sin(angle) * ring, vx: 0, vy: 0 });
       });
     }
     nodesRef.current = next;
@@ -270,10 +291,7 @@ function ForceEntityGraph({
             const dist = Math.sqrt(d2);
             const minDist = collisionRadius(a) + collisionRadius(b) + (mode === "overview" ? 6 : 0);
             const overlap = Math.max(0, minDist - dist);
-            const force =
-              mode === "overview"
-                ? (120 * alpha) / d2 + (overlap * 0.05) / dist
-                : (220 * alpha) / d2 + (overlap * 0.08) / dist;
+            const force = (60 * alpha) / d2 + (overlap * 0.02) / dist;
             const fx = dx * force;
             const fy = dy * force;
             if ((mode === "overview" || a.type !== "paper") && a.fx == null) {
@@ -295,10 +313,10 @@ function ForceEntityGraph({
           const dy = b.y - a.y;
           const dist = Math.max(1, Math.hypot(dx, dy));
           const ideal = Math.max(
-            mode === "overview" ? 18 : b.type === "keyword" || b.type === "author" ? 5 : 8,
-            collisionRadius(a) + collisionRadius(b) + (mode === "overview" ? 4 : 0),
+            mode === "overview" ? 22 : b.type === "keyword" || b.type === "author" ? 8 : 10,
+            collisionRadius(a) + collisionRadius(b) + (mode === "overview" ? 6 : 0),
           );
-          const pull = (dist - ideal) * (mode === "overview" ? 0.026 : 0.020) * alpha;
+          const pull = (dist - ideal) * (mode === "overview" ? 0.028 : 0.022) * alpha;
           const fx = (dx / dist) * pull;
           const fy = (dy / dist) * pull;
           if (a.fx == null) {
@@ -319,15 +337,9 @@ function ForceEntityGraph({
             n.vy = 0;
             continue;
           }
-          if (n.type === "paper") {
-            const centerStrength = mode === "overview" ? 0.007 : 0.025;
-            n.vx += (VIEW_W / 2 - n.x) * centerStrength * alpha;
-            n.vy += (VIEW_H / 2 - n.y) * centerStrength * alpha;
-          } else {
-            const centerStrength = mode === "overview" ? 0.005 : 0.004;
-            n.vx += (VIEW_W / 2 - n.x) * centerStrength * alpha;
-            n.vy += (VIEW_H / 2 - n.y) * centerStrength * alpha;
-          }
+          const centerStrength = n.type === "paper" ? (mode === "overview" ? 0.007 : 0.025) : mode === "overview" ? 0.005 : 0.004;
+          n.vx += (VIEW_W / 2 - n.x) * centerStrength * alpha;
+          n.vy += (VIEW_H / 2 - n.y) * centerStrength * alpha;
           n.vx = clamp(n.vx * 0.86, -22, 22);
           n.vy = clamp(n.vy * 0.86, -22, 22);
           n.x = clamp(n.x + n.vx, -1200, 2200);
@@ -353,10 +365,7 @@ function ForceEntityGraph({
   const graphPoint = useCallback((clientX: number, clientY: number) => {
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
-    return {
-      x: ((clientX - rect.left) / rect.width) * VIEW_W,
-      y: ((clientY - rect.top) / rect.height) * VIEW_H,
-    };
+    return { x: ((clientX - rect.left) / rect.width) * VIEW_W, y: ((clientY - rect.top) / rect.height) * VIEW_H };
   }, []);
 
   useEffect(() => {
@@ -368,10 +377,7 @@ function ForceEntityGraph({
       const point = graphPoint(event.clientX, event.clientY);
       const nextZoom = clamp(zoom * (event.deltaY > 0 ? 0.9 : 1.1), MIN_ZOOM, MAX_ZOOM);
       setZoom(nextZoom);
-      setPan({
-        x: point.x - before.x * nextZoom,
-        y: point.y - before.y * nextZoom,
-      });
+      setPan({ x: point.x - before.x * nextZoom, y: point.y - before.y * nextZoom });
     };
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
@@ -400,14 +406,7 @@ function ForceEntityGraph({
   const onSvgDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     movedRef.current = false;
-    dragRef.current = {
-      mode: "pan",
-      startX: event.clientX,
-      startY: event.clientY,
-      panX: pan.x,
-      panY: pan.y,
-      moved: false,
-    };
+    dragRef.current = { mode: "pan", startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y, moved: false };
   };
 
   const onPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -415,18 +414,14 @@ function ForceEntityGraph({
     if (!drag) return;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
-    const dragDistance = Math.hypot(dx, dy);
-    if (dragDistance > NODE_DRAG_THRESHOLD) {
+    if (Math.hypot(dx, dy) > NODE_DRAG_THRESHOLD) {
       drag.moved = true;
       movedRef.current = true;
     }
     if (drag.mode === "pan") {
       const rect = svgRef.current?.getBoundingClientRect();
       if (!rect) return;
-      setPan({
-        x: drag.panX + (dx / rect.width) * VIEW_W,
-        y: drag.panY + (dy / rect.height) * VIEW_H,
-      });
+      setPan({ x: drag.panX + (dx / rect.width) * VIEW_W, y: drag.panY + (dy / rect.height) * VIEW_H });
       return;
     }
     if (!drag.moved) return;
@@ -463,12 +458,8 @@ function ForceEntityGraph({
   const matchesSearch = (node: EntityGraphNode) => {
     if (!isSearching) return true;
     const meta = nodeMeta(node.type);
-    const detailText = Object.entries(node.details || {})
-      .map(([key, value]) => `${key} ${value}`)
-      .join(" ");
-    return `${node.id} ${node.type} ${meta.label} ${node.label} ${detailText}`
-      .toLowerCase()
-      .includes(query);
+    const detailText = Object.entries(node.details || {}).map(([key, value]) => `${key} ${value}`).join(" ");
+    return `${node.id} ${node.type} ${meta.label} ${node.label} ${detailText}`.toLowerCase().includes(query);
   };
   const resetGraphView = () => {
     setZoom(1);
@@ -483,9 +474,7 @@ function ForceEntityGraph({
     clone.setAttribute("width", String(VIEW_W));
     clone.setAttribute("height", String(VIEW_H));
     const source = new XMLSerializer().serializeToString(clone);
-    const blob = new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n${source}`], {
-      type: "image/svg+xml;charset=utf-8",
-    });
+    const blob = new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n${source}`], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -533,12 +522,7 @@ function ForceEntityGraph({
             </div>
           )}
           <div className="relative">
-            <Button
-              variant={keywordsOpen ? "secondary" : "outline"}
-              size="sm"
-              title="查看关键词"
-              onClick={() => setKeywordsOpen((open) => !open)}
-            >
+            <Button variant={keywordsOpen ? "secondary" : "outline"} size="sm" title="查看关键词" onClick={() => setKeywordsOpen((open) => !open)}>
               <Tags className="size-4" />
               关键词
             </Button>
@@ -557,15 +541,9 @@ function ForceEntityGraph({
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {keywordItems.map((item) => (
-                          <span
-                            key={item.name}
-                            className="inline-flex items-center gap-1.5 rounded-full border bg-muted/45 px-3 py-1 text-xs"
-                            title={showKeywordCount && item.count != null ? `${item.count}` : item.name}
-                          >
+                          <span key={item.name} className="inline-flex items-center gap-1.5 rounded-full border bg-muted/45 px-3 py-1 text-xs" title={showKeywordCount && item.count != null ? `${item.count}` : item.name}>
                             {item.name}
-                            {showKeywordCount && item.count != null && (
-                              <span className="tabular-nums text-muted-foreground">{item.count}</span>
-                            )}
+                            {showKeywordCount && item.count != null && <span className="tabular-nums text-muted-foreground">{item.count}</span>}
                           </span>
                         ))}
                       </div>
@@ -577,19 +555,14 @@ function ForceEntityGraph({
           </div>
         </div>
         <div className="flex gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          title="重置图谱位置"
-          onClick={resetGraphView}
-        >
-          <RotateCcw className="size-4" />
-          重置
-        </Button>
-        <Button variant="outline" size="sm" title="下载 SVG" onClick={downloadSvg}>
-          <Download className="size-4" />
-          下载
-        </Button>
+          <Button variant="outline" size="sm" title="重置图谱位置" onClick={resetGraphView}>
+            <RotateCcw className="size-4" />
+            重置
+          </Button>
+          <Button variant="outline" size="sm" title="下载 SVG" onClick={downloadSvg}>
+            <Download className="size-4" />
+            下载
+          </Button>
         </div>
       </div>
       <svg
@@ -604,17 +577,27 @@ function ForceEntityGraph({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
+        <defs>
+          <filter id="graph-selected-shadow" x="-60%" y="-60%" width="220%" height="220%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#64748b" floodOpacity="0.28" />
+          </filter>
+          <marker id="graph-edge-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto" markerUnits="strokeWidth">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
+          </marker>
+        </defs>
         <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
           {edgesRef.current.map((edge) => {
             const a = nodeByID.get(edge.source);
             const b = nodeByID.get(edge.target);
             if (!a || !b) return null;
-            const color = isSearching ? "#cbd5e1" : nodeMeta(b.type).color;
-            const midX = (a.x + b.x) / 2;
-            const midY = (a.y + b.y) / 2;
+            const selectedEdge = selected?.kind === "edge" && edgeKey(selected.edge) === edgeKey(edge);
+            const color = isSearching ? "#cbd5e1" : GRAPH_EDGE_COLOR;
+            const line = edgeLinePoints(a, b);
+            const midX = (line.x1 + line.x2) / 2;
+            const midY = (line.y1 + line.y2) / 2;
             return (
               <g
-                key={edge.id}
+                key={edgeKey(edge)}
                 className="cursor-pointer"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
@@ -622,30 +605,19 @@ function ForceEntityGraph({
                   setSelected({ kind: "edge", edge, source: a, target: b });
                 }}
               >
+                <line x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke="transparent" strokeWidth={18} />
                 <line
-                  x1={a.x}
-                  y1={a.y}
-                  x2={b.x}
-                  y2={b.y}
-                  stroke="transparent"
-                  strokeWidth={18}
-                />
-                <line
-                  x1={a.x}
-                  y1={a.y}
-                  x2={b.x}
-                  y2={b.y}
+                  x1={line.x1}
+                  y1={line.y1}
+                  x2={line.x2}
+                  y2={line.y2}
                   stroke={color}
                   strokeOpacity={isSearching ? 0.35 : 0.42}
                   strokeWidth={1.6}
+                  markerEnd="url(#graph-edge-arrow)"
+                  filter={selectedEdge ? "url(#graph-selected-shadow)" : undefined}
                 />
-                <text
-                  x={midX}
-                  y={midY - 5}
-                  textAnchor="middle"
-                  className="fill-muted-foreground text-[10px]"
-                  style={{ fill: isSearching ? "#94a3b8" : "#64748b" }}
-                >
+                <text x={midX} y={midY - 5} textAnchor="middle" className="fill-muted-foreground text-[10px]" style={{ fill: isSearching ? "#94a3b8" : "#64748b", fontWeight: 500 }}>
                   {edge.label}
                 </text>
               </g>
@@ -654,12 +626,9 @@ function ForceEntityGraph({
           {nodes.map((node) => {
             const meta = nodeMeta(node.type);
             const matched = matchesSearch(node);
-            const nodeColor = matched ? meta.color : "#cbd5e1";
-            const labelColor = matched
-              ? node.type === "paper"
-                ? "#ffffff"
-                : "#0f172a"
-              : "#94a3b8";
+            const selectedNode = selected?.kind === "node" && selected.node.id === node.id;
+            const nodeColor = matched ? (node.type === "paper" ? PAPER_NODE_COLOR : meta.color) : "#cbd5e1";
+            const labelColor = matched ? "#ffffff" : "#94a3b8";
             return (
               <g
                 key={node.id}
@@ -672,39 +641,20 @@ function ForceEntityGraph({
                 }}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  if (node.type === "paper") {
-                    onPaperDoubleClick?.(node.id.replace(/^paper:/, ""));
-                  }
+                  if (node.type === "paper") onPaperDoubleClick?.(node.id.replace(/^paper:/, ""));
                 }}
               >
-                <circle
-                  r={meta.radius}
-                  fill={nodeColor}
-                  fillOpacity={matched ? (node.type === "paper" ? 0.95 : 0.16) : 0.32}
-                  stroke={nodeColor}
-                  strokeWidth={node.type === "paper" ? 0 : 2}
-                />
-                <text
-                  y={node.type === "paper" ? -4 : 5}
-                  textAnchor="middle"
-                  className={cn(
-                    "pointer-events-none font-medium",
-                    node.type === "paper"
-                      ? "fill-primary-foreground text-[11px]"
-                      : "fill-foreground text-[12px]",
-                  )}
-                  style={{ fill: labelColor }}
-                >
-                  {shortText(node.label, node.type === "paper" ? 10 : 12)}
-                </text>
-                <text
-                  y={meta.radius + 15}
-                  textAnchor="middle"
-                  className="pointer-events-none fill-muted-foreground text-[12px]"
-                  style={{ fill: matched ? "#64748b" : "#94a3b8" }}
-                >
-                  {node.type === "paper" ? "" : meta.label}
-                </text>
+                <g transform={`scale(${selectedNode ? 1.045 : 1})`} style={{ transition: "transform 160ms ease-out" }} filter={selectedNode ? "url(#graph-selected-shadow)" : undefined}>
+                  <circle r={meta.radius} fill={nodeColor} fillOpacity={matched ? 1 : 0.32} stroke="transparent" strokeWidth={0} />
+                  <text
+                    y={node.type === "paper" ? -4 : 5}
+                    textAnchor="middle"
+                    className={cn("pointer-events-none font-medium", node.type === "paper" ? "fill-primary-foreground text-[11px]" : "fill-foreground text-[12px]")}
+                    style={{ fill: labelColor, fontSize: nodeLabelFontSize(node) }}
+                  >
+                    {nodeLabelText(node)}
+                  </text>
+                </g>
               </g>
             );
           })}
@@ -712,25 +662,21 @@ function ForceEntityGraph({
       </svg>
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[calc(100%-2rem)] rounded-md bg-background/82 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur">
         鼠标滚轮缩放图谱大小，拖拽空白区域平移，拖拽节点调整位置。
-        {mode === "overview" && " 总览页可双击论文节点展开详细节点信息。"}
+        {mode === "overview" && " 总览页可双击论文节点展开或收回详细节点信息。"}
       </div>
       {selected && (
-        <div className="absolute bottom-3 right-3 z-20 max-h-[70%] w-[min(24rem,calc(100%-1.5rem))] overflow-hidden rounded-lg border bg-popover shadow-lg">
-          <div className="flex items-center justify-between border-b px-3 py-2">
+        <div className="absolute bottom-3 right-3 z-20 flex max-h-[min(32rem,calc(100%-5.5rem))] w-fit min-w-56 max-w-[min(26rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border bg-popover shadow-lg">
+          <div className="flex shrink-0 items-center justify-between border-b px-3 py-2">
             <div className="min-w-0">
-              <div className="truncate text-sm font-medium">
-                {selected.kind === "node" ? nodeMeta(selected.node.type).label : "关系详情"}
-              </div>
-              <div className="truncate text-xs text-muted-foreground">
-                {selected.kind === "node" ? selected.node.id : selected.edge.id}
-              </div>
+              <div className="truncate text-sm font-medium">{selected.kind === "node" ? nodeMeta(selected.node.type).label : "关系详情"}</div>
+              <div className="truncate text-xs text-muted-foreground">{selected.kind === "node" ? selected.node.id : selected.edge.id}</div>
             </div>
             <Button variant="ghost" size="icon-xs" title="关闭" onClick={() => setSelected(null)}>
               <X className="size-3.5" />
             </Button>
           </div>
-          <ScrollArea className="max-h-[20rem]">
-            <div className="space-y-3 p-3">
+          <div className="min-h-0 overflow-y-auto overscroll-contain">
+            <div className="space-y-3 p-3 pr-4">
               {selected.kind === "node" ? (
                 <>
                   <div>
@@ -759,15 +705,11 @@ function ForceEntityGraph({
                   </div>
                   <div>
                     <div className="mb-1 text-xs text-muted-foreground">起点实体</div>
-                    <div className="whitespace-pre-wrap break-words text-sm">
-                      {selected.source?.label || selected.edge.source}
-                    </div>
+                    <div className="whitespace-pre-wrap break-words text-sm">{selected.source?.label || selected.edge.source}</div>
                   </div>
                   <div>
                     <div className="mb-1 text-xs text-muted-foreground">连接实体</div>
-                    <div className="whitespace-pre-wrap break-words text-sm">
-                      {selected.target?.label || selected.edge.target}
-                    </div>
+                    <div className="whitespace-pre-wrap break-words text-sm">{selected.target?.label || selected.edge.target}</div>
                   </div>
                   <div>
                     <div className="mb-1 text-xs text-muted-foreground">关系类型</div>
@@ -784,13 +726,12 @@ function ForceEntityGraph({
                 </>
               )}
             </div>
-          </ScrollArea>
+          </div>
         </div>
       )}
     </div>
   );
 }
-
 function graphRequestErrorMessage(err: unknown, fallback: string) {
   return err instanceof api.ApiError && err.message ? err.message : fallback;
 }
@@ -819,7 +760,7 @@ function mergeEntityGraphs(base: EntityGraph, addition: EntityGraph): EntityGrap
 
   const edges = new Map<string, EntityGraphEdge>();
   for (const edge of [...baseEdges, ...additionEdges]) {
-    const key = edge.id || `${edge.source}:${edge.type}:${edge.target}:${edge.label}`;
+    const key = edgeKey(edge);
     if (!edges.has(key)) edges.set(key, edge);
   }
 
@@ -829,11 +770,23 @@ function mergeEntityGraphs(base: EntityGraph, addition: EntityGraph): EntityGrap
   };
 }
 
+function composeOverviewGraph(base: EntityGraph | null, expandedGraphs: Record<string, EntityGraph>) {
+  let next = normalizeEntityGraph(base);
+  for (const addition of Object.values(expandedGraphs)) {
+    const normalized = normalizeEntityGraph(addition);
+    if (!normalized) continue;
+    next = next ? mergeEntityGraphs(next, normalized) : normalized;
+  }
+  return next;
+}
+
 export function GraphView() {
   const { authed, papers, activePaperID, selectPaper } = useApp();
 
   const [keywords, setKeywords] = useState<NameCount[]>([]);
   const [entityGraph, setEntityGraph] = useState<EntityGraph | null>(null);
+  const [overviewBaseGraph, setOverviewBaseGraph] = useState<EntityGraph | null>(null);
+  const [expandedPaperGraphs, setExpandedPaperGraphs] = useState<Record<string, EntityGraph>>({});
   const [loadingGraph, setLoadingGraph] = useState(false);
   const [rebuildingGraph, setRebuildingGraph] = useState(false);
   const [graphError, setGraphError] = useState("");
@@ -860,6 +813,8 @@ export function GraphView() {
   useEffect(() => {
     if (!authed) {
       setEntityGraph(null);
+      setOverviewBaseGraph(null);
+      setExpandedPaperGraphs({});
       return;
     }
     let cancelled = false;
@@ -869,12 +824,17 @@ export function GraphView() {
     api
       .graphNetwork()
       .then((g) => {
-        if (!cancelled) setEntityGraph(normalizeEntityGraph(g));
+        if (!cancelled) {
+          const normalized = normalizeEntityGraph(g);
+          setOverviewBaseGraph(normalized);
+          setExpandedPaperGraphs({});
+          setEntityGraph(normalized);
+        }
       })
       .catch((err) => {
         if (!cancelled) {
           setEntityGraph(null);
-          setGraphError(graphRequestErrorMessage(err, "总览知识图谱加载失败"));
+          setGraphError(graphRequestErrorMessage(err, "鎬昏鐭ヨ瘑鍥捐氨鍔犺浇澶辫触"));
         }
       })
       .finally(() => {
@@ -899,7 +859,7 @@ export function GraphView() {
       .catch((err) => {
         if (!cancelled) {
           setEntityGraph(null);
-          setGraphError(graphRequestErrorMessage(err, "论文知识图谱加载失败"));
+          setGraphError(graphRequestErrorMessage(err, "璁烘枃鐭ヨ瘑鍥捐氨鍔犺浇澶辫触"));
         }
       })
       .finally(() => {
@@ -918,10 +878,15 @@ export function GraphView() {
     setLoadingGraph(true);
     api
       .graphNetwork()
-      .then((g) => setEntityGraph(normalizeEntityGraph(g)))
+      .then((g) => {
+        const normalized = normalizeEntityGraph(g);
+        setOverviewBaseGraph(normalized);
+        setExpandedPaperGraphs({});
+        setEntityGraph(normalized);
+      })
       .catch((err) => {
         setEntityGraph(null);
-        setGraphError(graphRequestErrorMessage(err, "总览知识图谱加载失败"));
+        setGraphError(graphRequestErrorMessage(err, "鎬昏鐭ヨ瘑鍥捐氨鍔犺浇澶辫触"));
       })
       .finally(() => setLoadingGraph(false));
   };
@@ -939,16 +904,22 @@ export function GraphView() {
     setGraphNotice("");
     selectPaper(paperID);
     setDetailPaperID(paperID);
+    if (expandedPaperGraphs[paperID]) {
+      const nextExpanded = { ...expandedPaperGraphs };
+      delete nextExpanded[paperID];
+      setExpandedPaperGraphs(nextExpanded);
+      setEntityGraph(composeOverviewGraph(overviewBaseGraph, nextExpanded));
+      setGraphNotice("已收回论文实体");
+      return;
+    }
     api
       .paperEntityGraph(paperID)
       .then((g) => {
         const nextGraph = normalizeEntityGraph(g);
-        setEntityGraph((current) => {
-          const currentGraph = normalizeEntityGraph(current);
-          if (!currentGraph) return nextGraph;
-          if (!nextGraph) return currentGraph;
-          return mergeEntityGraphs(currentGraph, nextGraph);
-        });
+        if (!nextGraph) return;
+        const nextExpanded = { ...expandedPaperGraphs, [paperID]: nextGraph };
+        setExpandedPaperGraphs(nextExpanded);
+        setEntityGraph(composeOverviewGraph(overviewBaseGraph || entityGraph, nextExpanded));
         if (nextGraph) setGraphNotice("已在总览图谱中展开论文实体");
       })
       .catch((err) => {
@@ -971,7 +942,10 @@ export function GraphView() {
       api
         .rebuildGraphNetwork()
         .then((g) => {
-          setEntityGraph(normalizeEntityGraph(g));
+          const normalized = normalizeEntityGraph(g);
+          setOverviewBaseGraph(normalized);
+          setExpandedPaperGraphs({});
+          setEntityGraph(normalized);
           setGraphNotice("总览图谱已更新");
           refreshStats();
         })
