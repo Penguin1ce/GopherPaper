@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "@xyflow/react/dist/style.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -257,6 +258,22 @@
 
   .react-pdf__Page canvas {
     @apply h-auto max-w-full;
+  }
+
+  .mind-map-flow .react-flow__renderer,
+  .mind-map-flow .react-flow__nodes,
+  .mind-map-flow .react-flow__edges {
+    will-change: transform;
+  }
+
+  .mind-map-flow .react-flow__node {
+    contain: layout paint style;
+  }
+
+  .mind-map-flow .react-flow__node.dragging .mind-map-node-card {
+    transform: translateZ(0);
+    transition: border-color 80ms linear, background-color 80ms linear;
+    box-shadow: 0 1px 0 rgb(15 23 42 / 4%), 0 10px 24px -22px rgb(15 23 42 / 38%);
   }
 
   .gp-password-input input::-ms-reveal,

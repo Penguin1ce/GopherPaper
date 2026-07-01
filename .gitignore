@@ -18,6 +18,8 @@ doc/
 data/
 log/
 
+diagram/
+
 # 旧 Vite 前端构建产物,当前前端已迁到 frontend/ 独立运行。
 /internal/web/public/*
 !/internal/web/public/.gitkeep

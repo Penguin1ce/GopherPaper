@@ -4,13 +4,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"GopherPaper/internal/ai/core"
 )
 
 func TestSectionsFromArtifactDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "paper_content_list.json"), []byte(`[
-		{"type":"text","text":"Introduction","text_level":1,"page_idx":0},
-		{"type":"text","text":"Method","text_level":1,"page_idx":2}
+		{"type":"text","text":"Introduction","text_level":1,"page_idx":0,"bbox":[10,20,100,40]},
+		{"type":"text","text":"Method","text_level":1,"page_idx":2,"bbox":[11,33,111,55]}
 	]`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -24,6 +26,26 @@ func TestSectionsFromArtifactDir(t *testing.T) {
 	}
 	if sections[1].PaperID != "paper-1" || sections[1].Title != "Method" || sections[1].PageNo != 3 {
 		t.Fatalf("section mapping mismatch %+v", sections[1])
+	}
+	if sections[1].Y1 == nil || *sections[1].Y1 != 33 {
+		t.Fatalf("section coordinate mismatch %+v", sections[1])
+	}
+}
+
+func TestToSectionsPreservesCoordinates(t *testing.T) {
+	ptr := func(value float64) *float64 {
+		return &value
+	}
+	sections := toSections("paper-1", &core.ParsedDoc{Sections: []core.Section{
+		{Level: 1, Title: "Method", PageNo: 3, OrderIdx: 7, X1: ptr(10), Y1: ptr(89), X2: ptr(500), Y2: ptr(112)},
+	}}, "")
+
+	if len(sections) != 1 {
+		t.Fatalf("sections = %d, want 1", len(sections))
+	}
+	got := sections[0]
+	if got.X1 == nil || *got.X1 != 10 || got.Y1 == nil || *got.Y1 != 89 || got.X2 == nil || *got.X2 != 500 || got.Y2 == nil || *got.Y2 != 112 {
+		t.Fatalf("section coordinates not preserved %+v", got)
 	}
 }
 

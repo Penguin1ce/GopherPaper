@@ -37,7 +37,7 @@ func buildZip(t *testing.T, blocks []map[string]any) []byte {
 // TestParse_EndToEnd 用 mock 服务模拟 MinerU 异步三段式，验证映射。
 func TestParse_EndToEnd(t *testing.T) {
 	zipBytes := buildZip(t, []map[string]any{
-		{"type": "title", "text": "Introduction", "text_level": 1, "page_idx": 0},
+		{"type": "title", "text": "Introduction", "text_level": 1, "page_idx": 0, "bbox": []float64{10, 20, 100, 40}},
 		{"type": "text", "text": "This paper studies X.", "page_idx": 0},
 		{"type": "image", "img_caption": []string{"Figure 1: arch"}, "page_idx": 1},
 		{"type": "title", "text": "References", "text_level": 1, "page_idx": 2},
@@ -84,6 +84,9 @@ func TestParse_EndToEnd(t *testing.T) {
 	if len(doc.Sections) != 2 {
 		t.Fatalf("章节数应为 2，实际 %d", len(doc.Sections))
 	}
+	if doc.Sections[0].Y1 == nil || *doc.Sections[0].Y1 != 20 {
+		t.Fatalf("标题 bbox 映射错误 %+v", doc.Sections[0])
+	}
 	if len(doc.Paragraphs) != 1 || doc.Paragraphs[0].PageNo != 1 {
 		t.Fatalf("正文段落映射错误 %+v", doc.Paragraphs)
 	}
@@ -103,7 +106,7 @@ func TestParse_EndToEnd(t *testing.T) {
 
 func TestMapBlocks_CurrentMinerUContentListFormat(t *testing.T) {
 	doc := mapBlocks([]contentBlock{
-		{Type: "text", Text: "Introduction", TextLevel: 1, PageIdx: 0},
+		{Type: "text", Text: "Introduction", TextLevel: 1, PageIdx: 0, BBox: []float64{12, 24, 120, 48}},
 		{Type: "text", Text: "This paper studies X.", PageIdx: 0},
 		{Type: "image", ImgPath: "images/fig1.png", ImageCaption: []string{"Figure 1: arch"}, ImageFootnote: []string{"image note"}, PageIdx: 1},
 		{Type: "table", TableCaption: []string{"Table 1: results"}, TableFootnote: []string{"table note"}, PageIdx: 1},
@@ -116,6 +119,9 @@ func TestMapBlocks_CurrentMinerUContentListFormat(t *testing.T) {
 	}
 	if doc.Sections[0].Title != "Introduction" || doc.Sections[0].Level != 1 {
 		t.Fatalf("标题映射错误 %+v", doc.Sections[0])
+	}
+	if doc.Sections[0].X1 == nil || *doc.Sections[0].X1 != 12 || doc.Sections[0].Y1 == nil || *doc.Sections[0].Y1 != 24 {
+		t.Fatalf("标题 bbox 映射错误 %+v", doc.Sections[0])
 	}
 	if len(doc.Paragraphs) != 1 || doc.Paragraphs[0].SectionPath != "Introduction" {
 		t.Fatalf("正文段落映射错误 %+v", doc.Paragraphs)
@@ -220,7 +226,7 @@ func TestReadArtifacts_PrefersContentListV2(t *testing.T) {
 		t.Fatal(err)
 	}
 	v2JSON := `[[` +
-		`{"type":"title","content":{"title_content":[{"type":"text","content":"V2 Intro"}],"level":1}},` +
+		`{"type":"title","content":{"title_content":[{"type":"text","content":"V2 Intro"}],"level":1,"bbox":[11,22,111,44]}},` +
 		`{"type":"paragraph","content":{"paragraph_content":[{"type":"text","content":"v2 body"}]}},` +
 		`{"type":"table","content":{"html":"<table><tr><td>A</td><td>B</td></tr><tr><td>1</td><td>2</td></tr></table>","image_source":{"path":"images/table.png"},"table_caption":[{"type":"text","content":"Table V2"}],"table_footnote":[]}},` +
 		`{"type":"chart","content":{"image_source":{"path":"images/chart.png"},"content":"chart trend rises","chart_caption":[{"type":"text","content":"Figure V2"}],"chart_footnote":[]}},` +
@@ -258,6 +264,9 @@ func TestReadArtifacts_PrefersContentListV2(t *testing.T) {
 
 	if len(doc.Paragraphs) != 1 || doc.Paragraphs[0].Text != "v2 body" {
 		t.Fatalf("应优先使用 v2 正文,得到 %+v", doc.Paragraphs)
+	}
+	if len(doc.Sections) != 1 || doc.Sections[0].Y1 == nil || *doc.Sections[0].Y1 != 22 {
+		t.Fatalf("v2 标题 bbox 映射错误 %+v", doc.Sections)
 	}
 	if len(doc.Tables) != 1 || doc.Tables[0].Caption != "Table V2" || len(doc.Tables[0].Rows) != 2 {
 		t.Fatalf("v2 表格映射错误 %+v", doc.Tables)

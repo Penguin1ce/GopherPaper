@@ -298,9 +298,21 @@ func toSections(paperID string, doc *core.ParsedDoc, paperTitle string) []model.
 			Title:    sec.Title,
 			PageNo:   sec.PageNo,
 			OrderIdx: sec.OrderIdx,
+			X1:       cloneFloat64(sec.X1),
+			Y1:       cloneFloat64(sec.Y1),
+			X2:       cloneFloat64(sec.X2),
+			Y2:       cloneFloat64(sec.Y2),
 		})
 	}
 	return out
+}
+
+func cloneFloat64(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func filterPaperTitleSections(sections []core.Section, paperTitle string) []core.Section {

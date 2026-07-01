@@ -600,10 +600,72 @@ func DeleteAnnotation(c *gin.Context) {
 	response.OK(c, nil)
 }
 
+func BuildMindMap(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	mindMap, err := paperservice.BuildMindMap(c.Request.Context(), ownerID, c.Param("id"))
+	if err != nil {
+		writePaperErr(c, err, "生成脑图失败")
+		return
+	}
+	response.OK(c, mindMap)
+}
+
+func GetMindMap(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	mindMap, err := paperservice.GetMindMap(c.Request.Context(), ownerID, c.Param("id"))
+	if err != nil {
+		writePaperErr(c, err, "查询脑图失败")
+		return
+	}
+	response.OK(c, mindMap)
+}
+
+func UpdateMindMap(c *gin.Context) {
+	mindMapID, ok := parseMindMapID(c)
+	if !ok {
+		return
+	}
+	var req dto.MindMapUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	mindMap, err := paperservice.UpdateMindMap(c.Request.Context(), ownerID, mindMapID, req.Graph)
+	if err != nil {
+		writePaperErr(c, err, "保存脑图失败")
+		return
+	}
+	response.OK(c, mindMap)
+}
+
+func SyncMindMap(c *gin.Context) {
+	mindMapID, ok := parseMindMapID(c)
+	if !ok {
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	mindMap, err := paperservice.SyncMindMap(c.Request.Context(), ownerID, mindMapID)
+	if err != nil {
+		writePaperErr(c, err, "同步脑图失败")
+		return
+	}
+	response.OK(c, mindMap)
+}
+
 func parseAnnotationID(c *gin.Context) (uint64, bool) {
 	id, err := strconv.ParseUint(c.Param("annotation_id"), 10, 64)
 	if err != nil || id == 0 {
 		response.Fail(c, http.StatusBadRequest, "批注 ID 无效")
+		return 0, false
+	}
+	return id, true
+}
+
+func parseMindMapID(c *gin.Context) (uint64, bool) {
+	id, err := strconv.ParseUint(c.Param("mind_map_id"), 10, 64)
+	if err != nil || id == 0 {
+		response.Fail(c, http.StatusBadRequest, "脑图 ID 无效")
 		return 0, false
 	}
 	return id, true
@@ -631,7 +693,7 @@ func dtoRectToModel(r dto.AnnotationRect) model.AnnotationRect {
 
 func writePaperAccessErr(c *gin.Context, err error, fallback string) bool {
 	switch {
-	case errors.Is(err, errs.ErrPaperNotFound), errors.Is(err, errs.ErrPaperForbidden), errors.Is(err, errs.ErrAnnotationNotFound):
+	case errors.Is(err, errs.ErrPaperNotFound), errors.Is(err, errs.ErrPaperForbidden), errors.Is(err, errs.ErrAnnotationNotFound), errors.Is(err, errs.ErrMindMapNotFound):
 		writePaperErr(c, err, fallback)
 		return true
 	default:
@@ -646,6 +708,10 @@ func writePaperErr(c *gin.Context, err error, fallback string) {
 		response.Fail(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, errs.ErrAnnotationNotFound):
 		response.Fail(c, http.StatusNotFound, err.Error())
+	case errors.Is(err, errs.ErrMindMapNotFound):
+		response.Fail(c, http.StatusNotFound, err.Error())
+	case errors.Is(err, errs.ErrMindMapInvalid):
+		response.Fail(c, http.StatusBadRequest, err.Error())
 	case errors.Is(err, errs.ErrPaperForbidden):
 		response.Fail(c, http.StatusForbidden, err.Error())
 	default:

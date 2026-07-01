@@ -84,6 +84,10 @@ func Init(mode string) *gin.Engine {
 			authed.POST("/papers/:id/annotations", paperhandler.CreateAnnotation)
 			authed.PATCH("/papers/:id/annotations/:annotation_id", paperhandler.UpdateAnnotation)
 			authed.DELETE("/papers/:id/annotations/:annotation_id", paperhandler.DeleteAnnotation)
+			authed.POST("/papers/:id/mind-maps/build", paperhandler.BuildMindMap)
+			authed.GET("/papers/:id/mind-maps", paperhandler.GetMindMap)
+			authed.PUT("/mind-maps/:mind_map_id", paperhandler.UpdateMindMap)
+			authed.POST("/mind-maps/:mind_map_id/sync", paperhandler.SyncMindMap)
 
 			// 知识图谱：论文关系发现与研究趋势,按用户隔离。
 			authed.GET("/graph/overview", graphhandler.Overview) // 图谱规模总览
