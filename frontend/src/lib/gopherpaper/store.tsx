@@ -33,6 +33,8 @@ import type {
   Session,
   UpdateEmailPayload,
   UpdateProfilePayload,
+  UpdateUserPreferencePayload,
+  UserPreference,
 } from "./types";
 import { toolStatusText } from "./tool-status";
 import { chatSessions, isSettled, paperTitle, sessionsForPaper } from "./utils";
@@ -43,6 +45,14 @@ const AUTH_KEY = "gopherpaper.auth";
 const EMPTY_SESSIONS: Session[] = [];
 const EMPTY_MESSAGES: Message[] = [];
 const EMPTY_PAPERS: Paper[] = [];
+
+const DEFAULT_PREFERENCE: UserPreference = {
+  nickname: "",
+  answer_style: "concise",
+  output_format: "conclusion_first",
+  language: "auto",
+  custom_instruction: "",
+};
 
 // 工具名 → 执行过程里「检索」步的检索对象文案(左列已是「检索」标签,这里只写对象避免重复);
 // 未列出的工具回退到原始工具名。
@@ -65,6 +75,7 @@ interface PersistedAuth {
 interface AppContextValue {
   // 状态
   user: AuthUser | null;
+  preference: UserPreference;
   authed: boolean;
   papers: Paper[];
   sessions: Session[];
@@ -93,6 +104,8 @@ interface AppContextValue {
   refreshUser: () => Promise<void>;
   updateProfile: (payload: UpdateProfilePayload) => Promise<void>;
   updateEmail: (payload: UpdateEmailPayload) => Promise<void>;
+  refreshPreferences: () => Promise<void>;
+  updatePreferences: (payload: UpdateUserPreferencePayload) => Promise<void>;
   updateAvatar: (file: File) => Promise<void>;
   clearAvatar: () => Promise<void>;
   refreshPapers: (query?: string) => Promise<void>;
@@ -126,6 +139,7 @@ function loadAuth(): PersistedAuth {
 function AppProviderInner({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [preference, setPreference] = useState<UserPreference>(DEFAULT_PREFERENCE);
   const [token, setTokenState] = useState<string>("");
   // papers 由 Query 接管:paperSearch 空→listPapers,非空→searchPapers,搜索词进 query key。
   const [paperSearch, setPaperSearch] = useState("");
@@ -277,6 +291,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       setActiveSessionID("");
       setReportReady({});
       setReportProgress({});
+      setPreference(DEFAULT_PREFERENCE);
     },
     [disconnectWs, persist, queryClient],
   );
@@ -619,6 +634,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
           queryFn: async () => chatSessions(await api.listSessions()),
         }),
       ]);
+      api.preferences()
+        .then((data) => setPreference({ ...DEFAULT_PREFERENCE, ...data }))
+        .catch(() => {});
       if (!mountedRef.current) return;
       if (paperList.length > 0) {
         const first = paperList[0];
@@ -641,6 +659,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     setTokenState(saved.token);
     api.setToken(saved.token);
     api.me().then((profile) => persist(profile, saved.token)).catch(() => {});
+    api.preferences()
+      .then((data) => setPreference({ ...DEFAULT_PREFERENCE, ...data }))
+      .catch(() => {});
     bootstrapSession(saved.token).catch(() => logout(false));
   }, [bootstrapSession, logout, persist]);
 
@@ -700,6 +721,11 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     persist(profile, token);
   }, [persist, token]);
 
+  const refreshPreferences = useCallback(async () => {
+    const data = await api.preferences();
+    setPreference({ ...DEFAULT_PREFERENCE, ...data });
+  }, []);
+
   const updateProfile = useCallback(
     async (payload: UpdateProfilePayload) => {
       const profile = await api.updateProfile(payload);
@@ -713,6 +739,15 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     async (payload: UpdateEmailPayload) => {
       await api.updateEmail(payload);
       toast("邮箱已更新，请重新登录");
+    },
+    [toast],
+  );
+
+  const updatePreferences = useCallback(
+    async (payload: UpdateUserPreferencePayload) => {
+      const data = await api.updatePreferences(payload);
+      setPreference({ ...DEFAULT_PREFERENCE, ...data });
+      toast("AI 回答偏好已更新");
     },
     [toast],
   );
@@ -1068,6 +1103,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   const value: AppContextValue = useMemo(
     () => ({
       user,
+      preference,
       authed: Boolean(token),
       papers,
       sessions,
@@ -1092,6 +1128,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       refreshUser,
       updateProfile,
       updateEmail,
+      refreshPreferences,
+      updatePreferences,
       updateAvatar,
       clearAvatar,
       refreshPapers,
@@ -1107,6 +1145,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     }),
     [
       user,
+      preference,
       token,
       papers,
       sessions,
@@ -1131,6 +1170,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       refreshUser,
       updateProfile,
       updateEmail,
+      refreshPreferences,
+      updatePreferences,
       updateAvatar,
       clearAvatar,
       refreshPapers,

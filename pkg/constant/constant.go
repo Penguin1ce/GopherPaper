@@ -108,6 +108,63 @@ const (
 	AvatarURLPrefix  = "/api/v1/user/avatar-files"
 )
 
+type PreferenceAnswerStyle string
+
+const (
+	PreferenceAnswerConcise  PreferenceAnswerStyle = "concise"
+	PreferenceAnswerDetailed PreferenceAnswerStyle = "detailed"
+	PreferenceAnswerAcademic PreferenceAnswerStyle = "academic"
+	PreferenceAnswerBeginner PreferenceAnswerStyle = "beginner"
+)
+
+func (s PreferenceAnswerStyle) Valid() bool {
+	switch s {
+	case PreferenceAnswerConcise, PreferenceAnswerDetailed, PreferenceAnswerAcademic, PreferenceAnswerBeginner:
+		return true
+	default:
+		return false
+	}
+}
+
+type PreferenceOutputFormat string
+
+const (
+	PreferenceOutputDefault         PreferenceOutputFormat = "default"
+	PreferenceOutputBullets         PreferenceOutputFormat = "bullets"
+	PreferenceOutputTable           PreferenceOutputFormat = "table"
+	PreferenceOutputConclusionFirst PreferenceOutputFormat = "conclusion_first"
+)
+
+func (f PreferenceOutputFormat) Valid() bool {
+	switch f {
+	case PreferenceOutputDefault, PreferenceOutputBullets, PreferenceOutputTable, PreferenceOutputConclusionFirst:
+		return true
+	default:
+		return false
+	}
+}
+
+type PreferenceLanguage string
+
+const (
+	PreferenceLanguageAuto      PreferenceLanguage = "auto"
+	PreferenceLanguageChinese   PreferenceLanguage = "zh"
+	PreferenceLanguageBilingual PreferenceLanguage = "bilingual"
+)
+
+func (l PreferenceLanguage) Valid() bool {
+	switch l {
+	case PreferenceLanguageAuto, PreferenceLanguageChinese, PreferenceLanguageBilingual:
+		return true
+	default:
+		return false
+	}
+}
+
+const MaxPreferenceNicknameRunes = 64
+
+const MaxPreferenceInstructionRunes = 500
+
 // 知识图谱语义相似边参数。同领域论文关键词字面常不重合(中英意译各异),靠结构化语义摘要的
 // cosine 相似补关联:超过阈值的取 Top K 建 SIMILAR_TO。阈值按 bge/qwen embedding 的同主题召回调校,
 // 保持略宽松,再由 TopK 控制密度。

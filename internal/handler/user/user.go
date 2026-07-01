@@ -223,6 +223,40 @@ func UpdateEmail(c *gin.Context) {
 	response.OK(c, profileResponse(user))
 }
 
+func Preferences(c *gin.Context) {
+	studentID := tenant.MustStudentID(c.Request.Context())
+	if studentID == "" {
+		response.Fail(c, http.StatusUnauthorized, "未登录")
+		return
+	}
+	pref, err := userservice.Preference(c.Request.Context(), studentID)
+	if err != nil {
+		writeProfileErr(c, err)
+		return
+	}
+	response.OK(c, preferenceResponse(pref))
+}
+
+func UpdatePreferences(c *gin.Context) {
+	studentID := tenant.MustStudentID(c.Request.Context())
+	if studentID == "" {
+		response.Fail(c, http.StatusUnauthorized, "未登录")
+		return
+	}
+	var req dto.UpdateUserPreferenceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	pref, err := userservice.UpdatePreference(c.Request.Context(), studentID, req)
+	if err != nil {
+		writeProfileErr(c, err)
+		return
+	}
+	ai.EvictUser(studentID)
+	response.OK(c, preferenceResponse(pref))
+}
+
 // Logout 注销当前登录状态。
 // POST /api/v1/user/logout
 //
@@ -328,10 +362,22 @@ func profileResponse(user *model.User) dto.UserProfileResponse {
 	}
 }
 
+func preferenceResponse(pref *model.UserPreference) dto.UserPreferenceResponse {
+	return dto.UserPreferenceResponse{
+		Nickname:          pref.Nickname,
+		AnswerStyle:       pref.AnswerStyle,
+		OutputFormat:      pref.OutputFormat,
+		Language:          pref.Language,
+		CustomInstruction: pref.CustomInstruction,
+	}
+}
+
 func writeProfileErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, errs.ErrCodeExpired), errors.Is(err, errs.ErrCodeMismatch):
 		response.Fail(c, http.StatusBadRequest, err.Error())
+	case errors.Is(err, errs.ErrPreferenceInvalid):
+		response.Fail(c, http.StatusBadRequest, "AI 回答偏好设置无效")
 	case errors.Is(err, errs.ErrUserExists):
 		response.Fail(c, http.StatusBadRequest, "邮箱已被其他账号绑定")
 	case errors.Is(err, errs.ErrUserNotFound):

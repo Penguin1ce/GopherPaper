@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 
 	"trpc.group/trpc-go/trpc-agent-go/agent"
@@ -99,13 +100,20 @@ func Chat(ctx context.Context, sessionID, query string) (string, error) {
 		return "", err
 	}
 	ch, err := rt.Run(ctx, userID, sessionID, trpcmodel.NewUserMessage(query),
-		agent.WithInstruction(constant.PioneerRuntimeInstruction()),
+		agent.WithInstruction(withUserPreference(ctx, constant.PioneerRuntimeInstruction())),
 	)
 	if err != nil {
 		return "", err
 	}
 	// 挂了 React planner,模型输出带规划/动作标签,用标签感知收集器分流 plan 与正文。
 	return planstream.CollectEvents(ctx, ch)
+}
+
+func withUserPreference(ctx context.Context, instruction string) string {
+	if pref := strings.TrimSpace(core.UserPreferenceFrom(ctx)); pref != "" {
+		return instruction + "\n\n" + pref
+	}
+	return instruction
 }
 
 // runnerForUser 懒建该用户的 runner,模型取自 aimodel,工具与 skill 取 pioneer 分组。
