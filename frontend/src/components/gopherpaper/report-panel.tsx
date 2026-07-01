@@ -9,6 +9,7 @@ import {
   type LucideIcon,
   Lightbulb,
   Loader2,
+  Waypoints,
   Workflow,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -55,6 +56,10 @@ export function ReportPanel() {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<ChatResponse | null>(null);
   const [awaiting, setAwaiting] = useState<ReportType | null>(null);
+  // 论文思路图(SVG)独立于报告状态机:按需生成、不缓存、不进 Markdown 渲染分支。
+  const [flowSVG, setFlowSVG] = useState<string | null>(null);
+  const [flowLoading, setFlowLoading] = useState(false);
+  const [flowError, setFlowError] = useState(false);
   const autoLoadedRef = useRef<string | null>(null);
   const articleRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef(true);
@@ -83,6 +88,9 @@ export function ReportPanel() {
     setReport(null);
     setLoading(false);
     setAwaiting(null);
+    setFlowSVG(null);
+    setFlowLoading(false);
+    setFlowError(false);
   }, [activePaperID]);
 
   // 进入论文时,若已有就绪报告则自动展示第一篇,免用户点击;每篇只自动一次(autoLoadedRef 守门)。
@@ -169,6 +177,37 @@ export function ReportPanel() {
     }
   };
 
+  // 生成论文思路图:经小囊鼠单轮 agent 画一张研究思路 SVG。独立动作,不进报告状态机。
+  const generateFlow = async () => {
+    if (!activePaperID || flowLoading) return;
+    setFlowSVG(null);
+    setFlowError(false);
+    setFlowLoading(true);
+    try {
+      const res = await api.generatePaperFlow(activePaperID);
+      if (!mountedRef.current || activePaperRef.current !== activePaperID) return;
+      setFlowSVG(res.content);
+    } catch (err) {
+      if (!mountedRef.current || activePaperRef.current !== activePaperID) return;
+      setFlowError(true);
+      toast((err as Error)?.message || "思路图生成失败", "error");
+    } finally {
+      if (mountedRef.current) setFlowLoading(false);
+    }
+  };
+
+  // 把思路图 SVG 作为 .svg 文件下载。
+  const downloadFlowSVG = () => {
+    if (!flowSVG) return;
+    const blob = new Blob([flowSVG], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${paperTitle(activePaper!)}-论文思路图.svg`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // 把当前报告正文按打印样式导出 PDF:取已渲染的正文 HTML 写进隔离 iframe 触发打印。
   const downloadPDF = () => {
     if (!articleRef.current || !active || !report) return;
@@ -253,6 +292,64 @@ export function ReportPanel() {
               </button>
             );
           })}
+        </div>
+
+        {/* 论文思路图:独立动作,用 infographic-charts skill 画一张研究思路 SVG。 */}
+        <div className="space-y-3">
+          <button
+            type="button"
+            disabled={flowLoading}
+            onClick={generateFlow}
+            className="group flex w-full items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2.5 text-left transition-colors duration-200 hover:border-sienna/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sienna/40 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-muted/50 text-muted-foreground transition-colors group-hover:text-sienna">
+              {flowLoading ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Waypoints className="size-3.5" />
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-serif text-sm font-semibold text-foreground">论文思路图</span>
+              <span className="block truncate text-xs text-muted-foreground">
+                从问题到结论的研究脉络，一张可下载的流程图
+              </span>
+            </span>
+            <ArrowRight
+              className={`size-3.5 shrink-0 text-muted-foreground/50 transition-all group-hover:translate-x-0.5 group-hover:text-sienna ${
+                flowLoading ? "opacity-0" : ""
+              }`}
+            />
+          </button>
+
+          {(flowLoading || flowSVG || flowError) && (
+            <div className="rounded-xl border bg-card p-4">
+              {flowLoading ? (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  小囊鼠正在检索论文脉络并绘制思路图，约需一分钟…
+                </p>
+              ) : flowError ? (
+                <p className="text-sm text-destructive">思路图生成失败，请重试。</p>
+              ) : flowSVG ? (
+                <div className="animate-in fade-in-50 slide-in-from-bottom-2 space-y-3 duration-300">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-serif text-base font-semibold tracking-tight">论文思路图</h3>
+                    <Button variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={downloadFlowSVG}>
+                      <Download className="size-3.5" />
+                      下载 SVG
+                    </Button>
+                  </div>
+                  {/* data-uri 渲染,SVG 不执行脚本、可打印;skill 产物自带亮/暗模式样式。 */}
+                  <img
+                    src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(flowSVG)}`}
+                    alt="论文研究思路图"
+                    className="w-full rounded-lg border bg-background"
+                  />
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border bg-card">

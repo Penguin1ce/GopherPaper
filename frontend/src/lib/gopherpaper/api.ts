@@ -334,6 +334,14 @@ export function generateReport(id: string, type: ReportType) {
   });
 }
 
+// generatePaperFlow 为某篇论文画一张研究思路流程图,返回 content 为自包含 SVG 的 ChatResponse。
+// 同步生成不缓存,论文未就绪时后端返回 409。
+export function generatePaperFlow(id: string) {
+  return request<ChatResponse>(`/papers/${encodeURIComponent(id)}/flow`, {
+    method: "POST",
+  });
+}
+
 // reportStatus 拉取某篇论文已生成与生成中的研读报告状态,只读,不触发生成。
 export async function reportStatus(id: string): Promise<ReportsStatus> {
   const res = await request<Partial<ReportsStatus>>(

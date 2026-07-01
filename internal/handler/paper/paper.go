@@ -352,6 +352,38 @@ func Report(c *gin.Context) {
 	response.OK(c, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})
 }
 
+// Flow 为某篇论文画一张研究思路流程图,返回自包含 SVG,前端按钮触发。
+// POST /api/v1/papers/:id/flow
+//
+// @Summary 生成论文思路图
+// @Description 经小囊鼠单轮 agent(挂 infographic-charts skill)同步画一张研究思路的静态 SVG,不缓存。
+// @Tags papers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "论文 ID"
+// @Success 200 {object} dto.Response{data=dto.ChatResponse}
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 409 {object} dto.Response "论文尚未解析就绪"
+// @Failure 500 {object} dto.Response
+// @Router /papers/{id}/flow [post]
+func Flow(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	paperID := c.Param("id")
+	reply, err := paperservice.PaperFlow(c.Request.Context(), ownerID, paperID)
+	if err != nil {
+		if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errs.ErrPaperForbidden) ||
+			errors.Is(err, errs.ErrPaperNotReady) {
+			writePaperErr(c, err, "生成失败")
+			return
+		}
+		zlog.Error("生成论文思路图失败", "paper_id", paperID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "生成失败")
+		return
+	}
+	response.OK(c, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})
+}
+
 // Reports 列出某篇论文已生成的研读报告类型,前端进入论文时回填就绪态并自动展示,不触发生成。
 // GET /api/v1/papers/:id/reports
 //
@@ -714,6 +746,8 @@ func writePaperErr(c *gin.Context, err error, fallback string) {
 		response.Fail(c, http.StatusBadRequest, err.Error())
 	case errors.Is(err, errs.ErrPaperForbidden):
 		response.Fail(c, http.StatusForbidden, err.Error())
+	case errors.Is(err, errs.ErrPaperNotReady):
+		response.Fail(c, http.StatusConflict, err.Error())
 	default:
 		zlog.Error("论文接口错误", "err", err)
 		response.Fail(c, http.StatusInternalServerError, fallback)

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/ai/retrieval"
 	"GopherPaper/pkg/constant"
 )
 
@@ -62,6 +63,58 @@ func TestEmitReportPhase(t *testing.T) {
 	}
 	if !strings.Contains(ev.Delta, "写报告") {
 		t.Fatalf("阶段文案缺少写报告提示: %q", ev.Delta)
+	}
+}
+
+func TestFallbackReportQueriesByType(t *testing.T) {
+	if got := fallbackReportQueries(constant.ReportQuickRead); len(got) < 5 {
+		t.Fatalf("quickread 兜底检索主题过少: %v", got)
+	}
+	result := strings.Join(fallbackReportQueries(constant.ReportResult), " ")
+	for _, want := range []string{"主实验", "消融实验", "失败案例"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("result 兜底检索主题缺少 %q: %s", want, result)
+		}
+	}
+}
+
+func TestExtractSVG(t *testing.T) {
+	in := "说明文字\n```svg\n<svg viewBox=\"0 0 680 760\"><text>思路图</text></svg>\n```"
+	got := extractSVG(in)
+	want := `<svg viewBox="0 0 680 760"><text>思路图</text></svg>`
+	if got != want {
+		t.Fatalf("extractSVG = %q, want %q", got, want)
+	}
+}
+
+func TestFallbackFlowQueriesCoverMainChain(t *testing.T) {
+	got := strings.Join(fallbackFlowQueries(), " ")
+	for _, want := range []string{"研究问题", "现有方法不足", "核心思路", "方法流程", "关键结果", "结论"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("思路图兜底检索主题缺少 %q: %s", want, got)
+		}
+	}
+}
+
+func TestAppendUniqueDocsLimitsAndDedupes(t *testing.T) {
+	seen := map[string]struct{}{"a": {}}
+	out := []*retrieval.Doc{{ID: "a"}}
+	docs := []*retrieval.Doc{
+		{ID: "a"},
+		{ID: "b"},
+		nil,
+		{ID: "c"},
+		{ID: "d"},
+	}
+	out = appendUniqueDocs(out, seen, docs, 2, 3)
+	if len(out) != 3 {
+		t.Fatalf("去重追加数量 = %d, want 3", len(out))
+	}
+	if out[1].ID != "b" || out[2].ID != "c" {
+		t.Fatalf("追加顺序或去重异常: %+v", out)
+	}
+	if _, ok := seen["d"]; ok {
+		t.Fatalf("达到 maxAdd 后不应继续标记后续 doc")
 	}
 }
 

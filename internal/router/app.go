@@ -78,6 +78,7 @@ func Init(mode string) *gin.Engine {
 			authed.POST("/papers/:id/sections/rebuild", paperhandler.RebuildSections)
 			authed.GET("/papers/:id/reports", paperhandler.Reports)
 			authed.POST("/papers/:id/report", paperhandler.Report)
+			authed.POST("/papers/:id/flow", paperhandler.Flow)
 			authed.POST("/papers/:id/translate", paperhandler.Translate)
 			authed.PATCH("/papers/:id/progress", paperhandler.UpdateProgress)
 			authed.GET("/papers/:id/annotations", paperhandler.ListAnnotations)
