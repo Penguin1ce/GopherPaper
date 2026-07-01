@@ -12,6 +12,7 @@ import (
 	"GopherPaper/internal/history"
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/service/metrics"
+	userservice "GopherPaper/internal/service/user"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 )
@@ -35,6 +36,11 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string) (*mode
 	}
 	// 会话绑定了论文时围绕该论文检索。
 	ctx = core.WithPaperID(ctx, sess.PaperID)
+	if pref, prefErr := userservice.Preference(ctx, studentID); prefErr == nil {
+		ctx = core.WithUserPreference(ctx, userservice.PreferenceInstruction(pref))
+	} else {
+		zlog.Warn("读取用户 AI 偏好失败,使用默认回答策略", "student_id", studentID, "err", prefErr)
+	}
 	ctx, steps := withExecutionRecorder(ctx)
 	metricPaperID = sess.PaperID
 	checkMS := time.Since(start).Milliseconds()

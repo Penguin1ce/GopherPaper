@@ -65,6 +65,8 @@ func Init(mode string) *gin.Engine {
 			authed.POST("/user/profile", user.UpdateProfile)
 			authed.PATCH("/user/profile", user.UpdateProfile)
 			authed.POST("/user/email", user.UpdateEmail)
+			authed.GET("/user/preferences", user.Preferences)
+			authed.POST("/user/preferences", user.UpdatePreferences)
 			authed.POST("/user/logout", user.Logout)
 			authed.POST("/user/avatar", user.UploadAvatar)
 			authed.DELETE("/user/avatar", user.ClearAvatar)

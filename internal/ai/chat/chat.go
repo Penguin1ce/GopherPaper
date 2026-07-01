@@ -87,7 +87,7 @@ func chitchatReply(ctx context.Context, query string, history []trpcmodel.Messag
 		return nil, err
 	}
 	msgs := make([]trpcmodel.Message, 0, len(history)+2)
-	msgs = append(msgs, trpcmodel.NewSystemMessage(constant.ChitchatPrompt))
+	msgs = append(msgs, trpcmodel.NewSystemMessage(withUserPreference(ctx, constant.ChitchatPrompt)))
 	msgs = append(msgs, history...)
 	msgs = append(msgs, trpcmodel.NewUserMessage(query))
 	req := &trpcmodel.Request{Messages: msgs}
@@ -105,7 +105,7 @@ func chitchatReply(ctx context.Context, query string, history []trpcmodel.Messag
 // 出处散在各轮工具调用中,故挂 ctx 引用收集器,循环结束后排空填进 Meta。
 func agenticRAG(ctx context.Context, query string, intent constant.IntentType, history []trpcmodel.Message) (*core.Reply, error) {
 	ctx = retrieval.WithRefSink(ctx)
-	content, err := ragagent.Generate(ctx, constant.AgenticRAGPromptFor(intent), history, query, policyFor(intent))
+	content, err := ragagent.Generate(ctx, withUserPreference(ctx, constant.AgenticRAGPromptFor(intent)), history, query, policyFor(intent))
 	if err != nil {
 		if errors.Is(err, planstream.ErrPseudoToolCall) {
 			zlog.Warn("agentic RAG 输出伪工具调用,降级单轮 RAG", "intent", intent, "err", err)
@@ -159,6 +159,7 @@ func singleShotRAG(ctx context.Context, query string, history []trpcmodel.Messag
 
 	sysPrompt := strings.ReplaceAll(constant.RAGPromptFor(intent), "{context}", retrieval.FormatDocs(ctxDocs))
 	sysPrompt += figureInstruction(imgDocs)
+	sysPrompt = withUserPreference(ctx, sysPrompt)
 	content, err := agentrt.GenerateWithImages(ctx, sysPrompt, history, query, images)
 	if err != nil {
 		return nil, err
@@ -168,6 +169,13 @@ func singleShotRAG(ctx context.Context, query string, history []trpcmodel.Messag
 		reply.Meta = map[string]any{"sources": sources}
 	}
 	return reply, nil
+}
+
+func withUserPreference(ctx context.Context, prompt string) string {
+	if pref := strings.TrimSpace(core.UserPreferenceFrom(ctx)); pref != "" {
+		return prompt + "\n\n" + pref
+	}
+	return prompt
 }
 
 // figureInstruction 在有召回图时追加插图指示:让模型用 figure://文件名 占位把图插进正文对应位置,

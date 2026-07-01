@@ -33,6 +33,8 @@ import type {
   Topic,
   UpdateEmailPayload,
   UpdateProfilePayload,
+  UpdateUserPreferencePayload,
+  UserPreference,
   UserProfile,
 } from "./types";
 
@@ -264,6 +266,17 @@ export async function updateProfile(payload: UpdateProfilePayload) {
 
 export function updateEmail(payload: UpdateEmailPayload) {
   return request<UserProfile>("/user/email", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function preferences() {
+  return request<UserPreference>("/user/preferences");
+}
+
+export function updatePreferences(payload: UpdateUserPreferencePayload) {
+  return request<UserPreference>("/user/preferences", {
     method: "POST",
     body: JSON.stringify(payload),
   });

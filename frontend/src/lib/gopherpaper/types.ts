@@ -330,6 +330,30 @@ export interface UpdateEmailPayload {
   code: string;
 }
 
+export type PreferenceAnswerStyle =
+  | "concise"
+  | "detailed"
+  | "academic"
+  | "beginner";
+
+export type PreferenceOutputFormat =
+  | "default"
+  | "bullets"
+  | "table"
+  | "conclusion_first";
+
+export type PreferenceLanguage = "auto" | "zh" | "bilingual";
+
+export interface UserPreference {
+  nickname: string;
+  answer_style: PreferenceAnswerStyle;
+  output_format: PreferenceOutputFormat;
+  language: PreferenceLanguage;
+  custom_instruction: string;
+}
+
+export type UpdateUserPreferencePayload = UserPreference;
+
 export interface PasswordResetCodePayload {
   student_id: string;
   email: string;

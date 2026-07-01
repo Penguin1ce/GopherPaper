@@ -5,7 +5,9 @@ import {
   ArrowLeft,
   Camera,
   CheckCircle2,
+  MessageSquareText,
   IdCard,
+  KeyRound,
   LogOut,
   Mail,
   ShieldCheck,
@@ -18,7 +20,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/lib/gopherpaper/store";
+import type {
+  PreferenceAnswerStyle,
+  PreferenceLanguage,
+  PreferenceOutputFormat,
+  UserPreference,
+} from "@/lib/gopherpaper/types";
 import { cn } from "@/lib/utils";
 import { AvatarDialog } from "./avatar-dialog";
 import { Empty } from "./app-ui";
@@ -41,18 +57,33 @@ export function ProfileCenter() {
     updateAvatar,
     clearAvatar,
     sendCode,
+    sendPasswordResetCode,
+    resetPassword,
+    preference,
+    refreshPreferences,
+    updatePreferences,
   } = useApp();
   const [name, setName] = useState("");
+  const [prefForm, setPrefForm] = useState<UserPreference>(preference);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [emailEditing, setEmailEditing] = useState(false);
+  const [passwordEditing, setPasswordEditing] = useState(false);
   const [nextEmail, setNextEmail] = useState("");
   const [emailCode, setEmailCode] = useState("");
+  const [passwordCode, setPasswordCode] = useState("");
+  const [nextPassword, setNextPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [emailSending, setEmailSending] = useState(false);
   const [emailSaving, setEmailSaving] = useState(false);
+  const [passwordSending, setPasswordSending] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [preferenceSaving, setPreferenceSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [preferenceError, setPreferenceError] = useState("");
 
   const fallback = (user?.name || user?.student_id || "G").slice(0, 1).toUpperCase();
   const displayName = fieldFallback(user?.name, user?.student_id || "GopherPaper 用户");
@@ -65,6 +96,10 @@ export function ProfileCenter() {
   }, [user?.name]);
 
   useEffect(() => {
+    setPrefForm(preference);
+  }, [preference]);
+
+  useEffect(() => {
     if (!emailEditing) return;
     setNextEmail(user?.email || "");
     setEmailCode("");
@@ -72,12 +107,20 @@ export function ProfileCenter() {
   }, [emailEditing, user?.email]);
 
   useEffect(() => {
+    if (!passwordEditing) return;
+    setPasswordCode("");
+    setNextPassword("");
+    setConfirmPassword("");
+    setPasswordError("");
+  }, [passwordEditing]);
+
+  useEffect(() => {
     if (!authed) return;
     setRefreshing(true);
-    refreshUser()
+    Promise.all([refreshUser(), refreshPreferences()])
       .catch(() => {})
       .finally(() => setRefreshing(false));
-  }, [authed, refreshUser]);
+  }, [authed, refreshPreferences, refreshUser]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -121,6 +164,66 @@ export function ProfileCenter() {
       setEmailError(err instanceof Error ? err.message : "邮箱更新失败");
     } finally {
       setEmailSaving(false);
+    }
+  }
+
+  async function sendPasswordCode() {
+    setPasswordError("");
+    if (!user?.student_id || !user?.email) {
+      setPasswordError("当前账号缺少学号或绑定邮箱，无法验证身份");
+      return;
+    }
+    setPasswordSending(true);
+    try {
+      await sendPasswordResetCode({
+        student_id: user.student_id,
+        email: user.email,
+      });
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : "验证码发送失败");
+    } finally {
+      setPasswordSending(false);
+    }
+  }
+
+  async function submitPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPasswordSaving(true);
+    setPasswordError("");
+    try {
+      if (!user?.student_id || !user?.email) {
+        throw new Error("当前账号缺少学号或绑定邮箱，无法修改密码");
+      }
+      if (nextPassword.length < 6) {
+        throw new Error("新密码至少需要 6 位");
+      }
+      if (nextPassword !== confirmPassword) {
+        throw new Error("两次输入的新密码不一致");
+      }
+      await resetPassword({
+        student_id: user.student_id,
+        email: user.email,
+        code: passwordCode.trim(),
+        password: nextPassword,
+      });
+      logout(false);
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : "密码修改失败");
+    } finally {
+      setPasswordSaving(false);
+    }
+  }
+
+  async function submitPreference(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPreferenceSaving(true);
+    setPreferenceError("");
+    try {
+      await updatePreferences(prefForm);
+    } catch (err) {
+      setPreferenceError(err instanceof Error ? err.message : "AI 回答偏好保存失败");
+    } finally {
+      setPreferenceSaving(false);
     }
   }
 
@@ -173,6 +276,7 @@ export function ProfileCenter() {
         <nav className="space-y-2 p-4">
           <SidebarLink href="#profile-card" icon={UserRound} label="个人名片" />
           <SidebarLink href="#profile-info" icon={IdCard} label="资料设置" />
+          <SidebarLink href="#ai-preferences" icon={MessageSquareText} label="AI 回答偏好" />
           <SidebarLink href="#account-security" icon={ShieldCheck} label="账号安全" />
         </nav>
 
@@ -394,10 +498,250 @@ export function ProfileCenter() {
                   </form>
                 )}
 
+                <BindingRow
+                  icon={KeyRound}
+                  label="登录密码"
+                  value="通过绑定邮箱验证码修改"
+                  statusLabel="邮箱验证"
+                  action={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPasswordEditing((value) => !value)}
+                    >
+                      {passwordEditing ? "取消" : "修改"}
+                    </Button>
+                  }
+                />
+
+                {passwordEditing && (
+                  <form className="space-y-3 rounded-2xl border bg-muted/20 p-4" onSubmit={submitPassword}>
+                    <div className="rounded-xl border bg-background/70 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                      验证码会发送到当前绑定邮箱：{email}。修改成功后需要重新登录。
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                      <div className="space-y-2">
+                        <Label htmlFor="profile-password-code">邮箱验证码</Label>
+                        <Input
+                          id="profile-password-code"
+                          value={passwordCode}
+                          maxLength={6}
+                          placeholder="6 位验证码"
+                          onChange={(event) => setPasswordCode(event.target.value)}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="self-end"
+                        disabled={passwordSending || passwordSaving}
+                        onClick={sendPasswordCode}
+                      >
+                        {passwordSending ? "发送中..." : "发送验证码"}
+                      </Button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="profile-new-password">新密码</Label>
+                        <PasswordInput
+                          id="profile-new-password"
+                          value={nextPassword}
+                          minLength={6}
+                          placeholder="至少 6 位"
+                          disabled={passwordSaving}
+                          onChange={(event) => setNextPassword(event.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="profile-confirm-password">确认新密码</Label>
+                        <PasswordInput
+                          id="profile-confirm-password"
+                          value={confirmPassword}
+                          minLength={6}
+                          placeholder="再次输入新密码"
+                          disabled={passwordSaving}
+                          onChange={(event) => setConfirmPassword(event.target.value)}
+                        />
+                      </div>
+                    </div>
+                    {passwordError && (
+                      <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                        {passwordError}
+                      </p>
+                    )}
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={passwordSaving}
+                        onClick={() => setPasswordEditing(false)}
+                      >
+                        取消
+                      </Button>
+                      <Button type="submit" disabled={passwordSaving}>
+                        {passwordSaving ? "修改中..." : "确认修改"}
+                      </Button>
+                    </div>
+                  </form>
+                )}
+
                 <BindingRow icon={UserRound} label="登录账号" value={studentID} />
               </div>
             </section>
           </div>
+
+          <form
+            id="ai-preferences"
+            className="overflow-hidden rounded-[1.75rem] border bg-card shadow-sm"
+            onSubmit={submitPreference}
+          >
+            <div className="grid lg:grid-cols-[minmax(18rem,0.82fr)_minmax(0,1.35fr)]">
+              <div className="relative overflow-hidden border-b bg-muted/25 p-5 sm:p-6 lg:border-b-0 lg:border-r">
+                <div className="absolute -right-20 -top-20 size-44 rounded-full bg-primary/10 blur-3xl" />
+                <div className="relative">
+                  <div className="flex items-center gap-3">
+                    <div className="grid size-11 place-items-center rounded-2xl bg-primary/10 text-primary">
+                      <MessageSquareText className="size-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-semibold tracking-tight">AI 回答偏好</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">控制回答方式，不改变科研可靠性规则。</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 space-y-3 rounded-2xl border bg-background/70 p-4 text-xs leading-relaxed text-muted-foreground">
+                    <p>
+                      <span className="font-medium text-foreground">可以自定义：</span>
+                      称呼、回答详略、输出形式、语言习惯和补充表达要求。
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">不可覆盖：</span>
+                      论文问答必须基于用户可见知识库，并保留可追溯出处。
+                    </p>
+                    <p>
+                      保存后会在后续默认论文问答和小云雀对话中生效。
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-5 sm:p-6">
+                <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.15fr)]">
+                  <div className="space-y-5">
+                    <div className="space-y-2">
+                      <Label htmlFor="preference-nickname">希望 AI 如何称呼你</Label>
+                      <Input
+                        id="preference-nickname"
+                        value={prefForm.nickname}
+                        maxLength={64}
+                        placeholder="例如：同学、小王、Kurumi"
+                        onChange={(event) =>
+                          setPrefForm((value) => ({ ...value, nickname: event.target.value }))
+                        }
+                      />
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+                      <PreferenceSelect
+                        label="回答风格"
+                        value={prefForm.answer_style}
+                        onValueChange={(value) =>
+                          setPrefForm((prev) => ({
+                            ...prev,
+                            answer_style: value as PreferenceAnswerStyle,
+                          }))
+                        }
+                        options={[
+                          ["concise", "简洁直接"],
+                          ["detailed", "详细解释"],
+                          ["academic", "学术严谨"],
+                          ["beginner", "新手友好"],
+                        ]}
+                      />
+                      <PreferenceSelect
+                        label="输出形式"
+                        value={prefForm.output_format}
+                        onValueChange={(value) =>
+                          setPrefForm((prev) => ({
+                            ...prev,
+                            output_format: value as PreferenceOutputFormat,
+                          }))
+                        }
+                        options={[
+                          ["conclusion_first", "先结论后解释"],
+                          ["bullets", "多用要点"],
+                          ["table", "适合时用表格"],
+                          ["default", "默认段落"],
+                        ]}
+                      />
+                      <PreferenceSelect
+                        label="语言偏好"
+                        value={prefForm.language}
+                        onValueChange={(value) =>
+                          setPrefForm((prev) => ({
+                            ...prev,
+                            language: value as PreferenceLanguage,
+                          }))
+                        }
+                        options={[
+                          ["auto", "跟随提问"],
+                          ["zh", "总是中文"],
+                          ["bilingual", "关键术语中英对照"],
+                        ]}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label htmlFor="preference-custom">补充回答要求</Label>
+                      <span className="text-xs text-muted-foreground">
+                        {prefForm.custom_instruction.length}/500
+                      </span>
+                    </div>
+                    <Textarea
+                      id="preference-custom"
+                      value={prefForm.custom_instruction}
+                      maxLength={500}
+                      rows={7}
+                      placeholder="例如：解释公式时多给直观例子；回答论文方法时先给整体流程，再展开细节。"
+                      className="min-h-48 resize-none rounded-2xl bg-background"
+                      onChange={(event) =>
+                        setPrefForm((value) => ({
+                          ...value,
+                          custom_instruction: event.target.value,
+                        }))
+                      }
+                    />
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      补充要求只影响表达方式；“必须基于知识库、保留出处、不能编造”仍由系统规则强制保证。
+                    </p>
+                  </div>
+                </div>
+
+                {preferenceError && (
+                  <p className="mt-5 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {preferenceError}
+                  </p>
+                )}
+
+                <div className="mt-6 flex flex-col gap-2 border-t pt-5 sm:flex-row sm:justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setPrefForm(preference)}
+                    disabled={preferenceSaving}
+                  >
+                    重置
+                  </Button>
+                  <Button type="submit" disabled={preferenceSaving}>
+                    {preferenceSaving ? "保存中..." : "保存偏好"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </form>
         </section>
       </WorkspacePanel>
 
@@ -484,16 +828,50 @@ function ReadOnlyField({
   );
 }
 
+function PreferenceSelect({
+  label,
+  value,
+  onValueChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  options: [string, string][];
+}) {
+  const selectedLabel =
+    options.find(([optionValue]) => optionValue === value)?.[1] || value;
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <Select value={value} onValueChange={(next) => next && onValueChange(next)}>
+        <SelectTrigger className="h-10 w-full rounded-xl bg-background">
+          <span className="truncate">{selectedLabel}</span>
+        </SelectTrigger>
+        <SelectContent>
+          {options.map(([optionValue, optionLabel]) => (
+            <SelectItem key={optionValue} value={optionValue}>
+              {optionLabel}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function BindingRow({
   icon: Icon,
   label,
   value,
   action,
+  statusLabel = "已绑定",
 }: {
   icon: ProfileIcon;
   label: string;
   value: string;
   action?: ReactNode;
+  statusLabel?: string;
 }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/20 px-4 py-3">
@@ -509,7 +887,7 @@ function BindingRow({
       <div className="flex shrink-0 items-center gap-2">
         <Badge>
           <CheckCircle2 className="size-3" />
-          已绑定
+          {statusLabel}
         </Badge>
         {action}
       </div>
