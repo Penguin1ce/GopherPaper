@@ -78,7 +78,28 @@ const (
 	PaperFailed    PaperStatus = "failed"    // 解析失败
 )
 
-// MaxPaperDownloadBytes 小云雀联网下载论文 PDF 的体积上限,与上传接口的 50MB 对齐,防超大文件打满磁盘。
+// MindMapNodeType identifies cards in the deterministic reading mind map.
+type MindMapNodeType string
+
+const (
+	MindMapNodePaper      MindMapNodeType = "paper"
+	MindMapNodeSection    MindMapNodeType = "section"
+	MindMapNodeHighlight  MindMapNodeType = "highlight"
+	MindMapNodeAnnotation MindMapNodeType = "annotation"
+	MindMapNodeGroup      MindMapNodeType = "group"
+	MindMapNodeManual     MindMapNodeType = "manual"
+)
+
+func (t MindMapNodeType) Valid() bool {
+	switch t {
+	case MindMapNodePaper, MindMapNodeSection, MindMapNodeHighlight, MindMapNodeAnnotation, MindMapNodeGroup, MindMapNodeManual:
+		return true
+	default:
+		return false
+	}
+}
+
+// MaxPaperDownloadBytes limits paper downloads to the same size as uploads.
 const MaxPaperDownloadBytes = 50 << 20
 
 const (

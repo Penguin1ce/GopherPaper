@@ -88,6 +88,10 @@ type AnnotationUpdateRequest struct {
 	Color       *string `json:"color"`
 }
 
+type MindMapUpdateRequest struct {
+	Graph model.MindMapGraph `json:"graph" binding:"required"`
+}
+
 // GraphStats 是某用户知识图谱的总览统计。
 type GraphStats struct {
 	Papers    int `json:"papers"`

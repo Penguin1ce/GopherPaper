@@ -27,4 +27,6 @@ var (
 	ErrReportNotFound     = errors.New("paper: 研读报告缓存不存在")
 	ErrReportGenerating   = errors.New("paper: 研读报告正在生成中")
 	ErrAnnotationNotFound = errors.New("paper: 批注不存在")
+	ErrMindMapNotFound    = errors.New("paper: 精读脑图不存在")
+	ErrMindMapInvalid     = errors.New("paper: 精读脑图数据无效")
 )

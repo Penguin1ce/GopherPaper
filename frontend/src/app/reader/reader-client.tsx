@@ -13,6 +13,7 @@ import {
   MessageSquarePlus,
   Minus,
   MoreHorizontal,
+  Network,
   Palette,
   Plus,
   Trash2,
@@ -32,13 +33,16 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import {
   MonitoredHighlightContainer,
   PdfHighlighter,
   TextHighlight,
+  scaledPositionToViewport,
   useHighlightContainerContext,
   usePdfHighlighterContext,
   type Highlight,
@@ -52,6 +56,7 @@ import "react-pdf-highlighter-plus/style/style.css";
 
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/gopherpaper/markdown";
+import { ReadingMindMap } from "@/components/gopherpaper/reading-mind-map";
 import {
   Dialog,
   DialogContent,
@@ -87,6 +92,13 @@ const PDF_WORKER = "/pdfjs/pdf.worker.min.mjs";
 const PDF_VIEWER_PATCH_FLAG = "__gopherpaperSkipSameDocumentSet";
 const READER_PREFS_KEY = "gopherpaper.reader.preferences";
 const RIGHT_PANEL_WIDTH = "24rem";
+const MIND_MAP_PANEL_DEFAULT_WIDTH = 560;
+const MIND_MAP_PANEL_MIN_WIDTH = 380;
+const MIND_MAP_PANEL_MAX_WIDTH = 860;
+const PDF_MIN_SCALE = 0.6;
+const PDF_MAX_SCALE = 2.4;
+const LOCATE_TOP_GAP = 32;
+const LOCATED_ANNOTATION_SCROLL_RESUME_MS = 600;
 
 type PatchablePDFViewer = {
   pdfDocument?: PDFDocumentProxy | null;
@@ -138,6 +150,7 @@ interface ReaderPreferences {
   outlineOpen: boolean;
   translateOpen: boolean;
   annotationsOpen: boolean;
+  mindMapOpen: boolean;
   color: AnnotationColor;
 }
 
@@ -145,6 +158,7 @@ const DEFAULT_PREFS: ReaderPreferences = {
   outlineOpen: false,
   translateOpen: true,
   annotationsOpen: true,
+  mindMapOpen: false,
   color: "yellow",
 };
 
@@ -185,10 +199,12 @@ function loadReaderPreferences(): ReaderPreferences {
     const color = COLOR_KEYS.includes(saved.color as AnnotationColor)
       ? (saved.color as AnnotationColor)
       : DEFAULT_PREFS.color;
+    const mindMapOpen = saved.mindMapOpen ?? DEFAULT_PREFS.mindMapOpen;
     return {
       outlineOpen: saved.outlineOpen ?? DEFAULT_PREFS.outlineOpen,
-      translateOpen: saved.translateOpen ?? DEFAULT_PREFS.translateOpen,
-      annotationsOpen: saved.annotationsOpen ?? DEFAULT_PREFS.annotationsOpen,
+      translateOpen: mindMapOpen ? false : (saved.translateOpen ?? DEFAULT_PREFS.translateOpen),
+      annotationsOpen: mindMapOpen ? false : (saved.annotationsOpen ?? DEFAULT_PREFS.annotationsOpen),
+      mindMapOpen,
       color,
     };
   } catch {
@@ -252,6 +268,33 @@ function annotationToHighlight(annotation: PaperAnnotation): ReaderHighlight {
   };
 }
 
+function scrollHighlightToTop(
+  utils: PdfHighlighterUtils,
+  highlight: ReaderHighlight,
+): HTMLElement | null {
+  const viewer = utils.getViewer();
+  if (!viewer) return null;
+  const pageNumber = highlight.position.boundingRect.pageNumber;
+  const pageView = viewer.getPageView(pageNumber - 1);
+  const viewport = pageView?.viewport;
+  if (!viewport) return null;
+  const viewportPosition = scaledPositionToViewport(highlight.position, viewer);
+
+  viewer.scrollPageIntoView({
+    pageNumber,
+    destArray: [
+      null,
+      { name: "XYZ" },
+        ...viewport.convertToPdfPoint(
+          0,
+          Math.max(0, viewportPosition.boundingRect.top - LOCATE_TOP_GAP),
+        ),
+      0,
+    ],
+  });
+  return viewer.container ?? null;
+}
+
 interface TranslationResult {
   original: string;
   translation: string;
@@ -265,6 +308,11 @@ type EventBusCallback = (evt: { pageNumber?: number } | unknown) => void;
 interface EventBusLike {
   on: (event: string, callback: EventBusCallback) => void;
   off: (event: string, callback: EventBusCallback) => void;
+}
+
+interface PdfViewerScaleLike {
+  currentScale?: number;
+  container?: HTMLElement | null;
 }
 
 interface PdfOutlineItem {
@@ -289,6 +337,12 @@ function isEventBus(value: unknown): value is EventBusLike {
   if (!value || typeof value !== "object") return false;
   const candidate = value as { on?: unknown; off?: unknown };
   return typeof candidate.on === "function" && typeof candidate.off === "function";
+}
+
+function pdfViewerWithScale(utils: PdfHighlighterUtils | null): PdfViewerScaleLike | null {
+  const viewer = utils?.getViewer();
+  if (!viewer || typeof viewer !== "object") return null;
+  return viewer as PdfViewerScaleLike;
 }
 
 function toPdfError(error: unknown): Error {
@@ -498,7 +552,12 @@ function scrollTitleIntoView(page: number, terms: string[]) {
   const tick = () => {
     const target = findTitleElement(page, terms);
     if (target) {
-      target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      const previousScrollMarginTop = target.style.scrollMarginTop;
+      target.style.scrollMarginTop = `${LOCATE_TOP_GAP}px`;
+      target.scrollIntoView({ block: "start", inline: "nearest", behavior: "smooth" });
+      window.setTimeout(() => {
+        target.style.scrollMarginTop = previousScrollMarginTop;
+      }, 1600);
       flashTitleElement(target);
       return;
     }
@@ -662,6 +721,7 @@ function ReaderToolbar({
   onFitWidth,
   onToggleTranslate,
   onToggleAnnotations,
+  onToggleMindMap,
   onColorChange,
 }: {
   title: string;
@@ -681,6 +741,7 @@ function ReaderToolbar({
   onFitWidth: () => void;
   onToggleTranslate: () => void;
   onToggleAnnotations: () => void;
+  onToggleMindMap: () => void;
   onColorChange: (color: AnnotationColor) => void;
 }) {
   const zoomText = typeof scaleValue === "number" ? `${Math.round(scaleValue * 100)}%` : "适宽";
@@ -748,6 +809,9 @@ function ReaderToolbar({
         </ToolbarButton>
         <ToolbarButton label="批注面板" active={prefs.annotationsOpen} onClick={onToggleAnnotations}>
           <BookMarked className="size-4" />
+        </ToolbarButton>
+        <ToolbarButton label="精读脑图" active={prefs.mindMapOpen} onClick={onToggleMindMap}>
+          <Network className="size-4" />
         </ToolbarButton>
       </div>
     </header>
@@ -1112,7 +1176,7 @@ function AnnotationCard({
   onDelete,
   onColorChange,
   onRetryTranslate,
-  onGoToPage,
+  onLocate,
 }: {
   annotation: PaperAnnotation;
   busy: string;
@@ -1127,7 +1191,7 @@ function AnnotationCard({
   onDelete: (annotation: PaperAnnotation) => void;
   onColorChange: (annotation: PaperAnnotation, color: AnnotationColor) => void;
   onRetryTranslate: (annotation: PaperAnnotation) => void;
-  onGoToPage: (page: number) => void;
+  onLocate: (annotation: PaperAnnotation) => void;
 }) {
   const color = (annotation.color as AnnotationColor) || "yellow";
   return (
@@ -1135,7 +1199,7 @@ function AnnotationCard({
       <div className="flex items-center justify-between gap-2">
         <button
           type="button"
-          onClick={() => onGoToPage(annotation.page_no)}
+          onClick={() => onLocate(annotation)}
           className="flex min-w-0 items-center gap-2 text-left text-sm font-semibold"
         >
           <span
@@ -1159,7 +1223,7 @@ function AnnotationCard({
             }
           />
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onClick={() => onGoToPage(annotation.page_no)}>跳转到原文</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onLocate(annotation)}>跳转到原文</DropdownMenuItem>
             <DropdownMenuItem onClick={() => onRetryTranslate(annotation)}>
               {annotation.translation ? "重新翻译" : "翻译"}
             </DropdownMenuItem>
@@ -1266,7 +1330,7 @@ function AnnotationPanel({
   onDelete,
   onColorChange,
   onRetryTranslate,
-  onGoToPage,
+  onLocateAnnotation,
 }: {
   annotations: PaperAnnotation[];
   busy: string;
@@ -1281,7 +1345,7 @@ function AnnotationPanel({
   onDelete: (annotation: PaperAnnotation) => void;
   onColorChange: (annotation: PaperAnnotation, color: AnnotationColor) => void;
   onRetryTranslate: (annotation: PaperAnnotation) => void;
-  onGoToPage: (page: number) => void;
+  onLocateAnnotation: (annotation: PaperAnnotation) => void;
 }) {
   return (
     <section className="flex min-h-0 w-full flex-1 flex-col">
@@ -1317,7 +1381,7 @@ function AnnotationPanel({
                 onDelete={onDelete}
                 onColorChange={onColorChange}
                 onRetryTranslate={onRetryTranslate}
-                onGoToPage={onGoToPage}
+                onLocate={onLocateAnnotation}
               />
             ))
           )}
@@ -1345,7 +1409,7 @@ function ReaderSidePanel({
   onDelete,
   onColorChange,
   onRetryTranslate,
-  onGoToPage,
+  onLocateAnnotation,
 }: {
   showTranslation: boolean;
   showAnnotations: boolean;
@@ -1364,7 +1428,7 @@ function ReaderSidePanel({
   onDelete: (annotation: PaperAnnotation) => void;
   onColorChange: (annotation: PaperAnnotation, color: AnnotationColor) => void;
   onRetryTranslate: (annotation: PaperAnnotation) => void;
-  onGoToPage: (page: number) => void;
+  onLocateAnnotation: (annotation: PaperAnnotation) => void;
 }) {
   return (
     <aside
@@ -1394,7 +1458,7 @@ function ReaderSidePanel({
             onDelete={onDelete}
             onColorChange={onColorChange}
             onRetryTranslate={onRetryTranslate}
-            onGoToPage={onGoToPage}
+            onLocateAnnotation={onLocateAnnotation}
           />
         )}
       </div>
@@ -1523,8 +1587,10 @@ function HighlightTip({
 
 function HighlightContainer({
   onDelete,
+  locatedAnnotationId,
 }: {
   onDelete: (annotation: PaperAnnotation) => void;
+  locatedAnnotationId: number | null;
 }) {
   const { highlight, isScrolledTo } = useHighlightContainerContext<ReaderHighlight>();
   const annotation = highlight.annotation;
@@ -1537,7 +1603,7 @@ function HighlightContainer({
     >
       <TextHighlight
         highlight={highlight}
-        isScrolledTo={isScrolledTo}
+        isScrolledTo={isScrolledTo || locatedAnnotationId === annotation.id}
         highlightColor={colorValue(annotation.color)}
         copyText={annotation.text}
         onDelete={() => onDelete(annotation)}
@@ -1557,6 +1623,7 @@ function ReaderPdf({
   onSaveHighlight,
   onAnnotateSelection,
   onDeleteAnnotation,
+  locatedAnnotationId,
   onDocumentReady,
   onUtilsReady,
 }: {
@@ -1570,6 +1637,7 @@ function ReaderPdf({
   onSaveHighlight: (selection: PdfSelection) => void;
   onAnnotateSelection: (selection: PdfSelection) => void;
   onDeleteAnnotation: (annotation: PaperAnnotation) => void;
+  locatedAnnotationId: number | null;
   onDocumentReady: (pdfDocument: PDFDocumentProxy) => void;
   onUtilsReady: (utils: PdfHighlighterUtils | null) => void;
 }) {
@@ -1667,6 +1735,7 @@ function ReaderPdf({
           onSaveHighlight={onSaveHighlight}
           onAnnotateSelection={onAnnotateSelection}
           onDeleteAnnotation={onDeleteAnnotation}
+          locatedAnnotationId={locatedAnnotationId}
           onDocumentReady={onDocumentReady}
           setUtils={setUtils}
         />
@@ -1684,6 +1753,7 @@ function LoadedPdfHighlighter({
   onSaveHighlight,
   onAnnotateSelection,
   onDeleteAnnotation,
+  locatedAnnotationId,
   onDocumentReady,
   setUtils,
 }: {
@@ -1695,6 +1765,7 @@ function LoadedPdfHighlighter({
   onSaveHighlight: (selection: PdfSelection) => void;
   onAnnotateSelection: (selection: PdfSelection) => void;
   onDeleteAnnotation: (annotation: PaperAnnotation) => void;
+  locatedAnnotationId: number | null;
   onDocumentReady: (pdfDocument: PDFDocumentProxy) => void;
   setUtils: (utils: PdfHighlighterUtils) => void;
 }) {
@@ -1726,7 +1797,7 @@ function LoadedPdfHighlighter({
       }}
       style={{ height: "100%" }}
     >
-      <HighlightContainer onDelete={onDeleteAnnotation} />
+      <HighlightContainer onDelete={onDeleteAnnotation} locatedAnnotationId={locatedAnnotationId} />
     </PdfHighlighter>
   );
 }
@@ -1751,6 +1822,7 @@ export function ReaderClient() {
   const [expandedAnnotationTextIDs, setExpandedAnnotationTextIDs] = useState<Set<number>>(() => new Set());
   const [expandedAnnotationTransIDs, setExpandedAnnotationTransIDs] = useState<Set<number>>(() => new Set());
   const [expandedAnnotationNoteIDs, setExpandedAnnotationNoteIDs] = useState<Set<number>>(() => new Set());
+  const [mindMapPanelWidth, setMindMapPanelWidth] = useState(MIND_MAP_PANEL_DEFAULT_WIDTH);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteColor, setNoteColor] = useState<AnnotationColor>("yellow");
@@ -1759,22 +1831,102 @@ export function ReaderClient() {
   const [prefs, setPrefs] = useState<ReaderPreferences>(() => loadReaderPreferences());
   const [pdfUtils, setPdfUtils] = useState<PdfHighlighterUtils | null>(null);
   const [outlineActiveSectionId, setOutlineActiveSectionId] = useState<number | null>(null);
+  const [locatedAnnotationId, setLocatedAnnotationId] = useState<number | null>(null);
   const translateSeq = useRef(0);
   const progressLoadedRef = useRef(false);
   const outlineFallbackTriedRef = useRef(false);
   const outlineJumpRef = useRef<{ sectionId: number; pageNo: number; ignoreUntil: number } | null>(null);
+  const locatedScrollTimerRef = useRef<number | null>(null);
+  const locatedScrollCleanupRef = useRef<(() => void) | null>(null);
+  const mindMapGridRef = useRef<HTMLDivElement | null>(null);
+  const pdfWheelRef = useRef<HTMLDivElement | null>(null);
 
   const highlights = useMemo(() => annotations.map(annotationToHighlight), [annotations]);
   const initialPage = Math.max(1, paper?.last_read_page || 1);
   const pdfUrl = useMemo(() => (ready && id ? api.paperFileUrl(id) : ""), [ready, id]);
-  const rightPanelOpen = prefs.translateOpen || prefs.annotationsOpen;
-  const gridClass = rightPanelOpen
-    ? "lg:grid-cols-[minmax(0,1fr)_24rem]"
-    : "lg:grid-cols-[minmax(0,1fr)]";
+  const rightPanelOpen = !prefs.mindMapOpen && (prefs.translateOpen || prefs.annotationsOpen);
+  const gridClass =
+    prefs.mindMapOpen
+      ? "lg:grid-cols-[minmax(0,1fr)_var(--mind-map-panel-width)]"
+      : rightPanelOpen
+        ? "lg:grid-cols-[minmax(0,1fr)_24rem]"
+        : "lg:grid-cols-[minmax(0,1fr)]";
+  const gridStyle = prefs.mindMapOpen
+    ? ({ "--mind-map-panel-width": `${mindMapPanelWidth}px` } as CSSProperties)
+    : undefined;
 
   const updatePrefs = useCallback((patch: Partial<ReaderPreferences>) => {
     setPrefs((cur) => ({ ...cur, ...patch }));
   }, []);
+
+  const toggleTranslatePanel = useCallback(() => {
+    setPrefs((cur) => {
+      const translateOpen = !cur.translateOpen;
+      return { ...cur, translateOpen, mindMapOpen: translateOpen ? false : cur.mindMapOpen };
+    });
+  }, []);
+
+  const toggleAnnotationsPanel = useCallback(() => {
+    setPrefs((cur) => {
+      const annotationsOpen = !cur.annotationsOpen;
+      return { ...cur, annotationsOpen, mindMapOpen: annotationsOpen ? false : cur.mindMapOpen };
+    });
+  }, []);
+
+  const toggleMindMapPanel = useCallback(() => {
+    setPrefs((cur) => {
+      const mindMapOpen = !cur.mindMapOpen;
+      return {
+        ...cur,
+        mindMapOpen,
+        translateOpen: mindMapOpen ? false : cur.translateOpen,
+        annotationsOpen: mindMapOpen ? false : cur.annotationsOpen,
+      };
+    });
+  }, []);
+
+  const startMindMapResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = mindMapPanelWidth;
+      const previousCursor = document.body.style.cursor;
+      const previousSelect = document.body.style.userSelect;
+      let frame = 0;
+      let nextWidth = startWidth;
+
+      const onMove = (moveEvent: PointerEvent) => {
+        nextWidth = clamp(
+          startWidth + startX - moveEvent.clientX,
+          MIND_MAP_PANEL_MIN_WIDTH,
+          MIND_MAP_PANEL_MAX_WIDTH,
+        );
+        if (frame) return;
+        frame = window.requestAnimationFrame(() => {
+          mindMapGridRef.current?.style.setProperty("--mind-map-panel-width", `${nextWidth}px`);
+          frame = 0;
+        });
+      };
+      const onUp = () => {
+        if (frame) {
+          window.cancelAnimationFrame(frame);
+          frame = 0;
+        }
+        mindMapGridRef.current?.style.setProperty("--mind-map-panel-width", `${nextWidth}px`);
+        setMindMapPanelWidth(nextWidth);
+        document.body.style.cursor = previousCursor;
+        document.body.style.userSelect = previousSelect;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp, { once: true });
+    },
+    [mindMapPanelWidth],
+  );
 
   useEffect(() => {
     localStorage.setItem(READER_PREFS_KEY, JSON.stringify(prefs));
@@ -1839,9 +1991,92 @@ export function ReaderClient() {
     return () => window.clearTimeout(timer);
   }, [currentPage, id, numPages, paper?.page_count, ready]);
 
+  const zoomPdfAtWheel = useCallback(
+    (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const viewer = pdfViewerWithScale(pdfUtils);
+      const scrollElement = viewer?.container || pdfWheelRef.current;
+      if (!scrollElement || event.deltaY === 0) return;
+
+      const viewerScale = viewer?.currentScale;
+      const baseScale =
+        typeof viewerScale === "number" && Number.isFinite(viewerScale) && viewerScale > 0
+          ? viewerScale
+          : typeof scaleValue === "number"
+            ? scaleValue
+            : 1;
+      const direction = event.deltaY > 0 ? -1 : 1;
+      const magnitude = clamp(Math.abs(event.deltaY) / 720, 0.04, 0.14);
+      const nextScale = Number(clamp(baseScale * (1 + direction * magnitude), PDF_MIN_SCALE, PDF_MAX_SCALE).toFixed(2));
+      if (nextScale === Number(baseScale.toFixed(2))) return;
+
+      const rect = scrollElement.getBoundingClientRect();
+      const clientX = event.clientX;
+      const clientY = event.clientY;
+      const anchorX = scrollElement.scrollLeft + clientX - rect.left;
+      const anchorY = scrollElement.scrollTop + clientY - rect.top;
+      setScaleValue(nextScale);
+
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          const nextViewer = pdfViewerWithScale(pdfUtils);
+          const nextScrollElement = nextViewer?.container || scrollElement;
+          const nextRect = nextScrollElement.getBoundingClientRect();
+          const ratio = nextScale / baseScale;
+          nextScrollElement.scrollLeft = anchorX * ratio - (clientX - nextRect.left);
+          nextScrollElement.scrollTop = anchorY * ratio - (clientY - nextRect.top);
+        });
+      });
+    },
+    [pdfUtils, scaleValue],
+  );
+
+  useEffect(() => {
+    const element = pdfWheelRef.current;
+    if (!element) return;
+    element.addEventListener("wheel", zoomPdfAtWheel, { passive: false });
+    return () => element.removeEventListener("wheel", zoomPdfAtWheel);
+  }, [zoomPdfAtWheel]);
+
   const setPageCount = useCallback((pages: number) => {
     if (pages > 0) setNumPages((cur) => (cur === pages ? cur : pages));
   }, []);
+
+  const clearLocatedAnnotation = useCallback(() => {
+    if (locatedScrollTimerRef.current != null) {
+      window.clearTimeout(locatedScrollTimerRef.current);
+      locatedScrollTimerRef.current = null;
+    }
+    locatedScrollCleanupRef.current?.();
+    locatedScrollCleanupRef.current = null;
+    setLocatedAnnotationId(null);
+  }, []);
+
+  const scheduleLocatedAnnotationScrollClear = useCallback(
+    (container: HTMLElement) => {
+      if (locatedScrollTimerRef.current != null) {
+        window.clearTimeout(locatedScrollTimerRef.current);
+        locatedScrollTimerRef.current = null;
+      }
+      locatedScrollCleanupRef.current?.();
+      locatedScrollCleanupRef.current = null;
+
+      locatedScrollTimerRef.current = window.setTimeout(() => {
+        locatedScrollTimerRef.current = null;
+        const clearOnScroll = () => clearLocatedAnnotation();
+        container.addEventListener("scroll", clearOnScroll, { once: true });
+        locatedScrollCleanupRef.current = () => {
+          container.removeEventListener("scroll", clearOnScroll);
+        };
+      }, LOCATED_ANNOTATION_SCROLL_RESUME_MS);
+    },
+    [clearLocatedAnnotation],
+  );
+
+  useEffect(() => clearLocatedAnnotation, [clearLocatedAnnotation]);
 
   const clearOutlineActive = useCallback(() => {
     outlineJumpRef.current = null;
@@ -1863,6 +2098,7 @@ export function ReaderClient() {
 
   const goToPage = useCallback(
     (page: number, outlineEntry?: OutlineEntry) => {
+      clearLocatedAnnotation();
       const max = numPages || paper?.page_count || page;
       const next = clamp(Math.round(page), 1, Math.max(1, max));
       if (outlineEntry) {
@@ -1879,7 +2115,44 @@ export function ReaderClient() {
       setPageDraft(String(next));
       pdfUtils?.goToPage(next);
     },
-    [clearOutlineActive, numPages, paper?.page_count, pdfUtils],
+    [clearLocatedAnnotation, clearOutlineActive, numPages, paper?.page_count, pdfUtils],
+  );
+
+  const goToAnnotation = useCallback(
+    (annotationID: number, pageNumber?: number, openAnnotations = false) => {
+      const annotation = annotations.find((item) => item.id === annotationID);
+      const page = annotation?.page_no || pageNumber || 1;
+      if (openAnnotations) {
+        updatePrefs({ annotationsOpen: true, mindMapOpen: false });
+        if (annotation?.note) {
+          setExpandedAnnotationNoteIDs((prev) => new Set(prev).add(annotation.id));
+        }
+      }
+      clearOutlineActive();
+      setCurrentPage(page);
+      setPageDraft(String(page));
+      if (annotation && pdfUtils) {
+        const container = scrollHighlightToTop(pdfUtils, annotationToHighlight(annotation));
+        if (container) {
+          setLocatedAnnotationId(annotation.id);
+          scheduleLocatedAnnotationScrollClear(container);
+          return;
+        }
+        clearLocatedAnnotation();
+        pdfUtils.goToPage(page);
+        return;
+      }
+      goToPage(page);
+    },
+    [
+      annotations,
+      clearLocatedAnnotation,
+      clearOutlineActive,
+      goToPage,
+      pdfUtils,
+      scheduleLocatedAnnotationScrollClear,
+      updatePrefs,
+    ],
   );
 
   const goToOutlineEntry = useCallback(
@@ -1995,7 +2268,7 @@ export function ReaderClient() {
           rects: selection.position.rects.map(scaledToRect),
         });
         setAnnotations((prev) => [annotation, ...prev]);
-        updatePrefs({ annotationsOpen: true });
+        updatePrefs({ annotationsOpen: true, mindMapOpen: false });
         window.getSelection()?.removeAllRanges();
         if (!note) void translateAnnotation(annotation);
         return true;
@@ -2016,7 +2289,7 @@ export function ReaderClient() {
       const seq = translateSeq.current + 1;
       translateSeq.current = seq;
       const pageNo = selection.position.boundingRect.pageNumber;
-      updatePrefs({ translateOpen: true });
+      updatePrefs({ translateOpen: true, mindMapOpen: false });
       setTranslation({ original: text, translation: "", pageNo, loading: true, error: "" });
       window.getSelection()?.removeAllRanges();
 
@@ -2056,13 +2329,16 @@ export function ReaderClient() {
       try {
         await api.deleteAnnotation(id, annotation.id);
         setAnnotations((prev) => prev.filter((item) => item.id !== annotation.id));
+        if (locatedAnnotationId === annotation.id) {
+          clearLocatedAnnotation();
+        }
       } catch (err) {
         setError((err as Error)?.message || "删除批注失败");
       } finally {
         setBusy("");
       }
     },
-    [id],
+    [clearLocatedAnnotation, id, locatedAnnotationId],
   );
 
   const changeAnnotationColor = useCallback(
@@ -2092,7 +2368,7 @@ export function ReaderClient() {
   const zoomBy = (delta: number) => {
     setScaleValue((cur) => {
       const base = typeof cur === "number" ? cur : 1;
-      return Number((clamp(base + delta, 0.6, 2.4)).toFixed(2));
+      return Number((clamp(base + delta, PDF_MIN_SCALE, PDF_MAX_SCALE)).toFixed(2));
     });
   };
 
@@ -2114,12 +2390,13 @@ export function ReaderClient() {
         onZoomOut={() => zoomBy(-0.1)}
         onResetZoom={() => setScaleValue(1)}
         onFitWidth={() => setScaleValue("page-width")}
-        onToggleTranslate={() => updatePrefs({ translateOpen: !prefs.translateOpen })}
-        onToggleAnnotations={() => updatePrefs({ annotationsOpen: !prefs.annotationsOpen })}
+        onToggleTranslate={toggleTranslatePanel}
+        onToggleAnnotations={toggleAnnotationsPanel}
+        onToggleMindMap={toggleMindMapPanel}
         onColorChange={(color) => updatePrefs({ color })}
       />
 
-      <div className={cn("grid min-h-0 flex-1 grid-cols-1", gridClass)}>
+      <div ref={mindMapGridRef} className={cn("grid min-h-0 flex-1 grid-cols-1", gridClass)} style={gridStyle}>
         <section className="relative min-h-0 overflow-hidden border-r">
           {error && (
             <div className="absolute left-1/2 top-4 z-50 max-w-md -translate-x-1/2 rounded-lg border border-destructive/30 bg-background px-4 py-3 text-sm text-destructive shadow-lg">
@@ -2145,7 +2422,7 @@ export function ReaderClient() {
               onGoToEntry={goToOutlineEntry}
             />
           )}
-          <div className="relative h-full min-h-0 overflow-hidden">
+          <div ref={pdfWheelRef} className="relative h-full min-h-0 overflow-hidden">
             {ready && pdfUrl ? (
               <ReaderPdf
                 pdfUrl={pdfUrl}
@@ -2158,6 +2435,7 @@ export function ReaderClient() {
                 onSaveHighlight={(selection) => void saveAnnotation(selection, "", prefs.color)}
                 onAnnotateSelection={onAnnotateSelection}
                 onDeleteAnnotation={deleteAnnotation}
+                locatedAnnotationId={locatedAnnotationId}
                 onDocumentReady={(pdfDocument) => void loadPdfOutlineFallback(pdfDocument)}
                 onUtilsReady={setPdfUtils}
               />
@@ -2168,6 +2446,14 @@ export function ReaderClient() {
             )}
           </div>
         </section>
+        {prefs.mindMapOpen && (
+          <ReadingMindMap
+            open={prefs.mindMapOpen}
+            paper={paper}
+            onResizeStart={startMindMapResize}
+            onLocateHighlight={goToAnnotation}
+          />
+        )}
         {rightPanelOpen && (
           <ReaderSidePanel
             showTranslation={prefs.translateOpen}
@@ -2187,7 +2473,7 @@ export function ReaderClient() {
             onDelete={deleteAnnotation}
             onColorChange={changeAnnotationColor}
             onRetryTranslate={(annotation) => void translateAnnotation(annotation)}
-            onGoToPage={goToPage}
+            onLocateAnnotation={(annotation) => goToAnnotation(annotation.id, annotation.page_no, false)}
           />
         )}
       </div>

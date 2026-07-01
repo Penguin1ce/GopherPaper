@@ -48,6 +48,10 @@ export interface PaperSection {
   title: string;
   page_no: number;
   order_idx: number;
+  x1?: number | null;
+  y1?: number | null;
+  x2?: number | null;
+  y2?: number | null;
 }
 
 export interface PaperDetail {
@@ -218,6 +222,68 @@ export interface PaperAnnotation {
   color: "yellow" | "blue" | "green" | "pink" | "purple" | "orange" | string;
   bounding_rect: AnnotationRect;
   rects: AnnotationRect[];
+  created_at: string;
+  updated_at: string;
+}
+
+export type MindMapNodeType =
+  | "paper"
+  | "section"
+  | "highlight"
+  | "annotation"
+  | "group"
+  | "manual";
+
+export interface MindMapPosition {
+  x: number;
+  y: number;
+}
+
+export interface MindMapNodeData {
+  label: string;
+  parentId?: string;
+  sectionId?: number;
+  highlightId?: number;
+  annotationId?: number;
+  pageNumber?: number;
+  text?: string;
+  note?: string;
+  color?: string;
+  boundingRect?: AnnotationRect;
+  rects?: AnnotationRect[];
+  collapsed?: boolean;
+  manual?: boolean;
+  meta?: Record<string, unknown>;
+}
+
+export interface MindMapNode {
+  id: string;
+  type: MindMapNodeType;
+  position: MindMapPosition;
+  data: MindMapNodeData;
+}
+
+export interface MindMapEdge {
+  id: string;
+  source: string;
+  target: string;
+  data?: { manual?: boolean };
+}
+
+export interface MindMapGraph {
+  version: number;
+  paper_id: string;
+  nodes: MindMapNode[];
+  edges: MindMapEdge[];
+  source_counts?: Record<string, number>;
+  updated_at?: string;
+}
+
+export interface MindMap {
+  id: number;
+  paper_id: string;
+  owner_id: string;
+  graph_json: MindMapGraph;
   created_at: string;
   updated_at: string;
 }

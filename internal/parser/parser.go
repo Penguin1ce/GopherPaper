@@ -27,7 +27,8 @@ type contentBlock struct {
 	Text          string     `json:"text"`
 	TextLevel     int        `json:"text_level"` // 标题层级，正文为 0
 	PageIdx       int        `json:"page_idx"`   // 0 起页码
-	ImgPath       string     `json:"img_path"`   // 产物 zip 内图片相对路径，如 images/xxx.jpg
+	BBox          []float64  `json:"bbox"`
+	ImgPath       string     `json:"img_path"` // 产物 zip 内图片相对路径，如 images/xxx.jpg
 	ImgCaption    stringList `json:"img_caption"`
 	ImageCaption  stringList `json:"image_caption"`
 	ImageFootnote stringList `json:"image_footnote"`
@@ -89,6 +90,7 @@ type detailSpan struct {
 
 type contentListV2Block struct {
 	Type    string          `json:"type"`
+	BBox    []float64       `json:"bbox"`
 	Content json.RawMessage `json:"content"`
 }
 
@@ -319,6 +321,7 @@ func convertV2Blocks(pages [][]contentListV2Block) []contentBlock {
 					Text:      v2InlineTextField(content, "title_content", false),
 					TextLevel: v2IntField(content, "level"),
 					PageIdx:   pageIdx,
+					BBox:      v2BBoxField(content, b.BBox),
 				})
 			case "paragraph":
 				blocks = append(blocks, contentBlock{
@@ -466,6 +469,17 @@ func v2IntField(m map[string]json.RawMessage, key string) int {
 	return 0
 }
 
+func v2BBoxField(m map[string]json.RawMessage, fallback []float64) []float64 {
+	if bbox := cleanBBox(fallback); len(bbox) == 4 {
+		return bbox
+	}
+	var bbox []float64
+	if err := json.Unmarshal(m["bbox"], &bbox); err != nil {
+		return nil
+	}
+	return cleanBBox(bbox)
+}
+
 func v2ImageSourcePath(m map[string]json.RawMessage) string {
 	var src v2ImageSource
 	if err := json.Unmarshal(m["image_source"], &src); err != nil {
@@ -522,6 +536,10 @@ func mapBlocks(blocks []contentBlock, images map[string][]byte) *core.ParsedDoc 
 				Title:    b.Text,
 				PageNo:   page,
 				OrderIdx: order,
+				X1:       bboxValue(b.BBox, 0),
+				Y1:       bboxValue(b.BBox, 1),
+				X2:       bboxValue(b.BBox, 2),
+				Y2:       bboxValue(b.BBox, 3),
 			})
 		case b.Type == "text":
 			if strings.TrimSpace(b.Text) == "" {
@@ -682,6 +700,24 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func cleanBBox(bbox []float64) []float64 {
+	if len(bbox) < 4 {
+		return nil
+	}
+	out := make([]float64, 4)
+	copy(out, bbox[:4])
+	return out
+}
+
+func bboxValue(bbox []float64, idx int) *float64 {
+	bbox = cleanBBox(bbox)
+	if idx < 0 || idx >= len(bbox) {
+		return nil
+	}
+	value := bbox[idx]
+	return &value
 }
 
 func mergeReferences(a, b []string) []string {

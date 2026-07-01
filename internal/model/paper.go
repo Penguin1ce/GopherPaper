@@ -205,12 +205,16 @@ func (PaperMeta) TableName() string { return "paper_metas" }
 
 // PaperSection 是论文章节标题节点，保留段落层级供前端展示。
 type PaperSection struct {
-	ID       uint64 `gorm:"primaryKey" json:"id"`
-	PaperID  string `gorm:"size:36;not null;index" json:"paper_id"`
-	Level    int    `json:"level"`
-	Title    string `gorm:"size:512" json:"title"`
-	PageNo   int    `json:"page_no"`
-	OrderIdx int    `gorm:"index" json:"order_idx"`
+	ID       uint64   `gorm:"primaryKey" json:"id"`
+	PaperID  string   `gorm:"size:36;not null;index" json:"paper_id"`
+	Level    int      `json:"level"`
+	Title    string   `gorm:"size:512" json:"title"`
+	PageNo   int      `json:"page_no"`
+	OrderIdx int      `gorm:"index" json:"order_idx"`
+	X1       *float64 `gorm:"type:double" json:"x1,omitempty"`
+	Y1       *float64 `gorm:"type:double" json:"y1,omitempty"`
+	X2       *float64 `gorm:"type:double" json:"x2,omitempty"`
+	Y2       *float64 `gorm:"type:double" json:"y2,omitempty"`
 }
 
 func (PaperSection) TableName() string { return "paper_sections" }
@@ -246,6 +250,92 @@ type PaperAnnotation struct {
 }
 
 func (PaperAnnotation) TableName() string { return "paper_annotations" }
+
+type MindMapPosition struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+type MindMapNodeData struct {
+	Label        string          `json:"label"`
+	ParentID     string          `json:"parentId,omitempty"`
+	SectionID    uint64          `json:"sectionId,omitempty"`
+	HighlightID  uint64          `json:"highlightId,omitempty"`
+	AnnotationID uint64          `json:"annotationId,omitempty"`
+	PageNumber   int             `json:"pageNumber,omitempty"`
+	Text         string          `json:"text,omitempty"`
+	Note         string          `json:"note,omitempty"`
+	Color        string          `json:"color,omitempty"`
+	BoundingRect *AnnotationRect `json:"boundingRect,omitempty"`
+	Rects        AnnotationRects `json:"rects,omitempty"`
+	Collapsed    bool            `json:"collapsed,omitempty"`
+	Manual       bool            `json:"manual,omitempty"`
+	Meta         map[string]any  `json:"meta,omitempty"`
+}
+
+type MindMapNode struct {
+	ID       string                   `json:"id"`
+	Type     constant.MindMapNodeType `json:"type"`
+	Position MindMapPosition          `json:"position"`
+	Data     MindMapNodeData          `json:"data"`
+}
+
+type MindMapEdgeData struct {
+	Manual bool `json:"manual,omitempty"`
+}
+
+type MindMapEdge struct {
+	ID     string          `json:"id"`
+	Source string          `json:"source"`
+	Target string          `json:"target"`
+	Data   MindMapEdgeData `json:"data,omitempty"`
+}
+
+type MindMapGraph struct {
+	Version      int            `json:"version"`
+	PaperID      string         `json:"paper_id"`
+	Nodes        []MindMapNode  `json:"nodes"`
+	Edges        []MindMapEdge  `json:"edges"`
+	SourceCounts map[string]int `json:"source_counts,omitempty"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+}
+
+func (g MindMapGraph) Value() (driver.Value, error) {
+	b, err := json.Marshal(g)
+	return string(b), err
+}
+
+func (g *MindMapGraph) Scan(src any) error {
+	if src == nil {
+		*g = MindMapGraph{}
+		return nil
+	}
+	var b []byte
+	switch v := src.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
+		return fmt.Errorf("model: MindMapGraph unsupported type %T", src)
+	}
+	if len(b) == 0 {
+		*g = MindMapGraph{}
+		return nil
+	}
+	return json.Unmarshal(b, g)
+}
+
+type MindMap struct {
+	ID        uint64       `gorm:"primaryKey" json:"id"`
+	PaperID   string       `gorm:"size:36;not null;uniqueIndex:idx_owner_paper_mind_map" json:"paper_id"`
+	OwnerID   string       `gorm:"size:64;not null;index;uniqueIndex:idx_owner_paper_mind_map" json:"owner_id"`
+	GraphJSON MindMapGraph `gorm:"column:graph_json;type:longtext" json:"graph_json"`
+	CreatedAt time.Time    `json:"created_at"`
+	UpdatedAt time.Time    `json:"updated_at"`
+}
+
+func (MindMap) TableName() string { return "mind_maps" }
 
 // Tag 是用户自定义的论文标签。
 type Tag struct {

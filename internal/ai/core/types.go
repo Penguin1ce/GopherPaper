@@ -25,10 +25,14 @@ type ParsedDoc struct {
 
 // Section 是一个章节标题节点。
 type Section struct {
-	Level    int    `json:"level"` // 标题层级，1 为顶级
-	Title    string `json:"title"`
-	PageNo   int    `json:"page_no"`
-	OrderIdx int    `json:"order_idx"` // 文档内顺序
+	Level    int      `json:"level"` // 标题层级，1 为顶级
+	Title    string   `json:"title"`
+	PageNo   int      `json:"page_no"`
+	OrderIdx int      `json:"order_idx"` // 文档内顺序
+	X1       *float64 `json:"x1,omitempty"`
+	Y1       *float64 `json:"y1,omitempty"`
+	X2       *float64 `json:"x2,omitempty"`
+	Y2       *float64 `json:"y2,omitempty"`
 }
 
 // Paragraph 是一段正文，PageNo 为所在页，SectionPath 为所属章节标题链。

@@ -183,6 +183,9 @@ func Delete(ctx context.Context, id string) error {
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperAnnotation{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("paper_id = ?", id).Delete(&model.MindMap{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperTag{}).Error; err != nil {
 			return err
 		}
@@ -333,6 +336,59 @@ func UpdateAnnotation(ctx context.Context, id uint64, fields map[string]any) err
 func DeleteAnnotation(ctx context.Context, id uint64) error {
 	if err := dao.DB.WithContext(ctx).Where("id = ?", id).Delete(&model.PaperAnnotation{}).Error; err != nil {
 		return fmt.Errorf("dao/paper: 删除批注失败: %w", err)
+	}
+	return nil
+}
+
+func GetMindMap(ctx context.Context, id uint64) (*model.MindMap, error) {
+	var mindMap model.MindMap
+	err := dao.DB.WithContext(ctx).Where("id = ?", id).First(&mindMap).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errs.ErrMindMapNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: get mind map failed: %w", err)
+	}
+	return &mindMap, nil
+}
+
+func GetMindMapByPaper(ctx context.Context, ownerID, paperID string) (*model.MindMap, error) {
+	var mindMap model.MindMap
+	err := dao.DB.WithContext(ctx).
+		Where("owner_id = ? and paper_id = ?", ownerID, paperID).
+		First(&mindMap).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errs.ErrMindMapNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: get paper mind map failed: %w", err)
+	}
+	return &mindMap, nil
+}
+
+func SaveMindMap(ctx context.Context, mindMap *model.MindMap) error {
+	var existing model.MindMap
+	err := dao.DB.WithContext(ctx).
+		Where("owner_id = ? and paper_id = ?", mindMap.OwnerID, mindMap.PaperID).
+		First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := dao.DB.WithContext(ctx).Create(mindMap).Error; err != nil {
+			return fmt.Errorf("dao/paper: create mind map failed: %w", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("dao/paper: save mind map failed: %w", err)
+	}
+	mindMap.ID = existing.ID
+	return UpdateMindMapGraph(ctx, existing.ID, mindMap.GraphJSON)
+}
+
+func UpdateMindMapGraph(ctx context.Context, id uint64, graph model.MindMapGraph) error {
+	if err := dao.DB.WithContext(ctx).Model(&model.MindMap{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"graph_json": graph, "updated_at": time.Now()}).Error; err != nil {
+		return fmt.Errorf("dao/paper: update mind map failed: %w", err)
 	}
 	return nil
 }

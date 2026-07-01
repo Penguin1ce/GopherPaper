@@ -8,6 +8,8 @@ import type {
   GraphStats,
   GraphTrends,
   LoginResponse,
+  MindMap,
+  MindMapGraph,
   AvatarResponse,
   Message,
   NameCount,
@@ -116,6 +118,29 @@ export function deleteAnnotation(id: string, annotationID: number) {
     `/papers/${encodeURIComponent(id)}/annotations/${encodeURIComponent(annotationID)}`,
     { method: "DELETE" },
   );
+}
+
+export function getMindMap(id: string) {
+  return request<MindMap>(`/papers/${encodeURIComponent(id)}/mind-maps`);
+}
+
+export function buildMindMap(id: string) {
+  return request<MindMap>(`/papers/${encodeURIComponent(id)}/mind-maps/build`, {
+    method: "POST",
+  });
+}
+
+export function updateMindMap(id: number, graph: MindMapGraph) {
+  return request<MindMap>(`/mind-maps/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify({ graph }),
+  });
+}
+
+export function syncMindMap(id: number) {
+  return request<MindMap>(`/mind-maps/${encodeURIComponent(id)}/sync`, {
+    method: "POST",
+  });
 }
 
 export function setUnauthorizedHandler(fn: (() => void) | null) {
