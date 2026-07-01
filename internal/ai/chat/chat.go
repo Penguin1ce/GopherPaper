@@ -111,6 +111,10 @@ func agenticRAG(ctx context.Context, query string, intent constant.IntentType, h
 			zlog.Warn("agentic RAG 输出伪工具调用,降级单轮 RAG", "intent", intent, "err", err)
 			return singleShotRAG(ctx, query, history, intent)
 		}
+		if errors.Is(err, planstream.ErrMaxToolIterations) {
+			zlog.Warn("agentic RAG 工具轮数耗尽,降级单轮 RAG", "intent", intent, "err", err)
+			return singleShotRAG(ctx, query, history, intent)
+		}
 		return nil, err
 	}
 	reply := &core.Reply{Content: content, Intent: intent}

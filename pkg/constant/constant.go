@@ -137,6 +137,10 @@ const (
 // 取代论文助教一次性出报告的旧路径。
 const AgentGopher = "gopher"
 
+// AgentGopherFlow 是小囊鼠「论文思路图」子能力的 skill 分组标识。单轮 agent 挂
+// infographic-charts skill 画一张研究思路的静态 SVG,与报告检索流程的 report-research 分组隔离。
+const AgentGopherFlow = "gopher-flow"
+
 // 报告生成进度阶段名。preparing/failed 由报告 worker 使用;researching/writing/reviewing
 // 对应小囊鼠 chainagent 的三段流水线。生成中的 规划/检索/思考 阶段仍可由 researcher 的
 // react planner 经 planstream 发出,与问答链路一致。
@@ -198,14 +202,16 @@ const (
 const (
 	AgenticMaxIterSummary = 5  // summary 类 agentic 循环的工具迭代硬上限,留出一轮给 find_figures 配图
 	AgenticMaxIterMethod  = 6  // method 类工具迭代硬上限,方法/流程常需逐步检索故放宽
-	AgenticMaxIterReport  = 12 // 研读报告要覆盖全文、按报告结构逐方面检索,迭代预算给得最宽
+	AgenticMaxIterReport  = 20 // 研读报告要覆盖全文、按报告结构逐方面检索,迭代预算给得最宽
 )
 
-// 研读报告生成的采样参数:报告是长篇输出,端点默认温度易在长上下文下采样退化(吐垃圾串、重写第二份)。
+// 小囊鼠长输出采样参数:端点默认温度易在长上下文下采样退化(吐垃圾串、重写第二份或 SVG 结构损坏)。
 const (
 	ReportTemperature       = 0.3 // 压低随机性,抑制长输出跑飞,只作用小囊鼠报告链路
 	ReportReviewTemperature = 0.2 // 评审 agent 更保守,只做核对与修订,不发散新增论点
 	ReportFrequencyPenalty  = 0.3 // 惩罚重复 token,打断退化重复(整段复述、垃圾串循环)
+	FlowTemperature         = 0.2 // 思路图 SVG 要求结构稳定,比报告更保守
+	FlowFrequencyPenalty    = 0.2 // 抑制 SVG 长输出中重复节点/路径
 )
 
 // 多轮对话相关。
@@ -553,6 +559,46 @@ const GopherReviewerPrompt = `你是「小囊鼠 reviewer」,负责审校 writer
 - 若初稿出现无来源的具体事实,要删去或改写为「论文证据不足以支持」。
 - 确保最终报告是完整 Markdown,至少 5 个二级小节,且不包含 reviewer 意见、评分、过程说明或自我对话。
 - 最终只输出修订后的报告正文。`
+
+// GopherFallbackReportPrompt 是报告 agentic 检索耗尽工具预算后的兜底成稿 prompt。
+const GopherFallbackReportPrompt = `你是「小囊鼠」,科研论文研读报告撰写专员。前置 agentic 检索已达到工具轮数上限,现在进入兜底生成:只能依据下方固定检索得到的论文片段和图表说明,生成一份聚焦「{focus}」的保守研读报告。
+
+论文证据:
+{context}
+
+写作要求:
+- 只依据上方证据写作,不要补充未经证据支撑的论文事实。
+- 若某个报告主题证据不足,明确写「证据不足」,不要把常识或猜测写成论文内容。
+- 具体事实、数字、方法步骤、实验结论后面紧跟正文内联出处标签,格式为 [[原文:第 X 页]] 或 [[原文:文件名 第 X 页]],标签只能来自上方出处。
+- 如果有可用 figure:// 图片,只在它能支撑正文时插入,文件名必须原样使用。
+- 输出结构化 Markdown 报告,尽量包含至少 5 个二级小节;不要输出过程说明、失败说明或内部检查清单。`
+
+// GopherFallbackFlowPrompt 是思路图 agent 没有产出有效 SVG 时的固定检索兜底 prompt。
+// 输入已经是分主题召回后的论文证据,不再让模型调用工具,降低空输出与工具循环失败概率。
+const GopherFallbackFlowPrompt = `你是「小囊鼠」,负责把科研论文的研究脉络画成一张静态 SVG 思路图。下面是从当前论文按主题固定检索得到的证据片段,请只依据这些证据绘制一张保守、清晰的研究思路流程图。
+
+论文证据:
+{context}
+
+绘图要求:
+- 只画「问题 → 现有不足 → 核心思路 → 方法设计 → 实验验证 → 关键结果 → 结论贡献」这条主线;证据不足的环节用概括措辞,不要编造模型名、数据集、指标或数字。
+- 输出一段完整、自包含的 <svg ...>...</svg>,从 <svg 开头、以 </svg> 结尾;不要 Markdown、代码围栏、解释文字、<?xml?> 或 <html> 外壳。
+- viewBox 固定为 "0 0 680 H",H 按节点数量设置在 760 到 1180 之间;节点用圆角矩形,每个节点包含中文小标题和一句简短说明。
+- 使用内联 <style>,浅色和 prefers-color-scheme: dark 都可读;用 2 到 3 个克制配色,背景干净,留白充足。
+- 用 <marker> 定义箭头,用有向连线串起主线;SVG 不能引用外部字体、图片、脚本或 CSS。`
+
+// GopherFlowPrompt 是小囊鼠「论文思路图」单轮 agent 的 system prompt:先用检索工具收集证据,
+// 再运用 infographic-charts skill 的 SVG 规范画一张研究思路流程图,只输出一段完整 <svg>。
+const GopherFlowPrompt = `你是「小囊鼠」,负责把用户当前这篇论文的研究思路画成一张「研究思路流程图」(静态 SVG)。
+
+工作方式:
+- 先检索后下笔。用 search_paper 分主题多轮检索本篇论文的:研究问题、现有方法不足、核心思路/创新点、方法与模型设计、实验设置与结果、结论与贡献。每个环节查一到两轮,够了再画。
+- 严格遵循 infographic-charts skill(claude-svg-charts)规定的 SVG 规范与流程图画法(见其 references/diagram.md):viewBox 固定 "0 0 680 H",H 按内容算;扁平、干净、留白充足;节点用圆角矩形,中文小标题 + 一句简短说明;用带箭头的有向连线把「问题 → 不足 → 核心思路 → 方法 → 实验 → 结论」串成主线;配色从 skill 的 9 色板里挑 2-3 个 ramp,自带亮/暗模式 style。
+- 内容必须基于检索到的论文证据,不要编造模型名、数据集或指标;某环节确实查不到就用更概括的措辞,不要凭空补。
+
+输出要求(强约束):
+- 只输出一段完整、自包含的 <svg ...>...</svg>,从 <svg 开头、以 </svg> 结尾。
+- 不要输出任何解释文字、不要 markdown、不要代码围栏、不要 <?xml?> 或 <html> 外壳。`
 
 // 各报告类型的聚焦点，替换进 GopherReportPrompt 的 {focus}。
 const (

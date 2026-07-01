@@ -23,6 +23,9 @@ import (
 // 这类内容不能作为用户答案展示,上层可降级到更稳的单轮 RAG。
 var ErrPseudoToolCall = errors.New("planstream: 模型输出了未执行的文本工具调用")
 
+// ErrMaxToolIterations 表示 agent 已达到工具调用轮次上限,上层可降级为固定检索或保守回答。
+var ErrMaxToolIterations = errors.New("planstream: 工具调用轮次已耗尽")
+
 // planTags 把 planner 标签映射到对外 phase,FINAL_ANSWER 段 phase 为空表示走正文 delta。
 var planTags = []struct{ tag, phase string }{
 	{react.PlanningTag, "planning"},
@@ -45,6 +48,9 @@ func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) 
 	var lastContent string
 	for ev := range ch {
 		if ev.Error != nil {
+			if isMaxToolIterationsError(ev.Error.Message) {
+				return "", fmt.Errorf("%w: %s", ErrMaxToolIterations, ev.Error.Message)
+			}
 			return "", fmt.Errorf("planstream: %s", ev.Error.Message)
 		}
 		if ev.Object == trpcmodel.ObjectTypeToolResponse {
@@ -96,6 +102,10 @@ func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) 
 		return "", fmt.Errorf("planstream: 模型返回空内容")
 	}
 	return answer, nil
+}
+
+func isMaxToolIterationsError(msg string) bool {
+	return strings.Contains(strings.ToLower(msg), "max tool iterations")
 }
 
 // planSplitter 是有状态的流式标签切分器:增量逐段喂入,按当前段把文本路由到 plan/delta 事件。
