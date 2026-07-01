@@ -3,14 +3,12 @@
 import {
   ArrowLeft,
   ArrowRight,
-  BookOpenText,
-  Compass,
   FileText,
   Layers,
-  Library,
   Loader2,
   MessageSquareText,
   Quote,
+  Sparkles,
   Upload,
 } from "lucide-react";
 import Link from "next/link";
@@ -23,6 +21,10 @@ import {
 } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
+import { GlassSurface } from "@/components/reactbits/glass-surface";
+import { Shuffle } from "@/components/reactbits/shuffle";
+import { SpotlightCard } from "@/components/reactbits/spotlight-card";
+import { Threads } from "@/components/reactbits/threads";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,10 +45,32 @@ const PIPELINE = [
 
 const STEP_INTERVAL = 1500;
 
+/* 三位协作智能体 — 名字 + 职责 + 强调色,替代抽象的环绕字环 */
 const AGENTS = [
-  { name: "小文鸮", role: "论文精读", icon: BookOpenText },
-  { name: "小云雀", role: "先锋工具", icon: Compass },
-  { name: "小囊鼠", role: "知识管理", icon: Library },
+  {
+    key: "owl",
+    name: "小文鸮",
+    role: "论文助教",
+    blurb: "带页码出处的精读问答",
+    icon: MessageSquareText,
+    tint: "var(--primary)",
+  },
+  {
+    key: "lark",
+    name: "小云雀",
+    role: "工具助手",
+    blurb: "规划分步,自主调用工具",
+    icon: Sparkles,
+    tint: "oklch(0.72 0.13 70)",
+  },
+  {
+    key: "gopher",
+    name: "小囊鼠",
+    role: "研读报告",
+    blurb: "一键生成结构化研读报告",
+    icon: FileText,
+    tint: "oklch(0.62 0.11 285)",
+  },
 ] as const;
 
 function useHydrationSafeReducedMotion() {
@@ -260,12 +284,22 @@ export function AuthView() {
 /* ---------------- 背景层 — 纸感晕染 + 学术格线 ---------------- */
 
 function Backdrop() {
+  const reduce = useHydrationSafeReducedMotion();
+
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-      {/* 墨蓝 + 赭石的柔光晕,定调而不抢戏 */}
-      <div className="absolute -top-[28%] left-1/2 h-[42rem] w-[58rem] -translate-x-1/2 rounded-full bg-primary/[0.07] blur-3xl" />
-      <div className="absolute -right-[14%] top-[6%] h-[34rem] w-[34rem] rounded-full bg-sienna/[0.08] blur-3xl" />
-      {/* 论文稿纸基线,极淡 */}
+      {!reduce && (
+        <div className="absolute inset-0 opacity-[0.18] mix-blend-multiply dark:opacity-[0.24] dark:mix-blend-screen">
+          <Threads
+            color={[0.08, 0.55, 0.6]}
+            amplitude={1.08}
+            distance={0.22}
+            enableMouseInteraction
+          />
+        </div>
+      )}
+      <div className="absolute -top-[28%] left-1/2 h-[42rem] w-[58rem] -translate-x-1/2 rounded-full bg-primary/[0.085] blur-3xl" />
+      <div className="absolute -right-[14%] top-[6%] h-[34rem] w-[34rem] rounded-full bg-foreground/[0.045] blur-3xl" />
       <div
         className="absolute inset-0 opacity-[0.5]"
         style={{
@@ -273,6 +307,14 @@ function Backdrop() {
             "linear-gradient(to right, color-mix(in oklch, var(--border) 60%, transparent) 1px, transparent 1px)",
           backgroundSize: "min(7.5rem, 12vw) 100%",
           maskImage: "radial-gradient(120% 80% at 50% 0%, #000 30%, transparent 78%)",
+        }}
+      />
+      <div
+        className="absolute inset-0 opacity-[0.18] mix-blend-soft-light"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--foreground) 28%, transparent) 1px, transparent 0)",
+          backgroundSize: "18px 18px",
         }}
       />
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sienna/40 to-transparent" />
@@ -307,25 +349,34 @@ function TopNav({ mode, setMode }: { mode: AuthMode; setMode: (m: AuthMode) => v
     >
       <BrandMark onClick={() => setMode("landing")} />
       {mode === "landing" ? (
-        <nav className="flex items-center gap-1.5 sm:gap-2">
-          <Link
-            href="/admin"
-            className="inline-flex h-7 items-center justify-center rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            管理员
-          </Link>
-          <Button variant="ghost" size="sm" onClick={() => setMode("login")}>
-            登录
-          </Button>
-          <Button size="sm" onClick={() => setMode("register")}>
-            注册
-          </Button>
-        </nav>
+        <GlassSurface className="rounded-full" contentClassName="flex items-center gap-1 p-1">
+          <nav className="flex items-center gap-1 sm:gap-1.5">
+            <Link
+              href="/admin"
+              className="inline-flex h-8 items-center justify-center rounded-full px-3 text-[0.8rem] font-medium text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground"
+            >
+              管理员
+            </Link>
+            <Button variant="ghost" size="sm" onClick={() => setMode("login")} className="rounded-full">
+              登录
+            </Button>
+            <Button size="sm" onClick={() => setMode("register")} className="rounded-full">
+              注册
+            </Button>
+          </nav>
+        </GlassSurface>
       ) : (
-        <Button variant="ghost" size="sm" onClick={() => setMode("landing")} className="gap-1.5">
-          <ArrowLeft className="size-4" />
-          返回
-        </Button>
+        <GlassSurface className="rounded-full" contentClassName="p-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setMode("landing")}
+            className="gap-1.5 rounded-full"
+          >
+            <ArrowLeft className="size-4" />
+            返回
+          </Button>
+        </GlassSurface>
       )}
     </motion.header>
   );
@@ -351,68 +402,59 @@ function Landing({ onStart, onRegister }: { onStart: () => void; onRegister: () 
       exit={{ opacity: 0, transition: { duration: 0.25 } }}
       className="grid flex-1 items-center gap-12 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:py-6"
     >
-      {/* 左 — 主张与行动 */}
-      <div className="max-w-xl">
+      <div className="min-w-0 max-w-xl">
         <motion.div {...rise(0.05)}>
-          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
+          <GlassSurface className="inline-flex rounded-full" contentClassName="flex items-center gap-2 px-3.5 py-1.5">
             <span className="relative flex size-1.5">
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/60" />
               <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
             </span>
-            三只智能体在线 · 科研文献智能解析
-          </span>
+            <span className="text-xs font-medium text-muted-foreground">
+              论文精读工作台
+            </span>
+          </GlassSurface>
         </motion.div>
 
-        <motion.h1
-          {...rise(0.12)}
-          className="mt-5 text-balance font-serif text-[3rem] font-semibold leading-[1.05] tracking-[-0.03em] text-foreground sm:text-[3.6rem]"
-        >
-          <span className="text-primary">耄耋</span>读论文
-        </motion.h1>
+        <motion.div {...rise(0.12)} className="relative mt-5 w-full min-w-0 max-w-[calc(100vw-2.5rem)] sm:max-w-[35rem]">
+          <h1 className="relative z-10 h-[4.25rem] w-full overflow-visible sm:h-[5.45rem]" aria-label="GopherPaper">
+            <span className="sr-only">GopherPaper</span>
+            <span aria-hidden className="block size-full overflow-visible">
+              <Shuffle
+                text="GopherPaper"
+                className="font-serif text-[clamp(2.65rem,11.4vw,4.45rem)] font-semibold tracking-[-0.055em] text-primary"
+                colorFrom="color-mix(in oklch, var(--primary) 34%, transparent)"
+                colorTo="var(--primary)"
+                shuffleTimes={4}
+              />
+            </span>
+          </h1>
+        </motion.div>
 
         <motion.p
           {...rise(0.2)}
-          className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground"
+          className="mt-5 max-w-[27rem] text-[15px] leading-relaxed text-muted-foreground sm:text-base"
         >
-          上传 PDF，自动解析结构、抽取要点、构建知识库。再由三只智能体陪你精读、检索与沉淀——每个回答都标注来源段落与页码。
+          
         </motion.p>
 
-        <motion.div {...rise(0.28)} className="mt-8 flex flex-wrap items-center gap-3">
+        <motion.div {...rise(0.28)}>
+          <AgentTrio />
+        </motion.div>
+
+        <motion.div {...rise(0.38)} className="mt-8 flex flex-wrap items-center gap-3">
           <Magnetic strength={0.35}>
             <Button size="lg" onClick={onStart} className="group h-12 gap-2 px-6 text-base">
-              登录进入工作台
+              进入工作台
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
             </Button>
           </Magnetic>
           <Button size="lg" variant="outline" onClick={onRegister} className="h-12 px-6 text-base">
-            创建账号
+            注册
           </Button>
         </motion.div>
 
-        {/* 三只智能体 — 干净一行,无浮标堆叠 */}
-        <motion.div {...rise(0.36)} className="mt-10 border-t border-border/70 pt-6">
-          <ul className="grid gap-x-6 gap-y-4 sm:grid-cols-3">
-            {AGENTS.map((a) => {
-              const Icon = a.icon;
-              return (
-                <li key={a.name} className="flex items-start gap-2.5">
-                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Icon className="size-4" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold tracking-tight text-foreground">
-                      {a.name}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">{a.role}</span>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </motion.div>
       </div>
 
-      {/* 右 — 产品演示 console + 吉祥物 */}
       <motion.div
         initial={reduce ? { opacity: 0 } : { opacity: 0, y: 26, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -428,6 +470,111 @@ function Landing({ onStart, onRegister }: { onStart: () => void; onRegister: () 
         </Tilt>
       </motion.div>
     </motion.section>
+  );
+}
+
+/* ---------------- 三智能体协作 — 取代抽象环绕字环 ---------------- */
+
+function AgentTrio() {
+  const reduce = useHydrationSafeReducedMotion();
+
+  return (
+    <div className="mt-7 max-w-[27rem]">
+      <div className="relative flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-0">
+        {AGENTS.map((agent, i) => (
+          <div key={agent.key} className="contents">
+            <AgentChip agent={agent} index={i} reduce={reduce} />
+            {i < AGENTS.length - 1 && (
+              <span
+                aria-hidden
+                className="relative mx-1 hidden h-px w-5 shrink-0 sm:block"
+              >
+                <span className="absolute inset-0 bg-gradient-to-r from-border/30 via-border to-border/30" />
+                {!reduce && (
+                  <motion.span
+                    className="absolute top-1/2 size-1 -translate-y-1/2 rounded-full bg-primary shadow-[0_0_6px_1px_color-mix(in_oklch,var(--primary)_55%,transparent)]"
+                    animate={{ left: ["0%", "100%"], opacity: [0, 1, 0] }}
+                    transition={{
+                      duration: 2.6,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                      delay: i * 1.3,
+                    }}
+                  />
+                )}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AgentChip({
+  agent,
+  index,
+  reduce,
+}: {
+  agent: (typeof AGENTS)[number];
+  index: number;
+  reduce: boolean;
+}) {
+  const Icon = agent.icon;
+
+  return (
+    <motion.div
+      className="sm:flex-1"
+      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: EASE_OUT, delay: 0.42 + index * 0.1 }}
+    >
+      <motion.div
+        animate={reduce ? {} : { y: [0, -4, 0] }}
+        transition={
+          reduce
+            ? {}
+            : {
+                duration: 3.6 + index * 0.5,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: index * 0.45,
+              }
+        }
+      >
+        <SpotlightCard
+          className="rounded-2xl border-border/45 bg-card/55 p-2.5 shadow-[0_10px_30px_-22px_oklch(0.24_0.02_220/0.4)] backdrop-blur-md transition-[transform,border-color] duration-300 hover:-translate-y-0.5 hover:border-border/70"
+          spotlightColor={`color-mix(in oklch, ${agent.tint} 24%, transparent)`}
+        >
+          <div className="flex items-center gap-2.5">
+            <span
+              className="relative flex size-9 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset"
+              style={{
+                background: `color-mix(in oklch, ${agent.tint} 12%, transparent)`,
+                color: agent.tint,
+                // @ts-expect-error CSS 自定义属性
+                "--tw-ring-color": `color-mix(in oklch, ${agent.tint} 28%, transparent)`,
+              }}
+            >
+              <Icon className="size-4" />
+            </span>
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-1.5">
+                <span className="font-serif text-[13px] font-semibold leading-none text-foreground">
+                  {agent.name}
+                </span>
+                <span className="text-[10px] font-medium leading-none text-muted-foreground">
+                  {agent.role}
+                </span>
+              </div>
+              <p className="mt-1 truncate text-[11px] leading-tight text-muted-foreground">
+                {agent.blurb}
+              </p>
+            </div>
+          </div>
+        </SpotlightCard>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -452,66 +599,69 @@ function Console() {
 
   return (
     <div className="relative w-[26rem] max-w-full">
-      {/* 背后浮起的薄卡,做层次 */}
       <div
         aria-hidden
-        className="absolute -right-3 -top-3 hidden h-full w-full rounded-2xl border border-border/70 bg-card/40 sm:block"
+        className="absolute -right-3 -top-3 hidden h-full w-full rounded-[1.35rem] border border-white/40 bg-white/20 backdrop-blur-xl sm:block dark:border-white/10 dark:bg-white/[0.04]"
       />
 
-      <div className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-[0_24px_70px_-24px_oklch(0.255_0.012_56/0.35)]">
-        {/* 流水线进度条 */}
-        <div className="flex items-center gap-1.5 border-b border-border/70 bg-muted/40 px-5 py-3.5">
-          {PIPELINE.map((p, i) => {
-            const Icon = p.icon;
-            const active = i === step;
-            const done = i < step;
-            return (
-              <div key={p.key} className="flex flex-1 items-center gap-1.5">
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`relative flex size-6 items-center justify-center rounded-full border transition-colors duration-500 ${
-                      done || active
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-card text-muted-foreground"
-                    }`}
-                  >
-                    <Icon className="size-3" />
-                    {active && !reduce && !answered && (
+      <SpotlightCard
+        className="rounded-[1.35rem] p-0"
+        spotlightColor="rgba(32, 160, 170, 0.20)"
+      >
+        <div className="relative overflow-hidden rounded-[1.35rem] bg-card/[0.72] shadow-[0_24px_70px_-24px_oklch(0.255_0.012_56/0.35)] backdrop-blur-xl dark:bg-card/60">
+          {/* 流水线进度条 */}
+          <div className="flex items-center gap-1.5 border-b border-white/40 bg-white/30 px-5 py-3.5 dark:border-white/10 dark:bg-white/[0.045]">
+            {PIPELINE.map((p, i) => {
+              const Icon = p.icon;
+              const active = i === step;
+              const done = i < step;
+              return (
+                <div key={p.key} className="flex flex-1 items-center gap-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`relative flex size-6 items-center justify-center rounded-full border transition-colors duration-500 ${
+                        done || active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-card text-muted-foreground"
+                      }`}
+                    >
+                      <Icon className="size-3" />
+                      {active && !reduce && !answered && (
+                        <motion.span
+                          className="absolute inset-0 rounded-full ring-2 ring-primary/40"
+                          animate={{ scale: [1, 1.5], opacity: [0.6, 0] }}
+                          transition={{ duration: 1.4, repeat: Infinity, ease: "easeOut" }}
+                        />
+                      )}
+                    </span>
+                    <span
+                      className={`text-[11px] font-medium transition-colors duration-500 ${
+                        done || active ? "text-foreground" : "text-muted-foreground"
+                      }`}
+                    >
+                      {p.label}
+                    </span>
+                  </div>
+                  {i < PIPELINE.length - 1 && (
+                    <span className="relative h-px flex-1 overflow-hidden bg-border">
                       <motion.span
-                        className="absolute inset-0 rounded-full ring-2 ring-primary/40"
-                        animate={{ scale: [1, 1.5], opacity: [0.6, 0] }}
-                        transition={{ duration: 1.4, repeat: Infinity, ease: "easeOut" }}
+                        className="absolute inset-0 bg-primary"
+                        initial={false}
+                        animate={{ scaleX: done ? 1 : 0 }}
+                        style={{ transformOrigin: "left" }}
+                        transition={{ duration: 0.5, ease: EASE_OUT }}
                       />
-                    )}
-                  </span>
-                  <span
-                    className={`text-[11px] font-medium transition-colors duration-500 ${
-                      done || active ? "text-foreground" : "text-muted-foreground"
-                    }`}
-                  >
-                    {p.label}
-                  </span>
+                    </span>
+                  )}
                 </div>
-                {i < PIPELINE.length - 1 && (
-                  <span className="relative h-px flex-1 overflow-hidden bg-border">
-                    <motion.span
-                      className="absolute inset-0 bg-primary"
-                      initial={false}
-                      animate={{ scaleX: done ? 1 : 0 }}
-                      style={{ transformOrigin: "left" }}
-                      transition={{ duration: 0.5, ease: EASE_OUT }}
-                    />
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
 
         {/* 论文卡 */}
         <div className="space-y-3 px-5 pb-4 pt-5">
           <h3 className="font-serif text-[15px] font-semibold leading-snug text-foreground">
-            L-茶氨酸的认知效应：人类临床试验的系统综述
+            Attention Is All You Need：Transformer 架构精读
           </h3>
           <div className="space-y-2">
             <span className="block h-2 w-full rounded-full bg-muted" />
@@ -519,7 +669,7 @@ function Console() {
             <span className="block h-2 w-[78%] rounded-full bg-muted" />
           </div>
           <div className="flex flex-wrap gap-1.5 pt-0.5">
-            {["n = 150", "p. 4", "图 2", "双盲 RCT"].map((c) => (
+            {["NeurIPS 2017", "p. 3", "图 1", "Self-Attention"].map((c) => (
               <span
                 key={c}
                 className="rounded-md border border-sienna/30 bg-sienna/[0.07] px-2 py-0.5 text-[11px] font-medium text-sienna tabular-nums"
@@ -531,10 +681,10 @@ function Console() {
         </div>
 
         {/* 证据问答 */}
-        <div className="space-y-2.5 border-t border-border/70 bg-muted/30 px-5 py-4">
+        <div className="space-y-2.5 border-t border-white/40 bg-white/20 px-5 py-4 dark:border-white/10 dark:bg-white/[0.035]">
           <div className="flex justify-end">
             <span className="max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-3 py-1.5 text-[12.5px] text-primary-foreground">
-              这篇论文用了什么实验方法？
+              这篇论文的核心方法是什么？
             </span>
           </div>
 
@@ -552,21 +702,21 @@ function Console() {
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.4, ease: EASE_OUT }}
-                  className="max-w-[88%] space-y-2 rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-2.5"
+                  className="max-w-[88%] space-y-2 rounded-2xl rounded-bl-sm border border-white/50 bg-background/70 px-3 py-2.5 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-background/40"
                 >
                   <p className="text-[12.5px] leading-relaxed text-foreground">
-                    采用双盲随机对照设计，受试者被分配至 L-茶氨酸或安慰剂组，以注意力与压力相关指标作为主要结局。
+                    提出 Transformer，用多头自注意力和前馈网络建模序列关系，替代循环与卷积结构。
                   </p>
                   <div className="flex items-center gap-1.5 border-t border-border/70 pt-2 text-[11px] text-sienna">
                     <Quote className="size-3" />
-                    来源 §3.2 方法 · 第 7 页
+                    来源 §3 Model Architecture · 第 3 页
                   </div>
                 </motion.div>
               ) : (
                 <motion.div
                   key="typing"
                   exit={{ opacity: 0 }}
-                  className="flex w-fit items-center gap-1 rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-2.5"
+                  className="flex w-fit items-center gap-1 rounded-2xl rounded-bl-sm border border-white/50 bg-background/70 px-3 py-2.5 backdrop-blur-md dark:border-white/10 dark:bg-background/40"
                 >
                   {[0, 1, 2].map((i) => (
                     <motion.span
@@ -582,7 +732,8 @@ function Console() {
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </SpotlightCard>
     </div>
   );
 }
@@ -653,8 +804,9 @@ function AuthPanel(props: AuthPanelProps) {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.55, ease: EASE_OUT }}
-        className="w-full max-w-md rounded-2xl border border-border bg-card p-7 shadow-[0_24px_70px_-30px_oklch(0.255_0.012_56/0.4)] sm:p-8"
+        className="w-full max-w-md"
       >
+        <GlassSurface className="rounded-2xl" contentClassName="p-7 sm:p-8">
         <div className="mb-6">
           <h1 className="font-serif text-[1.7rem] font-semibold tracking-tight">
             {isForgot ? "重置密码" : isLogin ? "进入工作台" : "创建账号"}
@@ -755,6 +907,7 @@ function AuthPanel(props: AuthPanelProps) {
             </>
           )}
         </p>
+        </GlassSurface>
       </motion.div>
     </motion.section>
   );

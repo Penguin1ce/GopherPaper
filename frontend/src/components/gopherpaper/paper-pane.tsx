@@ -11,7 +11,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -52,6 +52,8 @@ const PARSE_TIMELINE = [
   { status: "ready", label: "完成" },
 ] as const;
 
+const STEP_LINE_TRANSITION_MS = 500;
+
 function timelineIndex(status: Paper["status"]): number {
   if (status === "failed") return 0;
   return Math.max(
@@ -75,14 +77,10 @@ function currentStepProgress(paper: Paper, index: number): number {
 function overallProgress(paper: Paper): number {
   if (paper.status === "failed") return 0;
   const index = timelineIndex(paper.status);
-  if (index === 0) return 0;
-  const stepProgress = currentStepProgress(paper, index) / 100;
+  // 横线只表达阶段抵达关系; 当前阶段细进度由节点圆环承载。
   return Math.min(
     100,
-    Math.max(
-      0,
-      ((index - 1 + stepProgress) / (PARSE_TIMELINE.length - 1)) * 100,
-    ),
+    Math.max(0, (index / (PARSE_TIMELINE.length - 1)) * 100),
   );
 }
 
@@ -171,6 +169,40 @@ function ActiveStatusStrip({ paper }: { paper: Paper }) {
   const current = timelineIndex(paper.status);
   const detailText = statusDetailText(paper);
   const lineProgress = overallProgress(paper);
+  const previousPaperIDRef = useRef(paper.id);
+  const previousStatusRef = useRef(paper.status);
+  const [activeNodeArrivedState, setActiveNodeArrived] = useState(true);
+  const sameRenderedPaper = previousPaperIDRef.current === paper.id;
+  const pendingNodeArrival =
+    sameRenderedPaper &&
+    previousStatusRef.current !== paper.status &&
+    paper.status !== "failed";
+  const activeNodeArrived =
+    !sameRenderedPaper || paper.status === "failed"
+      ? true
+      : pendingNodeArrival
+        ? false
+        : activeNodeArrivedState;
+
+  useEffect(() => {
+    const samePaper = previousPaperIDRef.current === paper.id;
+    const statusChanged = previousStatusRef.current !== paper.status;
+
+    previousPaperIDRef.current = paper.id;
+    previousStatusRef.current = paper.status;
+
+    if (!samePaper || !statusChanged || paper.status === "failed") {
+      setActiveNodeArrived(true);
+      return;
+    }
+
+    setActiveNodeArrived(false);
+    const timer = window.setTimeout(
+      () => setActiveNodeArrived(true),
+      STEP_LINE_TRANSITION_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [paper.id, paper.status]);
 
   return (
     <div className="rounded-md border bg-card px-3 py-2">
@@ -200,14 +232,15 @@ function ActiveStatusStrip({ paper }: { paper: Paper }) {
                   paper.status === step.status && paper.status !== "ready";
                 const done = index < current || paper.status === "ready";
                 const value = currentStepProgress(paper, index);
+                const nodeReady = !active || activeNodeArrived;
                 return (
                   <div
                     key={step.status}
                     className="flex w-10 flex-col items-center gap-1.5"
                   >
                     <StepProgressDot
-                      value={value}
-                      active={active}
+                      value={nodeReady ? value : 0}
+                      active={active && nodeReady}
                       done={done || value >= 100}
                     />
                     <span
