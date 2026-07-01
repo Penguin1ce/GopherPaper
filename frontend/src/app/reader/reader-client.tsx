@@ -190,6 +190,14 @@ function loadToken(): string {
   }
 }
 
+function loadRequestedPage(): number {
+  if (typeof location === "undefined") return 0;
+  const params = new URLSearchParams(location.search);
+  const raw = params.get("page") || params.get("page_no") || params.get("p") || "";
+  const page = Number.parseInt(raw, 10);
+  return Number.isFinite(page) && page > 0 ? page : 0;
+}
+
 function loadReaderPreferences(): ReaderPreferences {
   if (typeof window === "undefined") return DEFAULT_PREFS;
   try {
@@ -1807,6 +1815,7 @@ export function ReaderClient() {
     if (typeof location === "undefined") return "";
     return new URLSearchParams(location.search).get("id") || "";
   }, []);
+  const requestedPage = useMemo(() => loadRequestedPage(), []);
   const [ready, setReady] = useState(false);
   const [paper, setPaper] = useState<Paper | null>(null);
   const [sections, setSections] = useState<PaperSection[]>([]);
@@ -1842,7 +1851,7 @@ export function ReaderClient() {
   const pdfWheelRef = useRef<HTMLDivElement | null>(null);
 
   const highlights = useMemo(() => annotations.map(annotationToHighlight), [annotations]);
-  const initialPage = Math.max(1, paper?.last_read_page || 1);
+  const initialPage = Math.max(1, requestedPage || paper?.last_read_page || 1);
   const pdfUrl = useMemo(() => (ready && id ? api.paperFileUrl(id) : ""), [ready, id]);
   const rightPanelOpen = !prefs.mindMapOpen && (prefs.translateOpen || prefs.annotationsOpen);
   const gridClass =
@@ -1962,7 +1971,7 @@ export function ReaderClient() {
         const initialSections = Array.isArray(detail.sections) ? detail.sections : [];
         setPaper(detail.paper);
         setSections((cur) => (initialSections.length > 0 ? initialSections : cur));
-        setCurrentPage(Math.max(1, detail.paper.last_read_page || 1));
+        setCurrentPage(Math.max(1, requestedPage || detail.paper.last_read_page || 1));
         if (detail.paper.page_count > 0) setNumPages(detail.paper.page_count);
         setAnnotations(Array.isArray(list) ? list : []);
         progressLoadedRef.current = true;
@@ -1978,7 +1987,7 @@ export function ReaderClient() {
         }
       })
       .catch((err) => setError((err as Error)?.message || "加载论文失败"));
-  }, [id]);
+  }, [id, requestedPage]);
 
   useEffect(() => {
     if (!ready || !id || !progressLoadedRef.current || currentPage <= 0) return;

@@ -1,0 +1,58 @@
+import type { Reference } from "./types";
+
+function sourcePageNo(value: string): number | null {
+  const match = value.match(/第\s*(\d+)\s*页|p\.?\s*(\d+)/i);
+  const raw = match?.[1] || match?.[2] || "";
+  const page = Number.parseInt(raw, 10);
+  return Number.isFinite(page) && page > 0 ? page : null;
+}
+
+function sourceText(ref: Reference): string {
+  return [ref.source_file, ref.source_uri].filter(Boolean).join(" ");
+}
+
+function fileName(value?: string): string {
+  return (value || "").split(/[\\/]/).filter(Boolean).pop() || "";
+}
+
+function refMatchesLabel(ref: Reference, label: string): boolean {
+  return [ref.source_file, fileName(ref.source_file), ref.source_uri, fileName(ref.source_uri)]
+    .filter((part): part is string => Boolean(part))
+    .some((part) => label.includes(part));
+}
+
+function readerHref(docID: string, pageNo: number): string {
+  return `/reader?id=${encodeURIComponent(docID)}&page=${encodeURIComponent(String(pageNo))}`;
+}
+
+export function referenceReaderHref(
+  ref: Reference,
+  fallbackDocID?: string,
+  allowedDocIDs?: Set<string>,
+): string | null {
+  const pageNo = typeof ref.page_no === "number" && ref.page_no > 0 ? ref.page_no : null;
+  if (!pageNo) return null;
+  const docID = ref.doc_id || fallbackDocID || "";
+  if (!docID || (allowedDocIDs && !allowedDocIDs.has(docID))) return null;
+  return readerHref(docID, pageNo);
+}
+
+export function sourceTagReaderHref(
+  label: string,
+  refs: Reference[],
+  fallbackDocID?: string,
+  allowedDocIDs?: Set<string>,
+): string | null {
+  const pageNo = sourcePageNo(label);
+  if (!pageNo) return null;
+
+  const candidates = refs.filter((ref) => ref.page_no === pageNo);
+  const named = candidates.find((ref) => {
+    const text = sourceText(ref);
+    return text && refMatchesLabel(ref, label);
+  });
+  const ref = named || candidates.find((item) => item.doc_id) || candidates[0];
+  if (ref) return referenceReaderHref(ref, fallbackDocID, allowedDocIDs);
+  if (!fallbackDocID || (allowedDocIDs && !allowedDocIDs.has(fallbackDocID))) return null;
+  return readerHref(fallbackDocID, pageNo);
+}

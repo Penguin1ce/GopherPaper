@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUp, BookOpenText, ChevronDown, Loader2 } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { figureUrl } from "@/lib/gopherpaper/api";
+import { referenceReaderHref, sourceTagReaderHref } from "@/lib/gopherpaper/source-links";
 import { useApp } from "@/lib/gopherpaper/store";
 import type { Message, PaperFlow, Reference } from "@/lib/gopherpaper/types";
 import { formatTime, intentLabel, messagePlan, paperTitle } from "@/lib/gopherpaper/utils";
@@ -45,7 +46,15 @@ function referenceScope(ref: Reference) {
   return ref.knowledge_scope === "public" ? "基础库" : "我的论文";
 }
 
-function Sources({ refs }: { refs: Reference[] }) {
+function Sources({
+  refs,
+  fallbackPaperID,
+  allowedPaperIDs,
+}: {
+  refs: Reference[];
+  fallbackPaperID?: string;
+  allowedPaperIDs?: Set<string>;
+}) {
   const [open, setOpen] = useState(false);
 
   if (refs.length === 0) return null;
@@ -89,6 +98,7 @@ function Sources({ refs }: { refs: Reference[] }) {
             const scope = referenceScope(r);
             const isImage = r.block_type === "image" && !!r.img_name && !!r.doc_id;
             const src = isImage ? figureUrl(r.doc_id!, r.img_name!) : "";
+            const readerHref = referenceReaderHref(r, fallbackPaperID, allowedPaperIDs);
             return (
               <li key={i} className="flex items-start gap-2 rounded-lg px-1 py-1 text-xs">
                 <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-sienna/12 font-mono text-[10px] text-sienna">
@@ -105,9 +115,19 @@ function Sources({ refs }: { refs: Reference[] }) {
                   </span>
                   <span className="mt-1 flex flex-wrap gap-1.5">
                     {typeof r.page_no === "number" && r.page_no > 0 && (
-                      <Badge variant="secondary" className="rounded-full font-normal">
-                        p.{r.page_no}
-                      </Badge>
+                      readerHref ? (
+                        <Badge
+                          variant="secondary"
+                          className="rounded-full font-normal hover:bg-secondary/80"
+                          render={<a href={readerHref} target="_blank" rel="noopener noreferrer" />}
+                        >
+                          p.{r.page_no}
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="rounded-full font-normal">
+                          p.{r.page_no}
+                        </Badge>
+                      )
                     )}
                     <Badge variant="outline" className="rounded-full font-normal">
                       {scope}
@@ -128,11 +148,21 @@ function Sources({ refs }: { refs: Reference[] }) {
   );
 }
 
-const MessageBubble = memo(function MessageBubble({ message }: { message: Message }) {
+const MessageBubble = memo(function MessageBubble({
+  message,
+  fallbackPaperID,
+  allowedPaperIDs,
+}: {
+  message: Message;
+  fallbackPaperID?: string;
+  allowedPaperIDs?: Set<string>;
+}) {
   const isAssistant = message.role === "assistant";
   const refs = isAssistant ? extractSources(message.meta) : [];
   const figures = isAssistant ? buildFigureMap(refs) : undefined;
   const steps = isAssistant ? messagePlan(message) : [];
+  const sourceHref = (label: string) =>
+    sourceTagReaderHref(label, refs, fallbackPaperID, allowedPaperIDs);
   return (
     <article className={cn("flex flex-col gap-1.5", isAssistant ? "items-start" : "items-end")}>
       {isAssistant ? (
@@ -141,11 +171,17 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: Messag
           {steps.length > 0 && (
             <ProcessTrace steps={steps} live={!!message.streaming} />
           )}
-          <Markdown figures={figures}>{message.content}</Markdown>
+          <Markdown figures={figures} sourceHref={sourceHref}>{message.content}</Markdown>
           {(message.flow ?? (message.meta?.flow as PaperFlow | undefined)) && (
             <PaperFlowCard flow={(message.flow ?? message.meta?.flow) as PaperFlow} />
           )}
-          {refs.length > 0 && <Sources refs={refs} />}
+          {refs.length > 0 && (
+            <Sources
+              refs={refs}
+              fallbackPaperID={fallbackPaperID}
+              allowedPaperIDs={allowedPaperIDs}
+            />
+          )}
         </div>
       ) : (
         <div className="max-w-[80%] rounded-2xl bg-primary px-4 py-2.5 text-primary-foreground">
@@ -182,10 +218,15 @@ const PROMPT_HINTS = [
 ];
 
 export function ChatPane() {
-  const { messages, activeSession, activePaper, sending, toolNote, sendMessage } = useApp();
+  const { messages, activeSession, activePaper, papers, sending, toolNote, sendMessage } = useApp();
   const guard = useGuard();
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fallbackPaperID = activeSession?.paper_id || activePaper?.id || "";
+  const allowedPaperIDs = useMemo(
+    () => (papers.length > 0 ? new Set(papers.map((paper) => paper.id)) : undefined),
+    [papers],
+  );
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" });
@@ -231,7 +272,12 @@ export function ChatPane() {
                 </div>
               )}
               {messages.map((m) => (
-                <MessageBubble key={String(m.id)} message={m} />
+                <MessageBubble
+                  key={String(m.id)}
+                  message={m}
+                  fallbackPaperID={fallbackPaperID}
+                  allowedPaperIDs={allowedPaperIDs}
+                />
               ))}
               {sending && !messages.some((m) => m.streaming) && (
                 <article className="flex items-start">

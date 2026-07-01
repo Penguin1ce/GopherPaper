@@ -310,11 +310,13 @@ function isImageURL(value: string): boolean {
 export function Markdown({
   children,
   figures,
+  sourceHref,
   richLinks = false,
   compact = false,
 }: {
   children: string;
   figures?: Record<string, string>;
+  sourceHref?: (label: string) => string | null | undefined;
   richLinks?: boolean;
   compact?: boolean;
 }) {
@@ -331,9 +333,25 @@ export function Markdown({
       if (url.startsWith(SOURCE_SCHEME)) {
         const raw = url.slice(SOURCE_SCHEME.length);
         const title = decodeSourceTag(raw || "");
+        const href = sourceHref?.(title);
+        const className =
+          "mx-0.5 inline-flex h-5 translate-y-[-1px] items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-1.5 align-middle text-[11px] font-medium leading-none text-primary";
+        if (href) {
+          return (
+            <a
+              className={cn(className, "no-underline hover:border-primary/35 hover:bg-primary/15")}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`${title} · 点击打开精读页`}
+            >
+              {children}
+            </a>
+          );
+        }
         return (
           <span
-            className="mx-0.5 inline-flex h-5 translate-y-[-1px] items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-1.5 align-middle text-[11px] font-medium leading-none text-primary"
+            className={className}
             title={title}
           >
             {children}

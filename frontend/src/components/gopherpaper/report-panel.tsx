@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import * as api from "@/lib/gopherpaper/api";
 import { printReport } from "@/lib/gopherpaper/print";
+import { sourceTagReaderHref } from "@/lib/gopherpaper/source-links";
 import { useApp } from "@/lib/gopherpaper/store";
 import type { ChatResponse, PlanStep, Reference, ReportType } from "@/lib/gopherpaper/types";
 import { metaPlanSteps, paperTitle } from "@/lib/gopherpaper/utils";
@@ -82,6 +83,7 @@ export function ReportPanel() {
   // 当前查看/生成中报告的实时进度(执行计划/进行中/失败),由 report_progress 事件累积。
   const run = active ? reportProgress[activePaperID]?.[active] : undefined;
   const reportSteps = report ? metaPlanSteps(report.meta) : [];
+  const reportRefs = (report?.meta?.sources as Reference[] | undefined) ?? [];
 
   useEffect(() => {
     setActive(null);
@@ -404,7 +406,12 @@ export function ReportPanel() {
                   />
                 )}
                 <div ref={articleRef}>
-                  <Markdown figures={buildFigureMap(report.meta)}>{report.content}</Markdown>
+                  <Markdown
+                    figures={buildFigureMap(report.meta)}
+                    sourceHref={(label) => sourceTagReaderHref(label, reportRefs, activePaperID)}
+                  >
+                    {report.content}
+                  </Markdown>
                 </div>
               </article>
             ) : (
