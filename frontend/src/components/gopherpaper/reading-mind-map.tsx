@@ -11,9 +11,11 @@ import {
   ReactFlowProvider,
   useNodesState,
   useReactFlow,
+  useUpdateNodeInternals,
   type Edge,
   type Node,
   type NodeMouseHandler,
+  type NodeOrigin,
   type NodeProps,
   type OnNodeDrag,
 } from "@xyflow/react";
@@ -27,6 +29,7 @@ import {
   FileText,
   FolderTree,
   Highlighter,
+  Image as ImageIcon,
   Loader2,
   MessageSquareText,
   Network,
@@ -66,6 +69,7 @@ import type {
   MindMapNodeData,
   MindMapNodeType,
   Paper,
+  PaperAnnotation,
 } from "@/lib/gopherpaper/types";
 import { cn } from "@/lib/utils";
 
@@ -79,6 +83,7 @@ interface ReadingMindMapProps {
 interface MindMapFlowData extends MindMapNodeData {
   nodeType: MindMapNodeType;
   hasChildren: boolean;
+  imagePreview?: MindMapImagePreview;
   onDeleteManual: (id: string) => void;
   onEditManual: (id: string) => void;
   onToggleCollapse: (id: string) => void;
@@ -88,8 +93,24 @@ interface MindMapFlowData extends MindMapNodeData {
 type MindMapFlowNode = Node<MindMapFlowData, "mindMapCard">;
 type MindMapFlowEdge = Edge<{ manual?: boolean }>;
 
+interface MindMapImagePreview {
+  snapshot?: string;
+  drawing?: string;
+  image?: string;
+}
+
 const NODE_TYPES = {
   mindMapCard: MindMapNodeCard,
+};
+
+const MIND_MAP_NODE_ORIGIN: NodeOrigin = [0, 0.5];
+const MIND_MAP_TARGET_HANDLE_STYLE: CSSProperties = {
+  top: "50%",
+  transform: "translate(-50%, -50%)",
+};
+const MIND_MAP_SOURCE_HANDLE_STYLE: CSSProperties = {
+  top: "50%",
+  transform: "translate(50%, -50%)",
 };
 
 const NODE_SIZE: Record<MindMapNodeType, { width: number; minHeight: number; maxWidth: number }> = {
@@ -155,13 +176,18 @@ const COLOR_VALUE: Record<string, string> = {
 const LAYOUT_MARGIN_X = 48;
 const LAYOUT_MARGIN_Y = 56;
 const LAYOUT_RANK_GAP = 148;
-const LAYOUT_NODE_GAP = 72;
+const LAYOUT_NODE_GAP = 88;
 const LAYOUT_ROOT_GAP = 112;
 const SVG_EXPORT_PADDING = 64;
 const SVG_EDGE_PADDING = 8;
 const SVG_BODY_LINE_HEIGHT = 18;
 const SVG_ICON_BOX_SIZE = 30;
 const SVG_ICON_SIZE = 18;
+const IMAGE_NODE_MIN_WIDTH = 320;
+const IMAGE_NODE_MAX_WIDTH = 380;
+const IMAGE_NODE_MEDIA_HEIGHT = 148;
+const IMAGE_NODE_CHROME_HEIGHT = 64;
+const IMAGE_NODE_LOCATE_FOOTER_HEIGHT = 31;
 
 const SVG_NODE_THEME: Record<
   MindMapNodeType,
@@ -226,12 +252,17 @@ type MindMapNodeStyle = CSSProperties & {
 };
 
 function MindMapNodeCard({ id, data, selected }: NodeProps<MindMapFlowNode>) {
+  const updateNodeInternals = useUpdateNodeInternals();
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const geometryFrameRef = useRef<number | null>(null);
   const isSection = data.nodeType === "section";
   const isHighlight = data.nodeType === "highlight";
   const isAnnotation = data.nodeType === "annotation";
   const isManual = data.nodeType === "manual";
   const meta = TYPE_META[data.nodeType] || TYPE_META.manual;
-  const Icon = meta.icon;
+  const imagePreview = nodeImagePreview(data);
+  const hasImagePreview = hasMindMapImagePreview(imagePreview);
+  const Icon = hasImagePreview ? ImageIcon : meta.icon;
   const accentTint = isHighlight
     ? COLOR_VALUE[data.color || "yellow"] || COLOR_VALUE.yellow
     : meta.tint;
@@ -240,13 +271,52 @@ function MindMapNodeCard({ id, data, selected }: NodeProps<MindMapFlowNode>) {
   const size = nodeSize(data.nodeType, data);
   const style: MindMapNodeStyle = {
     width: size.width,
-    minHeight: size.height,
+    ...(hasImagePreview ? {} : { minHeight: size.height }),
     "--mind-node-accent": meta.color,
     "--mind-node-tint": accentTint,
   };
+  const refreshNodeGeometry = useCallback(() => {
+    if (geometryFrameRef.current != null) return;
+    geometryFrameRef.current = window.requestAnimationFrame(() => {
+      geometryFrameRef.current = null;
+      updateNodeInternals(id);
+    });
+  }, [id, updateNodeInternals]);
+
+  useEffect(() => {
+    return () => {
+      if (geometryFrameRef.current != null) {
+        window.cancelAnimationFrame(geometryFrameRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasImagePreview) return;
+    refreshNodeGeometry();
+    const timer = window.setTimeout(refreshNodeGeometry, 80);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    hasImagePreview,
+    imagePreview?.drawing,
+    imagePreview?.image,
+    imagePreview?.snapshot,
+    refreshNodeGeometry,
+  ]);
+
+  useEffect(() => {
+    const element = cardRef.current;
+    if (!element || typeof window.ResizeObserver === "undefined") return;
+    const observer = new window.ResizeObserver(() => refreshNodeGeometry());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [refreshNodeGeometry]);
 
   return (
     <div
+      ref={cardRef}
       className={cn(
         "mind-map-node-card group/mind-node relative min-w-0 overflow-hidden rounded-lg border text-left text-foreground",
         "border-[color-mix(in_srgb,var(--mind-node-accent)_26%,var(--border))]",
@@ -265,11 +335,13 @@ function MindMapNodeCard({ id, data, selected }: NodeProps<MindMapFlowNode>) {
         type="target"
         position={Position.Left}
         className="!size-2 !border-0 !bg-[var(--mind-node-accent)] !opacity-0"
+        style={MIND_MAP_TARGET_HANDLE_STYLE}
       />
       <Handle
         type="source"
         position={Position.Right}
         className="!size-2 !border-0 !bg-[var(--mind-node-accent)] !opacity-0"
+        style={MIND_MAP_SOURCE_HANDLE_STYLE}
       />
       <div className="h-1 bg-[var(--mind-node-accent)] opacity-80" />
       <div className="px-3 py-2.5">
@@ -340,19 +412,31 @@ function MindMapNodeCard({ id, data, selected }: NodeProps<MindMapFlowNode>) {
           </div>
         </div>
 
+        {hasImagePreview && imagePreview ? (
+          <MindMapNodeImage preview={imagePreview} onLoad={refreshNodeGeometry} />
+        ) : null}
+
+        {!hasImagePreview && (
         <div
           className={cn(
             "mt-2.5 whitespace-pre-wrap break-words text-sm leading-5",
             data.nodeType === "paper" && "line-clamp-3 text-[15px] font-semibold tracking-tight",
             data.nodeType === "section" && "line-clamp-3 font-semibold",
-            data.nodeType === "highlight" && "line-clamp-6 border-l-2 border-[var(--mind-node-accent)] pl-2.5 text-[13px] text-foreground/85",
-            data.nodeType === "annotation" && "line-clamp-6 border-l-2 border-[var(--mind-node-accent)] pl-2.5 text-[13px] text-foreground/85",
+            data.nodeType === "highlight" &&
+              (hasImagePreview
+                ? "line-clamp-2 text-[12px] text-foreground/75"
+                : "line-clamp-6 border-l-2 border-[var(--mind-node-accent)] pl-2.5 text-[13px] text-foreground/85"),
+            data.nodeType === "annotation" &&
+              (hasImagePreview
+                ? "line-clamp-2 text-[12px] text-foreground/75"
+                : "line-clamp-6 border-l-2 border-[var(--mind-node-accent)] pl-2.5 text-[13px] text-foreground/85"),
             data.nodeType === "group" && "line-clamp-2 font-medium",
             data.nodeType === "manual" && "line-clamp-3 font-medium",
           )}
         >
           {displayText || "未命名节点"}
         </div>
+        )}
 
         {(isHighlight || isAnnotation) && (
           <div className="mt-2 flex items-center justify-between gap-2 border-t border-[color-mix(in_srgb,var(--mind-node-accent)_16%,transparent)] pt-2 text-[11px] text-muted-foreground">
@@ -360,6 +444,43 @@ function MindMapNodeCard({ id, data, selected }: NodeProps<MindMapFlowNode>) {
             {data.pageNumber ? <span className="font-mono">p.{data.pageNumber}</span> : null}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function MindMapNodeImage({
+  preview,
+  onLoad,
+}: {
+  preview: MindMapImagePreview;
+  onLoad: () => void;
+}) {
+  const background = preview.snapshot || preview.image;
+  return (
+    <div className="nodrag mt-2.5 overflow-hidden rounded-md border bg-white shadow-inner">
+      <div className="relative grid w-full place-items-center" style={{ height: IMAGE_NODE_MEDIA_HEIGHT }}>
+        {background ? (
+          <img
+            src={background}
+            alt=""
+            className="absolute inset-0 size-full object-contain"
+            draggable={false}
+            onLoad={onLoad}
+          />
+        ) : null}
+        {preview.drawing ? (
+          <img
+            src={preview.drawing}
+            alt=""
+            className={cn(
+              "absolute inset-0 size-full object-contain",
+              background ? "p-3" : "p-2",
+            )}
+            draggable={false}
+            onLoad={onLoad}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -393,6 +514,9 @@ function ReadingMindMapCanvas({
   const [manualEditingID, setManualEditingID] = useState<string | null>(null);
   const [manualLabel, setManualLabel] = useState("");
   const [manualParentID, setManualParentID] = useState("");
+  const [annotationPreviews, setAnnotationPreviews] = useState<Map<number, MindMapImagePreview>>(
+    () => new Map(),
+  );
 
   useEffect(() => {
     if (!open || !paper?.id) return;
@@ -426,6 +550,26 @@ function ReadingMindMapCanvas({
       .finally(() => {
         if (requestSeq.current === seq) setLoading(false);
       });
+  }, [open, paper?.id]);
+
+  useEffect(() => {
+    if (!open || !paper?.id) {
+      setAnnotationPreviews(new Map());
+      return;
+    }
+    let cancelled = false;
+    api
+      .listAnnotations(paper.id)
+      .then((items) => {
+        if (cancelled) return;
+        setAnnotationPreviews(annotationPreviewMap(Array.isArray(items) ? items : []));
+      })
+      .catch(() => {
+        if (!cancelled) setAnnotationPreviews(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open, paper?.id]);
 
   useEffect(() => {
@@ -522,7 +666,9 @@ function ReadingMindMapCanvas({
 
   const applyFetchedMindMap = (value: MindMap, seq: number, autoArrange: boolean) => {
     const normalized = normalizeMindMap(value);
-    const graphJSON = autoArrange ? layoutLeftToRight(normalized.graph_json) : normalized.graph_json;
+    const graphJSON = autoArrange
+      ? stripTransientPreviews(layoutLeftToRight(graphWithImagePreviews(normalized.graph_json, annotationPreviews)))
+      : normalized.graph_json;
     const arranged = { ...normalized, graph_json: graphJSON };
     setMindMap(arranged);
     if (!autoArrange) return;
@@ -587,22 +733,26 @@ function ReadingMindMapCanvas({
   const nextFlowNodes = useMemo<MindMapFlowNode[]>(() => {
     if (!visible || !graph) return [];
     const childCounts = childCountMap(graph);
-    return visible.nodes.map((item) => ({
-      id: item.id,
-      type: "mindMapCard",
-      position: item.position || { x: 0, y: 0 },
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
-      data: {
+    return visible.nodes.map((item) => {
+      const data: MindMapFlowData = {
         ...item.data,
         nodeType: item.type,
         hasChildren: (childCounts.get(item.id) || 0) > 0,
+        imagePreview: previewForMindMapNode(item, annotationPreviews),
         onDeleteManual: deleteManualNode,
         onEditManual: editManualNode,
         onToggleCollapse: toggleCollapse,
-      },
-    }));
-  }, [deleteManualNode, editManualNode, graph, toggleCollapse, visible]);
+      };
+      return {
+        id: item.id,
+        type: "mindMapCard",
+        position: graphNodeToFlowPosition({ ...item, data }),
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+        data,
+      };
+    });
+  }, [annotationPreviews, deleteManualNode, editManualNode, graph, toggleCollapse, visible]);
 
   useEffect(() => {
     setFlowNodes(nextFlowNodes);
@@ -702,7 +852,7 @@ function ReadingMindMapCanvas({
 
   const autoLayout = () => {
     if (!graph) return;
-    const next = layoutLeftToRight(graph);
+    const next = stripTransientPreviews(layoutLeftToRight(graphWithImagePreviews(graph, annotationPreviews)));
     updateGraph(() => next, true);
     window.setTimeout(() => fitView({ padding: 0.18, duration: 220 }), 60);
   };
@@ -710,8 +860,12 @@ function ReadingMindMapCanvas({
   const exportSVG = () => {
     if (!mindMap || flowNodes.length === 0) return;
     try {
+      const exportNodes = flowNodes.map((node) => ({
+        ...node,
+        position: flowNodeToGraphPosition(node),
+      }));
       downloadMindMapSVG(
-        flowNodes,
+        exportNodes,
         flowEdges,
         paper?.title?.trim() || paper?.file_name?.trim() || "GopherPaper 脑图",
       );
@@ -721,10 +875,11 @@ function ReadingMindMapCanvas({
   };
 
   const onNodeDragStop: OnNodeDrag<MindMapFlowNode> = (_event, node) => {
+    const nextPosition = flowNodeToGraphPosition(node);
     updateGraph(
       (cur) => ({
         ...cur,
-        nodes: cur.nodes.map((item) => (item.id === node.id ? { ...item, position: node.position } : item)),
+        nodes: cur.nodes.map((item) => (item.id === node.id ? { ...item, position: nextPosition } : item)),
       }),
       true,
     );
@@ -819,6 +974,7 @@ function ReadingMindMapCanvas({
               onNodesChange={onFlowNodesChange}
               onNodeDragStop={onNodeDragStop}
               onNodeClick={onNodeClick}
+              nodeOrigin={MIND_MAP_NODE_ORIGIN}
               fitView
               minZoom={0.2}
               maxZoom={2.2}
@@ -1021,15 +1177,21 @@ function renderSVGNode(node: MindMapFlowNode, offsetX: number, offsetY: number) 
   const theme = svgThemeForNode(node);
   const x = round(node.position.x + offsetX);
   const y = round(node.position.y + offsetY);
+  const imagePreview = nodeImagePreview(node.data);
+  const hasImagePreview = hasMindMapImagePreview(imagePreview);
   const displayText = type === "annotation"
     ? node.data.note || node.data.text || node.data.label
     : node.data.text || node.data.label;
   const size = nodeSize(type, node.data);
   const bodyX = type === "highlight" || type === "annotation" ? 32 : 16;
   const bodyWidth = size.width - bodyX - 18;
-  const bodyLines = wrapSVGText(displayText || "未命名节点", bodyWidth, 13, bodyLineLimit(type));
+  const bodyLines = hasImagePreview
+    ? []
+    : wrapSVGText(displayText || "未命名节点", bodyWidth, 13, bodyLineLimit(type));
   const bodyTop = node.data.pageNumber ? 69 : 61;
-  const bodyHeight = Math.max(SVG_BODY_LINE_HEIGHT, bodyLines.length * SVG_BODY_LINE_HEIGHT);
+  const bodyHeight = hasImagePreview
+    ? IMAGE_NODE_MEDIA_HEIGHT
+    : Math.max(SVG_BODY_LINE_HEIGHT, bodyLines.length * SVG_BODY_LINE_HEIGHT);
   const icon = renderSVGIcon(type, theme.accent);
   const pageText = node.data.pageNumber ? `PAGE ${node.data.pageNumber}` : "";
   const pagePillWidth = pageText ? Math.ceil(estimateTextWidth(pageText, 10) + 20) : 0;
@@ -1054,9 +1216,11 @@ function renderSVGNode(node: MindMapFlowNode, offsetX: number, offsetY: number) 
       ? `<rect x="${pagePillX}" y="${pagePillY}" width="${pagePillWidth}" height="${pagePillHeight}" rx="8.5" fill="#ffffff" opacity=".78"/><text class="node-page" x="${round(pagePillCenterX)}" y="${round(pagePillCenterY)}" text-anchor="middle" dominant-baseline="middle">${escapeXML(pageText)}</text>`
       : "",
   ].filter(Boolean);
-  const body = bodyLines.map((line, index) =>
-    `<text class="node-body" x="${bodyX}" y="${bodyTop + SVG_BODY_LINE_HEIGHT / 2 + index * SVG_BODY_LINE_HEIGHT}" dominant-baseline="middle">${escapeXML(line)}</text>`,
-  );
+  const body = hasImagePreview && imagePreview
+    ? renderSVGImagePreview(imagePreview, bodyX, bodyTop, bodyWidth, IMAGE_NODE_MEDIA_HEIGHT)
+    : bodyLines.map((line, index) =>
+        `<text class="node-body" x="${bodyX}" y="${bodyTop + SVG_BODY_LINE_HEIGHT / 2 + index * SVG_BODY_LINE_HEIGHT}" dominant-baseline="middle">${escapeXML(line)}</text>`,
+      );
   const sideRule = type === "highlight" || type === "annotation"
     ? `<rect x="16" y="${bodyTop}" width="3" height="${bodyHeight}" rx="1.5" fill="${theme.accent}"/>`
     : "";
@@ -1068,6 +1232,29 @@ function renderSVGNode(node: MindMapFlowNode, offsetX: number, offsetY: number) 
     ...body,
     `</g>`,
   ].join("");
+}
+
+function renderSVGImagePreview(
+  preview: MindMapImagePreview,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  const background = preview.snapshot || preview.image;
+  const image = (href: string, padding = 0) => {
+    const inset = Math.max(0, padding);
+    const imageX = x + inset;
+    const imageY = y + inset;
+    const imageWidth = Math.max(1, width - inset * 2);
+    const imageHeight = Math.max(1, height - inset * 2);
+    return `<image href="${escapeXML(href)}" x="${round(imageX)}" y="${round(imageY)}" width="${round(imageWidth)}" height="${round(imageHeight)}" preserveAspectRatio="xMidYMid meet"/>`;
+  };
+  return [
+    `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="7" fill="#ffffff" stroke="#dbe4ef" stroke-width="1"/>`,
+    background ? image(background) : "",
+    preview.drawing ? image(preview.drawing, background ? 10 : 6) : "",
+  ].filter(Boolean);
 }
 
 function bodyLineLimit(type: MindMapNodeType) {
@@ -1391,6 +1578,23 @@ function descendantNodeIDs(graph: MindMapGraph, id: string) {
   return descendants;
 }
 
+function graphNodeToFlowPosition(node: MindMapNode) {
+  const position = node.position || { x: 0, y: 0 };
+  const size = nodeSize(node.type, node.data);
+  return {
+    x: position.x,
+    y: position.y + size.height * MIND_MAP_NODE_ORIGIN[1],
+  };
+}
+
+function flowNodeToGraphPosition(node: MindMapFlowNode) {
+  const size = nodeSize(node.data.nodeType, node.data);
+  return {
+    x: node.position.x,
+    y: node.position.y - size.height * MIND_MAP_NODE_ORIGIN[1],
+  };
+}
+
 function manualNodePosition(graph: MindMapGraph, parentID: string) {
   const parent = graph.nodes.find((item) => item.id === parentID);
   const parentSize = parent ? nodeSize(parent.type, parent.data) : nodeSize("manual");
@@ -1406,6 +1610,106 @@ function nodeOptionLabel(node: MindMapNode) {
   return `${(TYPE_META[node.type] || TYPE_META.manual).label} - ${text}`.slice(0, 80);
 }
 
+function nodeImagePreview(data?: Partial<MindMapNodeData>): MindMapImagePreview | undefined {
+  return (data as { imagePreview?: MindMapImagePreview } | undefined)?.imagePreview;
+}
+
+function hasMindMapImagePreview(preview: MindMapImagePreview | undefined) {
+  return Boolean(preview?.snapshot || preview?.drawing || preview?.image);
+}
+
+function annotationPreviewMap(items: PaperAnnotation[]) {
+  const previews = new Map<number, MindMapImagePreview>();
+  for (const item of items) {
+    const preview = annotationImagePreview(item);
+    if (preview && hasMindMapImagePreview(preview)) previews.set(item.id, preview);
+  }
+  return previews;
+}
+
+function annotationImagePreview(annotation: PaperAnnotation): MindMapImagePreview | undefined {
+  const content = annotation.content_json ?? {};
+  const snapshot = imageValue(content.snapshot);
+  const figure = figurePreviewURL(content, annotation.paper_id);
+  const rawImage = imageValue(content.image) || figure;
+  const kind = typeof annotation.kind === "string" ? annotation.kind : "";
+
+  if (kind === "drawing") {
+    return { snapshot, drawing: rawImage };
+  }
+  return { image: snapshot || rawImage };
+}
+
+function previewForMindMapNode(node: MindMapNode, previews: Map<number, MindMapImagePreview>) {
+  const ids = [node.data.annotationId, node.data.highlightId].filter(
+    (value): value is number => typeof value === "number",
+  );
+  for (const id of ids) {
+    const preview = previews.get(id);
+    if (preview) return preview;
+  }
+  return undefined;
+}
+
+function graphWithImagePreviews(graph: MindMapGraph, previews: Map<number, MindMapImagePreview>): MindMapGraph {
+  if (previews.size === 0) return graph;
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      const preview = previewForMindMapNode(node, previews);
+      if (!preview) return node;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          imagePreview: preview,
+        } as MindMapNodeData,
+      };
+    }),
+  };
+}
+
+function stripTransientPreviews(graph: MindMapGraph): MindMapGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      const data = { ...(node.data as MindMapNodeData & {
+        imagePreview?: MindMapImagePreview;
+      }) };
+      delete data.imagePreview;
+      return { ...node, data };
+    }),
+  };
+}
+
+function imageValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value) return value;
+  if (value && typeof value === "object" && "dataUrl" in value) {
+    const dataUrl = (value as { dataUrl?: unknown }).dataUrl;
+    return typeof dataUrl === "string" && dataUrl ? dataUrl : undefined;
+  }
+  if (value && typeof value === "object" && "url" in value) {
+    const url = (value as { url?: unknown }).url;
+    return typeof url === "string" && url ? url : undefined;
+  }
+  return undefined;
+}
+
+function figurePreviewURL(content: Record<string, unknown>, fallbackDocID: string) {
+  const imgName =
+    stringValue(content.img_name) ||
+    stringValue(content.imgName) ||
+    stringValue(content.figure_name) ||
+    stringValue(content.figureName);
+  if (!imgName) return undefined;
+  const docID = stringValue(content.doc_id) || stringValue(content.docId) || fallbackDocID;
+  return docID ? api.figureUrl(docID, imgName) : undefined;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
 function nodeSize(type: MindMapNodeType, data?: Partial<MindMapNodeData>) {
   const base = NODE_SIZE[type] || NODE_SIZE.manual;
   if (!data) return { width: base.width, height: base.minHeight };
@@ -1414,11 +1718,32 @@ function nodeSize(type: MindMapNodeType, data?: Partial<MindMapNodeData>) {
   const bodyFontSize = type === "paper" ? 15 : type === "highlight" || type === "annotation" ? 13 : 14;
   const bodyX = type === "highlight" || type === "annotation" ? 32 : 16;
   const desiredWidth = Math.ceil(estimatePreferredTextWidth(text, bodyFontSize) + bodyX + 24);
-  const width = clamp(desiredWidth, base.width, base.maxWidth);
+  const imagePreview = nodeImagePreview(data);
+  const hasImage = hasMindMapImagePreview(imagePreview);
+  const width = hasImage
+    ? clamp(
+        Math.max(desiredWidth, IMAGE_NODE_MIN_WIDTH),
+        base.width,
+        Math.max(base.maxWidth, IMAGE_NODE_MAX_WIDTH),
+      )
+    : clamp(desiredWidth, base.width, base.maxWidth);
+  if (hasImage) {
+    const locateFooterHeight =
+      type === "highlight" || type === "annotation" ? IMAGE_NODE_LOCATE_FOOTER_HEIGHT : 0;
+    return {
+      width,
+      height: Math.max(
+        base.minHeight,
+        IMAGE_NODE_CHROME_HEIGHT + IMAGE_NODE_MEDIA_HEIGHT + locateFooterHeight,
+      ),
+    };
+  }
+
   const bodyWidth = width - bodyX - 18;
   const bodyLines = wrapSVGText(text, bodyWidth, 13, bodyLineLimit(type));
   const bodyTop = data.pageNumber ? 69 : 61;
-  const bodyBottom = bodyTop + Math.max(1, bodyLines.length) * SVG_BODY_LINE_HEIGHT;
+  const textHeight = Math.max(1, bodyLines.length) * SVG_BODY_LINE_HEIGHT;
+  const bodyBottom = bodyTop + textHeight;
   const height = Math.max(base.minHeight, Math.ceil(bodyBottom + 18));
 
   return { width, height };
