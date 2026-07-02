@@ -1,0 +1,260 @@
+.FreetextHighlight,
+.DrawingHighlight {
+  z-index: 36;
+}
+
+.FreetextHighlight--editing,
+.FreetextHighlight:hover,
+.DrawingHighlight:hover {
+  z-index: 48;
+}
+
+.FreetextHighlight__container {
+  height: 100% !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  filter: none !important;
+  text-shadow: none !important;
+  overflow: visible;
+  transition: none !important;
+}
+
+.FreetextHighlight__rnd {
+  min-height: 32px !important;
+  box-sizing: border-box;
+  filter: none !important;
+  box-shadow: none !important;
+}
+
+.FreetextHighlight__container:hover,
+.FreetextHighlight--editing .FreetextHighlight__container,
+.FreetextHighlight--scrolledTo .FreetextHighlight__container {
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.FreetextHighlight--scrolledTo .FreetextHighlight__container {
+  box-shadow: none !important;
+}
+
+.FreetextHighlight--editing .FreetextHighlight__container {
+  box-shadow: none !important;
+}
+
+.DrawingHighlight__container,
+.DrawingHighlight__container:hover,
+.DrawingHighlight--scrolledTo .DrawingHighlight__container {
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.DrawingHighlight__content {
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+}
+
+.DrawingHighlight__image {
+  background: transparent;
+}
+
+.FreetextHighlight__toolbar,
+.DrawingHighlight__toolbar {
+  top: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.94);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.24);
+  transform: translateY(2px);
+}
+
+.FreetextHighlight__container:hover .FreetextHighlight__toolbar,
+.FreetextHighlight--editing .FreetextHighlight__toolbar,
+.DrawingHighlight__container:hover .DrawingHighlight__toolbar,
+.DrawingHighlight__toolbar--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.FreetextHighlight__edit-button,
+.FreetextHighlight__style-button,
+.FreetextHighlight__delete-button,
+.FreetextHighlight__collapse-button,
+.DrawingHighlight__style-button,
+.DrawingHighlight__delete-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+}
+
+.FreetextHighlight__drag-handle,
+.DrawingHighlight__drag-handle {
+  display: none;
+}
+
+.FreetextHighlight__content {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 5px 8px;
+  text-shadow: none !important;
+}
+
+.FreetextHighlight--editing .FreetextHighlight__text,
+.FreetextHighlight--editing .FreetextHighlight__text * {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+.FreetextHighlight__text {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  height: auto !important;
+  min-height: 18px;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: inherit;
+  filter: none !important;
+  font: inherit;
+  line-height: 1.35;
+  margin: 0;
+  outline: 0 !important;
+  padding: 0;
+  text-shadow: none !important;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.FreetextHighlight__input {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 18px;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: inherit;
+  filter: none !important;
+  font: inherit;
+  line-height: 1.35;
+  margin: 0;
+  outline: 0 !important;
+  padding: 0;
+  text-shadow: none !important;
+  white-space: pre-wrap;
+  word-break: break-word;
+  appearance: none;
+  caret-color: currentColor;
+  overflow: hidden;
+  resize: none;
+}
+
+.FreetextHighlight__input:focus,
+.FreetextHighlight__input:focus-visible {
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+}
+
+.FreetextHighlight__resize-handle-right::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.24);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.FreetextHighlight__rnd:hover .FreetextHighlight__resize-handle-right::after,
+.FreetextHighlight--editing .FreetextHighlight__resize-handle-right::after {
+  opacity: 1;
+}
+
+.FreetextHighlight__style-panel,
+.DrawingHighlight__style-controls {
+  top: auto;
+  bottom: calc(100% + 36px);
+  left: 0;
+  right: auto;
+  min-width: 176px;
+  border-radius: 8px;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.24);
+}
+
+.DrawingCanvas {
+  z-index: 64;
+}
+
+.DrawingCanvas__controls {
+  bottom: 16px;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.94);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.26);
+  z-index: 72;
+}
+
+.DrawingCanvas__controls button {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 0;
+  font-weight: 500;
+  line-height: 1;
+  transform: none;
+}
+
+.DrawingCanvas__controls button::after {
+  font-size: 13px;
+}
+
+.DrawingCanvas__clearButton {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fde68a;
+}
+
+.DrawingCanvas__clearButton::after {
+  content: "清空";
+}
+
+.DrawingCanvas__cancelButton {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+.DrawingCanvas__cancelButton::after {
+  content: "取消";
+}
+
+.DrawingCanvas__doneButton {
+  background: rgba(34, 197, 94, 0.2);
+  color: #bbf7d0;
+}
+
+.DrawingCanvas__doneButton::after {
+  content: "保存";
+}
+
+.DrawingCanvas__clearButton:hover,
+.DrawingCanvas__cancelButton:hover,
+.DrawingCanvas__doneButton:hover {
+  filter: brightness(1.08);
+  transform: none;
+}

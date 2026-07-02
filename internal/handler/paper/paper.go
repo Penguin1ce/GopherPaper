@@ -720,12 +720,15 @@ func CreateAnnotation(c *gin.Context) {
 	ownerID := tenant.MustStudentID(c.Request.Context())
 	annotation, err := paperservice.CreateAnnotation(c.Request.Context(), ownerID, c.Param("id"), paperservice.AnnotationInput{
 		PageNo:       req.PageNo,
+		Kind:         constant.AnnotationKind(req.Kind),
 		Text:         req.Text,
 		Note:         req.Note,
 		Translation:  req.Translation,
 		Color:        req.Color,
 		BoundingRect: dtoRectToModel(req.BoundingRect),
 		Rects:        dtoRectsToModel(req.Rects),
+		StyleJSON:    req.StyleJSON,
+		ContentJSON:  req.ContentJSON,
 	})
 	if err != nil {
 		if writePaperAccessErr(c, err, "保存失败") {
@@ -737,11 +740,11 @@ func CreateAnnotation(c *gin.Context) {
 	response.OK(c, annotation)
 }
 
-// UpdateAnnotation 更新精读批注的笔记或颜色。
+// UpdateAnnotation 更新精读批注内容、位置或样式。
 // PATCH /api/v1/papers/:id/annotations/:annotation_id
 //
 // @Summary 更新精读批注
-// @Description 更新某条精读批注的笔记或颜色。
+// @Description 更新某条精读批注的内容、位置或样式。
 // @Tags papers
 // @Accept json
 // @Produce json
@@ -766,7 +769,26 @@ func UpdateAnnotation(c *gin.Context) {
 		return
 	}
 	ownerID := tenant.MustStudentID(c.Request.Context())
-	annotation, err := paperservice.UpdateAnnotation(c.Request.Context(), ownerID, c.Param("id"), annotationID, req.Note, req.Translation, req.Color)
+	var rects *model.AnnotationRects
+	if req.Rects != nil {
+		converted := dtoRectsToModel(req.Rects)
+		rects = &converted
+	}
+	var boundingRect *model.AnnotationRect
+	if req.BoundingRect != nil {
+		converted := dtoRectToModel(*req.BoundingRect)
+		boundingRect = &converted
+	}
+	annotation, err := paperservice.UpdateAnnotation(c.Request.Context(), ownerID, c.Param("id"), annotationID, paperservice.AnnotationUpdateInput{
+		Text:         req.Text,
+		Note:         req.Note,
+		Translation:  req.Translation,
+		Color:        req.Color,
+		BoundingRect: boundingRect,
+		Rects:        rects,
+		StyleJSON:    req.StyleJSON,
+		ContentJSON:  req.ContentJSON,
+	})
 	if err != nil {
 		if writePaperAccessErr(c, err, "更新失败") {
 			return

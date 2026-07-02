@@ -259,20 +259,23 @@ type PaperCompareReport struct {
 
 func (PaperCompareReport) TableName() string { return "paper_compare_reports" }
 
-// PaperAnnotation 是精读页保存的文本高亮与可选笔记。
+// PaperAnnotation 是精读页保存的多类型批注。
 type PaperAnnotation struct {
-	ID           uint64          `gorm:"primaryKey" json:"id"`
-	PaperID      string          `gorm:"size:36;not null;index" json:"paper_id"`
-	OwnerID      string          `gorm:"size:64;not null;index" json:"owner_id"`
-	PageNo       int             `gorm:"not null;index" json:"page_no"`
-	Text         string          `gorm:"type:text" json:"text"`
-	Note         string          `gorm:"type:text" json:"note,omitempty"`
-	Translation  string          `gorm:"type:text" json:"translation,omitempty"`
-	Color        string          `gorm:"size:32;not null" json:"color"`
-	BoundingRect AnnotationRect  `gorm:"type:text" json:"bounding_rect"`
-	Rects        AnnotationRects `gorm:"type:text" json:"rects"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	ID           uint64                  `gorm:"primaryKey" json:"id"`
+	PaperID      string                  `gorm:"size:36;not null;index" json:"paper_id"`
+	OwnerID      string                  `gorm:"size:64;not null;index" json:"owner_id"`
+	Kind         constant.AnnotationKind `gorm:"size:16;not null;default:selection;index" json:"kind"`
+	PageNo       int                     `gorm:"not null;index" json:"page_no"`
+	Text         string                  `gorm:"type:text" json:"text"`
+	Note         string                  `gorm:"type:text" json:"note,omitempty"`
+	Translation  string                  `gorm:"type:text" json:"translation,omitempty"`
+	Color        string                  `gorm:"size:32;not null" json:"color"`
+	BoundingRect AnnotationRect          `gorm:"type:text" json:"bounding_rect"`
+	Rects        AnnotationRects         `gorm:"type:text" json:"rects"`
+	StyleJSON    JSONMap                 `gorm:"column:style_json;type:text" json:"style_json,omitempty"`
+	ContentJSON  JSONMap                 `gorm:"column:content_json;type:longtext" json:"content_json,omitempty"`
+	CreatedAt    time.Time               `json:"created_at"`
+	UpdatedAt    time.Time               `json:"updated_at"`
 }
 
 func (PaperAnnotation) TableName() string { return "paper_annotations" }

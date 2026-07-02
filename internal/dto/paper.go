@@ -79,19 +79,27 @@ type AnnotationRect struct {
 // AnnotationCreateRequest 是创建精读批注的请求。
 type AnnotationCreateRequest struct {
 	PageNo       int              `json:"page_no" binding:"required,min=1"`
-	Text         string           `json:"text" binding:"required"`
+	Kind         string           `json:"kind"`
+	Text         string           `json:"text"`
 	Note         string           `json:"note"`
 	Translation  string           `json:"translation"`
 	Color        string           `json:"color"`
 	BoundingRect AnnotationRect   `json:"bounding_rect" binding:"required"`
-	Rects        []AnnotationRect `json:"rects" binding:"required"`
+	Rects        []AnnotationRect `json:"rects"`
+	StyleJSON    model.JSONMap    `json:"style_json"`
+	ContentJSON  model.JSONMap    `json:"content_json"`
 }
 
 // AnnotationUpdateRequest 是更新精读批注可编辑字段的请求。
 type AnnotationUpdateRequest struct {
-	Note        *string `json:"note"`
-	Translation *string `json:"translation"`
-	Color       *string `json:"color"`
+	Text         *string          `json:"text"`
+	Note         *string          `json:"note"`
+	Translation  *string          `json:"translation"`
+	Color        *string          `json:"color"`
+	BoundingRect *AnnotationRect  `json:"bounding_rect"`
+	Rects        []AnnotationRect `json:"rects"`
+	StyleJSON    *model.JSONMap   `json:"style_json"`
+	ContentJSON  *model.JSONMap   `json:"content_json"`
 }
 
 type MindMapUpdateRequest struct {

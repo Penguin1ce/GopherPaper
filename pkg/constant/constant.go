@@ -81,6 +81,50 @@ const (
 	PaperFailed    PaperStatus = "failed"    // 解析失败
 )
 
+// AnnotationKind 标识精读页批注在 PDF 上的呈现类型。
+type AnnotationKind string
+
+const (
+	AnnotationKindSelection AnnotationKind = "selection"
+	AnnotationKindFreetext  AnnotationKind = "freetext"
+	AnnotationKindDrawing   AnnotationKind = "drawing"
+)
+
+func (t AnnotationKind) Valid() bool {
+	switch t {
+	case AnnotationKindSelection, AnnotationKindFreetext, AnnotationKindDrawing:
+		return true
+	default:
+		return false
+	}
+}
+
+// AnnotationColor 标识精读批注颜色。名称与前端调色板、接口载荷保持一致。
+type AnnotationColor string
+
+const (
+	AnnotationColorYellow  AnnotationColor = "yellow"
+	AnnotationColorRed     AnnotationColor = "red"
+	AnnotationColorGreen   AnnotationColor = "green"
+	AnnotationColorBlue    AnnotationColor = "blue"
+	AnnotationColorPurple  AnnotationColor = "purple"
+	AnnotationColorMagenta AnnotationColor = "magenta"
+	AnnotationColorOrange  AnnotationColor = "orange"
+	AnnotationColorGray    AnnotationColor = "gray"
+	AnnotationColorBlack   AnnotationColor = "black"
+)
+
+func (c AnnotationColor) Valid() bool {
+	switch c {
+	case AnnotationColorYellow, AnnotationColorRed, AnnotationColorGreen, AnnotationColorBlue,
+		AnnotationColorPurple, AnnotationColorMagenta, AnnotationColorOrange,
+		AnnotationColorGray, AnnotationColorBlack:
+		return true
+	default:
+		return false
+	}
+}
+
 // MindMapNodeType identifies cards in the deterministic reading mind map.
 type MindMapNodeType string
 
