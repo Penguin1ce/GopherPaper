@@ -2,25 +2,28 @@ basePath: /api/v1
 definitions:
   constant.IntentType:
     enum:
-    - fact
+    - chitchat
     - summary
     - method
     - pioneer
+    - maodie
     type: string
     x-enum-comments:
-      IntentFact: 定位事实/数据/结论
+      IntentChitchat: 与论文无关的闲聊/寒暄,不走 RAG,直接对话作答
       IntentMethod: 方法/流程/实验设计解读
-      IntentSummary: 概括/解释/综述
+      IntentSummary: 概括/解释/综述,以及论文中的事实/数据/结论定位
     x-enum-descriptions:
-    - 定位事实/数据/结论
-    - 概括/解释/综述
+    - 与论文无关的闲聊/寒暄,不走 RAG,直接对话作答
+    - 概括/解释/综述,以及论文中的事实/数据/结论定位
     - 方法/流程/实验设计解读
     - ""
+    - ""
     x-enum-varnames:
-    - IntentFact
+    - IntentChitchat
     - IntentSummary
     - IntentMethod
     - IntentPioneer
+    - IntentMaodie
   constant.PaperStatus:
     enum:
     - uploaded
@@ -57,33 +60,84 @@ definitions:
     - method
     - result
     - innovation
-    - future
+    - related
     type: string
     x-enum-comments:
-      ReportFuture: 后续研究建议
       ReportInnovation: 创新点与不足分析
       ReportMethod: 研究方法总结
       ReportQuickRead: 论文速读
+      ReportRelated: 相关研究/参考文献链接
       ReportResult: 实验结果总结
     x-enum-descriptions:
     - 论文速读
     - 研究方法总结
     - 实验结果总结
     - 创新点与不足分析
-    - 后续研究建议
+    - 相关研究/参考文献链接
     x-enum-varnames:
     - ReportQuickRead
     - ReportMethod
     - ReportResult
     - ReportInnovation
-    - ReportFuture
+    - ReportRelated
+  dto.AnnotationCreateRequest:
+    properties:
+      bounding_rect:
+        $ref: '#/definitions/dto.AnnotationRect'
+      color:
+        type: string
+      note:
+        type: string
+      page_no:
+        minimum: 1
+        type: integer
+      rects:
+        items:
+          $ref: '#/definitions/dto.AnnotationRect'
+        type: array
+      text:
+        type: string
+      translation:
+        type: string
+    required:
+    - bounding_rect
+    - page_no
+    - rects
+    - text
+    type: object
+  dto.AnnotationRect:
+    properties:
+      height:
+        type: number
+      pageNumber:
+        type: integer
+      width:
+        type: number
+      x1:
+        type: number
+      x2:
+        type: number
+      y1:
+        type: number
+      y2:
+        type: number
+    type: object
+  dto.AnnotationUpdateRequest:
+    properties:
+      color:
+        type: string
+      note:
+        type: string
+      translation:
+        type: string
+    type: object
   dto.ChatResponse:
     properties:
       content:
         description: 文本回答
         type: string
       intent:
-        description: 命中的问答子类 fact/summary/method
+        description: 命中的聊天意图 chitchat/summary/method/pioneer
         type: string
       meta:
         additionalProperties: {}
@@ -135,16 +189,21 @@ definitions:
     type: object
   dto.LoginRequest:
     properties:
+      account:
+        type: string
       password:
         type: string
       student_id:
         type: string
     required:
     - password
-    - student_id
     type: object
   dto.LoginResponse:
     properties:
+      avatar_url:
+        type: string
+      class_id:
+        type: string
       email:
         type: string
       name:
@@ -172,14 +231,35 @@ definitions:
           $ref: '#/definitions/model.PaperSection'
         type: array
     type: object
+  dto.PaperProgressRequest:
+    properties:
+      last_page:
+        minimum: 0
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  dto.PaperProgressResponse:
+    properties:
+      last_read_page:
+        type: integer
+      progress:
+        type: integer
+    type: object
   dto.PaperStatusResponse:
     properties:
       fail_reason:
         type: string
       id:
         type: string
+      parse_progress:
+        type: integer
+      parsed_pages:
+        type: integer
       status:
         $ref: '#/definitions/constant.PaperStatus'
+      total_pages:
+        type: integer
     type: object
   dto.ReadyReportsResponse:
     properties:
@@ -238,7 +318,7 @@ definitions:
   dto.ReportRequest:
     properties:
       type:
-        description: quickread/method/result/innovation/future
+        description: quickread/method/result/innovation/related
         type: string
     required:
     - type
@@ -272,11 +352,6 @@ definitions:
     - email
     type: object
   dto.SendMessageRequest:
-    properties:
-      query:
-        type: string
-    required:
-    - query
     type: object
   dto.TokenRequest:
     properties:
@@ -311,6 +386,23 @@ definitions:
         type: integer
       year:
         type: integer
+    type: object
+  model.AnnotationRect:
+    properties:
+      height:
+        type: number
+      pageNumber:
+        type: integer
+      width:
+        type: number
+      x1:
+        type: number
+      x2:
+        type: number
+      y1:
+        type: number
+      y2:
+        type: number
     type: object
   model.Message:
     properties:
@@ -350,9 +442,18 @@ definitions:
         items:
           type: string
         type: array
+      last_read_page:
+        description: 最近阅读到的页码
+        type: integer
       owner_id:
         type: string
       page_count:
+        type: integer
+      parse_progress:
+        description: MinerU parse progress 0-100
+        type: integer
+      parsed_pages:
+        description: MinerU parsed pages
         type: integer
       progress:
         description: 阅读进度 0-100
@@ -362,6 +463,38 @@ definitions:
       status:
         $ref: '#/definitions/constant.PaperStatus'
       title:
+        type: string
+      total_pages:
+        description: MinerU total pages
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  model.PaperAnnotation:
+    properties:
+      bounding_rect:
+        $ref: '#/definitions/model.AnnotationRect'
+      color:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      note:
+        type: string
+      owner_id:
+        type: string
+      page_no:
+        type: integer
+      paper_id:
+        type: string
+      rects:
+        items:
+          $ref: '#/definitions/model.AnnotationRect'
+        type: array
+      text:
+        type: string
+      translation:
         type: string
       updated_at:
         type: string
@@ -427,11 +560,19 @@ definitions:
         type: string
       title:
         type: string
+      x1:
+        type: number
+      x2:
+        type: number
+      y1:
+        type: number
+      y2:
+        type: number
     type: object
   model.Session:
     properties:
       agent_type:
-        description: AgentType 标记会话由哪个 agent 应答,空为默认论文助教,pioneer 为小云雀。
+        description: AgentType 标记会话由哪个 agent 应答,空为默认论文助教,pioneer 为小云雀,maodie 为小耄耋。
         type: string
       created_at:
         type: string
@@ -442,6 +583,27 @@ definitions:
       student_id:
         type: string
       title:
+        type: string
+      topic_id:
+        description: TopicID 关联自动归类的主题,可空表示尚未归类。当前仅 pioneer 会话归类。
+        type: string
+      updated_at:
+        type: string
+    type: object
+  model.Topic:
+    properties:
+      agent_type:
+        description: AgentType 标记主题所属 agent，当前仅 pioneer，为将来扩展留口。
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      member_count:
+        type: integer
+      name:
+        type: string
+      student_id:
         type: string
       updated_at:
         type: string
@@ -773,6 +935,191 @@ paths:
       summary: 获取论文详情
       tags:
       - papers
+  /papers/{id}/annotations:
+    get:
+      description: 返回某篇论文当前用户保存的全部高亮与批注。
+      parameters:
+      - description: 论文 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.PaperAnnotation'
+                  type: array
+              type: object
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
+      summary: 列出精读批注
+      tags:
+      - papers
+    post:
+      consumes:
+      - application/json
+      description: 保存一段 PDF 原文的高亮坐标与可选笔记。
+      parameters:
+      - description: 论文 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 批注内容
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.AnnotationCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.PaperAnnotation'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
+      summary: 新建精读批注
+      tags:
+      - papers
+  /papers/{id}/annotations/{annotation_id}:
+    delete:
+      description: 删除某条高亮或批注。
+      parameters:
+      - description: 论文 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 批注 ID
+        in: path
+        name: annotation_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除精读批注
+      tags:
+      - papers
+    patch:
+      consumes:
+      - application/json
+      description: 更新某条精读批注的笔记或颜色。
+      parameters:
+      - description: 论文 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 批注 ID
+        in: path
+        name: annotation_id
+        required: true
+        type: integer
+      - description: 批注更新内容
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.AnnotationUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.PaperAnnotation'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新精读批注
+      tags:
+      - papers
   /papers/{id}/figures/{name}:
     get:
       description: 返回某篇论文解析出的图片文件。该接口供浏览器图片标签使用，鉴权使用 query token。
@@ -862,11 +1209,145 @@ paths:
       summary: 读取论文 PDF
       tags:
       - papers
+  /papers/{id}/flow:
+    post:
+      description: 复用小云雀同款思路图链路生成研究脉络,返回可持久化的节点图 JSON。
+      parameters:
+      - description: 论文 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.ChatResponse'
+              type: object
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "409":
+          description: 论文尚未解析就绪
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
+      summary: 生成论文思路图
+      tags:
+      - papers
+  /papers/{id}/progress:
+    patch:
+      consumes:
+      - application/json
+      description: 保存某篇论文的最近阅读页，并按总页数计算阅读百分比。
+      parameters:
+      - description: 论文 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 阅读进度
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.PaperProgressRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.PaperProgressResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
+      summary: 保存阅读进度
+      tags:
+      - papers
+  /papers/{id}/reparse:
+    post:
+      description: 清理旧报告缓存并重新投递论文解析任务。正在解析中的论文不可重复投递。
+      parameters:
+      - description: 论文 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Paper'
+              type: object
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
+      summary: 重新解析论文
+      tags:
+      - papers
   /papers/{id}/report:
     post:
       consumes:
       - application/json
-      description: 按报告类型生成或读取缓存的研读报告。报告类型包括 quickread、method、result、innovation、future。
+      description: 按报告类型生成或读取缓存的研读报告。报告类型包括 quickread、method、result、innovation、related。
       parameters:
       - description: 论文 ID
         in: path
@@ -952,6 +1433,46 @@ paths:
       security:
       - BearerAuth: []
       summary: 列出已生成报告
+      tags:
+      - papers
+  /papers/{id}/sections/rebuild:
+    post:
+      description: 从本地归档的 MinerU content_list.json 重建章节目录，不重跑完整解析流水线。
+      parameters:
+      - description: 论文 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.PaperSection'
+                  type: array
+              type: object
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
+      summary: 重建论文目录
       tags:
       - papers
   /papers/{id}/status:
@@ -1102,7 +1623,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: 创建一段多轮会话，可绑定论文，也可指定 agent_type=pioneer 使用小云雀。
+      description: 创建一段多轮会话，可绑定论文，也可指定 agent_type=pioneer 使用小云雀、agent_type=maodie
+        使用小耄耋。
       parameters:
       - description: 会话参数
         in: body
@@ -1261,11 +1783,78 @@ paths:
       summary: 发送会话消息
       tags:
       - sessions
+  /topics:
+    delete:
+      description: 删除当前用户的全部小云雀主题并把会话退回未归类,返回删除的主题数。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
+      summary: 清空会话主题
+      tags:
+      - sessions
+    get:
+      description: 返回当前登录用户的小云雀会话主题，供侧边栏按主题分组渲染。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.Topic'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
+      summary: 列出会话主题
+      tags:
+      - sessions
+  /topics/backfill:
+    post:
+      description: 把当前用户尚未归类的小云雀会话异步归类,返回待处理会话数。供上线前的存量会话补归类。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
+      summary: 回填会话主题
+      tags:
+      - sessions
   /user/login:
     post:
       consumes:
       - application/json
-      description: 按学号和密码登录，返回 JWT 与用户基本信息。
+      description: 按学号或绑定邮箱和密码登录，返回 JWT 与用户基本信息。
       parameters:
       - description: 登录参数
         in: body
