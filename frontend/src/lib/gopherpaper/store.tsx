@@ -118,7 +118,7 @@ interface AppContextValue {
   createSession: (title: string, paperID?: string) => Promise<Session>;
   removeSession: (id: string) => Promise<void>;
   sendMessage: (query: string) => Promise<void>;
-  // 报告面板点击生成时调用,重置该报告的进度为「进行中」,后续阶段由 SSE 累积。
+  // 后端确认报告进入生成队列后调用,把该报告的进度置为「进行中」,后续阶段由 SSE 累积。
   beginReport: (paperID: string, type: ReportType) => void;
 }
 
@@ -353,6 +353,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       setPapers((list) =>
         list.map((p) => (p.id === paperID ? { ...p, ...patch } : p)),
       );
+      if ((status === "indexed" && !sameStatus) || status === "ready") {
+        void queryClient.invalidateQueries({ queryKey: ["papers"] });
+      }
     },
     [toast, setPapers, queryClient],
   );
@@ -386,22 +389,25 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     [setPapers],
   );
 
-  // beginReport 在用户点生成时重置该报告的进度为「进行中、空步」,随后由 SSE 阶段事件累积。
+  // beginReport 在后端返回 202 后置该报告为「进行中、空步」,随后由 SSE 阶段事件累积。
   const beginReport = useCallback((paperID: string, type: ReportType) => {
     setReportProgress((prev) => ({
       ...prev,
       [paperID]: {
         ...prev[paperID],
-        [type]: {
-          steps: [
-            {
-              phase: "preparing",
-              text: "小囊鼠已接收生成任务，正在启动研读流水线。",
-            },
-          ],
-          live: true,
-          failed: false,
-        },
+        [type]:
+          prev[paperID]?.[type]?.live && !prev[paperID]?.[type]?.failed
+            ? prev[paperID]![type]
+            : {
+                steps: [
+                  {
+                    phase: "preparing",
+                    text: "小囊鼠已接收生成任务，正在启动研读流水线。",
+                  },
+                ],
+                live: true,
+                failed: false,
+              },
       },
     }));
   }, []);
@@ -461,7 +467,12 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     (paperID: string, status: ReportsStatus) => {
       const ready = status.ready ?? [];
       const readySet = new Set<ReportType>(ready);
-      for (const t of ready) applyReportReady(paperID, t);
+      setReportReady((prev) => ({
+        ...prev,
+        [paperID]: Object.fromEntries(ready.map((t) => [t, true])) as Partial<
+          Record<ReportType, boolean>
+        >,
+      }));
       const running = status.running ?? [];
       if (running.length === 0) return;
       setReportProgress((prev) => {
@@ -477,7 +488,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         return { ...prev, [paperID]: paperMap };
       });
     },
-    [applyReportReady],
+    [],
   );
 
   // 进入某篇论文时回填已落库报告的就绪态,让报告面板免点击自动展示历史报告。

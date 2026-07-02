@@ -390,7 +390,7 @@ func File(c *gin.Context) {
 // POST /api/v1/papers/:id/report
 //
 // @Summary 生成研读报告
-// @Description 按报告类型生成或读取缓存的研读报告。报告类型包括 quickread、method、result、innovation、future。
+// @Description 按报告类型生成或读取缓存的研读报告。报告类型包括 quickread、method、result、innovation、related。
 // @Tags papers
 // @Accept json
 // @Produce json
@@ -436,11 +436,11 @@ func Report(c *gin.Context) {
 	response.OK(c, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})
 }
 
-// Flow 为某篇论文画一张研究思路流程图,返回自包含 SVG,前端按钮触发。
+// Flow 为某篇论文生成小云雀同款研究思路图,返回节点图 JSON,前端按钮触发。
 // POST /api/v1/papers/:id/flow
 //
 // @Summary 生成论文思路图
-// @Description 经小囊鼠单轮 agent(挂 infographic-charts skill)同步画一张研究思路的静态 SVG,不缓存。
+// @Description 复用小云雀同款思路图链路生成研究脉络,返回可持久化的节点图 JSON。
 // @Tags papers
 // @Produce json
 // @Security BearerAuth

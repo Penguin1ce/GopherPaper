@@ -40,6 +40,9 @@ func Chat(ctx context.Context, history []trpcmodel.Message, query string) (*core
 
 // ClassifyIntent 用该用户的 intent 小模型把自由文本分到意图子类,无法判断兜底 summary。
 func ClassifyIntent(ctx context.Context, query string, history ...[]trpcmodel.Message) constant.IntentType {
+	if intent, ok := paperResourceIntentOverride(ctx, query); ok {
+		return intent
+	}
 	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
 	if err != nil {
 		zlog.Error("意图分类取模型失败,兜底 summary", "err", err)
@@ -107,6 +110,92 @@ func recentIntentContext(history []trpcmodel.Message) string {
 		lines = append(lines, role+": "+trimRunes(strings.TrimSpace(msg.Content), constant.IntentContextMessageMaxRunes))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// paperResourceIntentOverride 兜住绑定论文下的短资源询问,避免“有 GitHub 仓库吗”
+// 被小模型当成对助手的闲聊账号问题。
+func paperResourceIntentOverride(ctx context.Context, query string) (constant.IntentType, bool) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return "", false
+	}
+	low := strings.ToLower(query)
+	compact := compactIntentText(low)
+	if !mentionsPaperResource(low, compact) {
+		return "", false
+	}
+	paperRef := mentionsCurrentPaper(low, compact)
+	if !hasBoundPaper(ctx) && !paperRef {
+		return "", false
+	}
+	if asksAssistantPersonalResource(low, compact) && !paperRef {
+		return "", false
+	}
+	if paperRef || asksPaperResource(low, compact) || isShortResourceQuestion(query) {
+		return constant.IntentSummary, true
+	}
+	return "", false
+}
+
+func hasBoundPaper(ctx context.Context) bool {
+	return core.PaperIDFrom(ctx) != "" || core.PaperTitleFrom(ctx) != ""
+}
+
+func compactIntentText(s string) string {
+	return strings.NewReplacer(" ", "", "\t", "", "\n", "", "\r", "").Replace(s)
+}
+
+func mentionsPaperResource(low, compact string) bool {
+	return containsAny(low, []string{
+		"github", "git hub", "gitlab", "gitee", "repo", "repository", "source code", "codebase",
+		"project page", "homepage", "home page", "arxiv", "openreview", "papers with code",
+		"huggingface", "hugging face", "supplementary", "supplemental", "dataset",
+	}) || containsAny(compact, []string{
+		"代码", "源码", "源代码", "仓库", "开源", "项目主页", "项目页", "主页", "官网", "官方网站",
+		"补充材料", "补充资料", "附录", "论文链接", "代码链接", "代码地址", "项目地址",
+		"数据集链接", "数据集地址", "数据地址",
+	})
+}
+
+func mentionsCurrentPaper(low, compact string) bool {
+	return containsAny(low, []string{"this paper", "the paper", "this work", "the work", "article"}) ||
+		containsAny(compact, []string{"这篇论文", "这篇文章", "本文", "论文", "该文", "这个工作", "这项工作", "作者"})
+}
+
+func asksAssistantPersonalResource(low, compact string) bool {
+	if !containsAny(low, []string{"your github", "your repo", "your repository"}) &&
+		!containsAny(compact, []string{"你", "你们", "小文鸮"}) {
+		return false
+	}
+	if mentionsCurrentPaper(low, compact) {
+		return false
+	}
+	return containsAny(compact, []string{"账号", "帐号", "账户"}) ||
+		strings.HasPrefix(compact, "你有") ||
+		strings.HasPrefix(compact, "你们有")
+}
+
+func asksPaperResource(low, compact string) bool {
+	return containsAny(low, []string{
+		"is there", "are there", "where", "link", "url", "available", "open source",
+		"released", "published", "provide", "supplementary",
+	}) || containsAny(compact, []string{
+		"有", "有没有", "有无", "是否", "吗", "么", "哪", "哪里", "在哪", "地址", "链接",
+		"开源", "公开", "发布", "提供", "给出", "放出", "附带", "补充", "下载",
+	})
+}
+
+func isShortResourceQuestion(query string) bool {
+	return len([]rune(query)) <= 24 && strings.ContainsAny(query, "?？吗呢")
+}
+
+func containsAny(s string, terms []string) bool {
+	for _, term := range terms {
+		if strings.Contains(s, term) {
+			return true
+		}
+	}
+	return false
 }
 
 // ChatRAG 按意图分流:

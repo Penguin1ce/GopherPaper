@@ -1,5 +1,9 @@
 import type { Reference } from "./types";
 
+const SOURCE_TAG_RE = /\[\[(原文|出处|来源)(?:[:：]\s*([^\]\n]{1,240}))?\]\]/g;
+const OPEN_SOURCE_TAG_RE = /\[\[(原文|出处|来源)(?:[:：]\s*([^\]\n]{1,240}))?(?=\n|$)/g;
+const SOURCE_LINK_RE = /\[[^\]\n]{1,240}\]\(source:\/\/([^)]+)\)/g;
+
 function sourcePageNo(value: string): number | null {
   const match = value.match(/第\s*(\d+)\s*页|p\.?\s*(\d+)/i);
   const raw = match?.[1] || match?.[2] || "";
@@ -21,8 +25,66 @@ function refMatchesLabel(ref: Reference, label: string): boolean {
     .some((part) => label.includes(part));
 }
 
+function sourceTagLabel(kind: string, detail?: string): string {
+  return [kind, (detail || "").trim()].filter(Boolean).join(" · ");
+}
+
 function readerHref(docID: string, pageNo: number): string {
   return `/reader?id=${encodeURIComponent(docID)}&page=${encodeURIComponent(String(pageNo))}`;
+}
+
+function decodeSourceURL(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function sourceRefKey(ref: Reference): string {
+  return [
+    ref.id,
+    ref.doc_id,
+    ref.source_file,
+    ref.source_uri,
+    ref.page_no,
+    ref.chunk_index,
+    ref.block_type,
+    ref.img_name,
+  ]
+    .filter((part) => part !== undefined && part !== null && part !== "")
+    .join("|");
+}
+
+function sourceTagLabels(markdown: string): string[] {
+  const labels: string[] = [];
+  const add = (label: string) => {
+    const text = label.trim();
+    if (text) labels.push(text);
+  };
+  for (const re of [SOURCE_TAG_RE, OPEN_SOURCE_TAG_RE]) {
+    re.lastIndex = 0;
+    for (let match = re.exec(markdown); match; match = re.exec(markdown)) {
+      add(sourceTagLabel(match[1] || "", match[2]));
+    }
+  }
+  SOURCE_LINK_RE.lastIndex = 0;
+  for (let match = SOURCE_LINK_RE.exec(markdown); match; match = SOURCE_LINK_RE.exec(markdown)) {
+    add(decodeSourceURL(match[1] || ""));
+  }
+  return labels;
+}
+
+function sourceRefForLabel(label: string, refs: Reference[]): Reference | null {
+  const pageNo = sourcePageNo(label);
+  if (!pageNo) return null;
+
+  const candidates = refs.filter((ref) => ref.page_no === pageNo);
+  const named = candidates.find((ref) => {
+    const text = sourceText(ref);
+    return text && refMatchesLabel(ref, label);
+  });
+  return named || candidates.find((item) => item.doc_id) || candidates[0] || null;
 }
 
 export function referenceReaderHref(
@@ -46,13 +108,23 @@ export function sourceTagReaderHref(
   const pageNo = sourcePageNo(label);
   if (!pageNo) return null;
 
-  const candidates = refs.filter((ref) => ref.page_no === pageNo);
-  const named = candidates.find((ref) => {
-    const text = sourceText(ref);
-    return text && refMatchesLabel(ref, label);
-  });
-  const ref = named || candidates.find((item) => item.doc_id) || candidates[0];
+  const ref = sourceRefForLabel(label, refs);
   if (ref) return referenceReaderHref(ref, fallbackDocID, allowedDocIDs);
   if (!fallbackDocID || (allowedDocIDs && !allowedDocIDs.has(fallbackDocID))) return null;
   return readerHref(fallbackDocID, pageNo);
+}
+
+export function referencesUsedBySourceTags(markdown: string, refs: Reference[]): Reference[] {
+  if (!markdown || refs.length === 0) return [];
+  const out: Reference[] = [];
+  const seen = new Set<string>();
+  for (const label of sourceTagLabels(markdown)) {
+    const ref = sourceRefForLabel(label, refs);
+    if (!ref) continue;
+    const key = sourceRefKey(ref);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(ref);
+  }
+  return out;
 }

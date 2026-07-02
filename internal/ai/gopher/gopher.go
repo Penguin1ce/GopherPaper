@@ -256,10 +256,9 @@ func responseContent(ev *event.Event) string {
 	return strings.TrimSpace(b.String())
 }
 
-// EvictUser 清除该用户缓存的小囊鼠 runner(含思路图),登出时调用。下次访问自动重建。
+// EvictUser 清除该用户缓存的小囊鼠 runner,登出时调用。下次访问自动重建。
 func EvictUser(userID string) {
 	runners.Delete(userID)
-	flowRunners.Delete(userID)
 }
 
 // reportH1 匹配 Markdown 一级标题行。一份报告至多一个一级标题,出现第二个即模型跑飞重写了第二份。
@@ -387,13 +386,12 @@ func fallbackReportQueries(t constant.ReportType) []string {
 			"实验证据 支持创新点 证据强弱",
 			"局限性 失败案例 适用边界 风险",
 		}
-	case constant.ReportFuture:
+	case constant.ReportRelated:
 		return []string{
-			"局限 future work 未解决问题",
-			"薄弱环节 失败案例 泛化不足",
-			"方法改进 模型结构 目标函数 数据 训练策略",
-			"实验补充 更多数据集 更多基线 长期评估",
-			"应用迁移 工程部署 成本 延迟 安全隐私",
+			"related work references cited papers",
+			"参考文献 foundational work baseline",
+			"prior work comparison cited method",
+			"benchmark dataset related paper",
 		}
 	default:
 		return []string{
@@ -414,8 +412,8 @@ func fallbackFigureQuery(t constant.ReportType) string {
 		return "main results table ablation curve metrics"
 	case constant.ReportInnovation:
 		return "contribution comparison limitation result table"
-	case constant.ReportFuture:
-		return "limitation failure case future work result table"
+	case constant.ReportRelated:
+		return "related work references citation comparison table"
 	default:
 		return "overview architecture main results table figure"
 	}

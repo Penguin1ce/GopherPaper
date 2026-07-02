@@ -115,6 +115,48 @@ func TestIntentClassifierInputTrimsHistory(t *testing.T) {
 	}
 }
 
+func TestPaperResourceIntentOverride(t *testing.T) {
+	boundCtx := core.WithPaperTitle(core.WithPaperID(context.Background(), "paper-1"), "Test Paper")
+	cases := map[string]constant.IntentType{
+		"有 github 仓库吗":               constant.IntentSummary,
+		"有代码仓库吗":                     constant.IntentSummary,
+		"这篇论文开源了吗":                   constant.IntentSummary,
+		"project page 在哪":            constant.IntentSummary,
+		"有没有 supplementary material": constant.IntentSummary,
+		"作者提供数据集地址了吗":                constant.IntentSummary,
+	}
+	for q, want := range cases {
+		got, ok := paperResourceIntentOverride(boundCtx, q)
+		if !ok {
+			t.Fatalf("paperResourceIntentOverride(%q) 未触发", q)
+		}
+		if got != want {
+			t.Fatalf("paperResourceIntentOverride(%q) = %q, want %q", q, got, want)
+		}
+	}
+}
+
+func TestPaperResourceIntentOverrideDoesNotStealChitchat(t *testing.T) {
+	boundCtx := core.WithPaperTitle(core.WithPaperID(context.Background(), "paper-1"), "Test Paper")
+	cases := []struct {
+		name  string
+		ctx   context.Context
+		query string
+	}{
+		{name: "unbound assistant account", ctx: context.Background(), query: "你有 github 账号吗"},
+		{name: "bound assistant account", ctx: boundCtx, query: "你有 github 账号吗"},
+		{name: "bound casual github", ctx: boundCtx, query: "github 真好用"},
+		{name: "bound normal method", ctx: boundCtx, query: "这个模型结构是怎样的"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, ok := paperResourceIntentOverride(tc.ctx, tc.query); ok {
+				t.Fatalf("paperResourceIntentOverride(%q) = %q, want no override", tc.query, got)
+			}
+		})
+	}
+}
+
 // TestWithBoundPaper 验证 ctx 带论文标题时导语拼在 prompt 前,未绑定时原样返回。
 func TestWithBoundPaper(t *testing.T) {
 	base := constant.SummaryAgenticPrompt

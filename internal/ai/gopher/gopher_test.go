@@ -114,24 +114,6 @@ func TestFallbackReportQueriesByType(t *testing.T) {
 	}
 }
 
-func TestExtractSVG(t *testing.T) {
-	in := "说明文字\n```svg\n<svg viewBox=\"0 0 680 760\"><text>思路图</text></svg>\n```"
-	got := extractSVG(in)
-	want := `<svg viewBox="0 0 680 760"><text>思路图</text></svg>`
-	if got != want {
-		t.Fatalf("extractSVG = %q, want %q", got, want)
-	}
-}
-
-func TestFallbackFlowQueriesCoverMainChain(t *testing.T) {
-	got := strings.Join(fallbackFlowQueries(), " ")
-	for _, want := range []string{"研究问题", "现有方法不足", "核心思路", "方法流程", "关键结果", "结论"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("思路图兜底检索主题缺少 %q: %s", want, got)
-		}
-	}
-}
-
 func TestAppendUniqueDocsLimitsAndDedupes(t *testing.T) {
 	seen := map[string]struct{}{"a": {}}
 	out := []*retrieval.Doc{{ID: "a"}}

@@ -13,7 +13,11 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { figureUrl } from "@/lib/gopherpaper/api";
-import { referenceReaderHref, sourceTagReaderHref } from "@/lib/gopherpaper/source-links";
+import {
+  referenceReaderHref,
+  referencesUsedBySourceTags,
+  sourceTagReaderHref,
+} from "@/lib/gopherpaper/source-links";
 import { useApp } from "@/lib/gopherpaper/store";
 import type { Message, PaperFlow, Reference } from "@/lib/gopherpaper/types";
 import { formatTime, intentLabel, messagePlan, paperTitle } from "@/lib/gopherpaper/utils";
@@ -158,11 +162,12 @@ const MessageBubble = memo(function MessageBubble({
   allowedPaperIDs?: Set<string>;
 }) {
   const isAssistant = message.role === "assistant";
-  const refs = isAssistant ? extractSources(message.meta) : [];
-  const figures = isAssistant ? buildFigureMap(refs) : undefined;
+  const allRefs = isAssistant ? extractSources(message.meta) : [];
+  const refs = isAssistant ? referencesUsedBySourceTags(message.content, allRefs) : [];
+  const figures = isAssistant ? buildFigureMap(allRefs) : undefined;
   const steps = isAssistant ? messagePlan(message) : [];
   const sourceHref = (label: string) =>
-    sourceTagReaderHref(label, refs, fallbackPaperID, allowedPaperIDs);
+    sourceTagReaderHref(label, allRefs, fallbackPaperID, allowedPaperIDs);
   return (
     <article className={cn("flex flex-col gap-1.5", isAssistant ? "items-start" : "items-end")}>
       {isAssistant ? (

@@ -34,4 +34,5 @@ var (
 	ErrAnnotationNotFound = errors.New("paper: 批注不存在")
 	ErrMindMapNotFound    = errors.New("paper: 精读脑图不存在")
 	ErrMindMapInvalid     = errors.New("paper: 精读脑图数据无效")
+	ErrPaperFlowNotFound  = errors.New("paper: 论文思路图不存在")
 )
