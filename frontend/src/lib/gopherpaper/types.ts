@@ -64,7 +64,7 @@ export interface Session {
   id: string;
   student_id: string;
   paper_id?: string;
-  // 空为默认论文助教,"pioneer" 为小云雀会话(独立页 /pioneer)。
+  // 空为默认论文助教,"pioneer" 为小云雀会话,"maodie" 为精读页小耄耋。
   agent_type?: string;
   // 自动归类的主题 ID,空表示尚未归类。仅小云雀会话归类。
   topic_id?: string;
@@ -85,6 +85,12 @@ export interface Topic {
 }
 
 export type IntentType = "chitchat" | "summary" | "method" | "pioneer" | string;
+
+export interface ReaderContext {
+  scope?: "selection" | "page" | string;
+  page_no?: number;
+  selected_text?: string;
+}
 
 export interface Message {
   id: number | string;
@@ -180,6 +186,7 @@ export interface Reference {
   doc_id?: string;
   block_type?: string; // image 时为图块,配合 img_name 渲染缩略图
   img_name?: string; // 图片文件名,与 doc_id 拼取图接口
+  fallback_scope?: string;
   [k: string]: unknown;
 }
 

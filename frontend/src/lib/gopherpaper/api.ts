@@ -25,6 +25,7 @@ import type {
   PaperProgressResponse,
   PasswordResetCodePayload,
   RegisterPayload,
+  ReaderContext,
   RelatedPaper,
   ReportsStatus,
   ReportType,
@@ -532,7 +533,11 @@ export async function sendMessage(
   query: string,
   extraHeaders?: Record<string, string>,
   stream?: SendStreamHandlers,
+  readerContext?: ReaderContext,
+  signal?: AbortSignal,
 ): Promise<SendMessageResponse> {
+  const body: { query: string; reader_context?: ReaderContext } = { query };
+  if (readerContext) body.reader_context = readerContext;
   const res = await fetch(
     `${API_BASE}/sessions/${encodeURIComponent(sessionID)}/messages`,
     {
@@ -542,7 +547,8 @@ export async function sendMessage(
         Accept: "text/event-stream",
         ...extraHeaders,
       }),
-      body: JSON.stringify({ query }),
+      body: JSON.stringify(body),
+      signal,
     },
   );
   const ctype = res.headers.get("content-type") || "";
@@ -555,6 +561,7 @@ export async function sendMessage(
   let buf = "";
   let result: SendMessageResponse | null = null;
   let errMsg = "";
+  let finished = false;
   const handleFrame = (frame: string) => {
     const parsed = parseSSEFrame(frame);
     if (!parsed) return;
@@ -591,20 +598,30 @@ export async function sendMessage(
         break;
       case "done":
         result = parsed.payload as SendMessageResponse;
+        finished = true;
         break;
       case "error":
         errMsg = String(payload.message ?? "处理失败");
+        finished = true;
         break;
     }
   };
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      buf += decoder.decode();
+      if (buf.trim()) handleFrame(buf);
+      break;
+    }
     buf += decoder.decode(value, { stream: true });
     let idx: number;
     while ((idx = buf.indexOf("\n\n")) >= 0) {
       handleFrame(buf.slice(0, idx));
       buf = buf.slice(idx + 2);
+    }
+    if (finished) {
+      await reader.cancel().catch(() => {});
+      break;
     }
   }
   if (errMsg) throw new ApiError(errMsg, res.status);

@@ -921,10 +921,13 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         let sessionID = activeSessionID;
         if (!sessionID) {
           const paper = papers.find((p) => p.id === activePaperID) || null;
+          const paperID = paper?.id || activePaperID || undefined;
           const title = paper
             ? `${paperTitle(paper)} 问答`
-            : query.slice(0, 24) || "新会话";
-          const session = await createSession(title, paper?.id);
+            : paperID
+              ? "论文问答"
+              : query.slice(0, 24) || "新会话";
+          const session = await createSession(title, paperID);
           sessionID = session.id;
         }
         // 取消该会话在飞的 listMessages,避免乐观写入被随后到达的 fetch 结果覆盖(官方乐观更新模式)。

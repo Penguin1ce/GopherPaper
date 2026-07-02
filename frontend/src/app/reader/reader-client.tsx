@@ -2,6 +2,7 @@
 
 import {
   ArrowLeft,
+  ArrowUp,
   BookMarked,
   Check,
   ChevronLeft,
@@ -10,10 +11,12 @@ import {
   ListTree,
   Loader2,
   Maximize2,
+  MessageCircleQuestionMark,
   MessageSquarePlus,
   Minus,
   MoreHorizontal,
   Network,
+  NotebookPen,
   Palette,
   Plus,
   Trash2,
@@ -79,11 +82,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import * as api from "@/lib/gopherpaper/api";
+import { useApp } from "@/lib/gopherpaper/store";
 import type {
   AnnotationRect,
+  Message,
   Paper,
   PaperAnnotation,
   PaperSection,
+  ReaderContext,
+  Reference,
 } from "@/lib/gopherpaper/types";
 import { cn } from "@/lib/utils";
 
@@ -99,6 +106,7 @@ const PDF_MIN_SCALE = 0.6;
 const PDF_MAX_SCALE = 2.4;
 const LOCATE_TOP_GAP = 32;
 const LOCATED_ANNOTATION_SCROLL_RESUME_MS = 600;
+const QA_SELECTION_PREVIEW_RUNES = 48;
 
 type PatchablePDFViewer = {
   pdfDocument?: PDFDocumentProxy | null;
@@ -151,6 +159,7 @@ interface ReaderPreferences {
   translateOpen: boolean;
   annotationsOpen: boolean;
   mindMapOpen: boolean;
+  qaOpen: boolean;
   color: AnnotationColor;
 }
 
@@ -159,6 +168,7 @@ const DEFAULT_PREFS: ReaderPreferences = {
   translateOpen: true,
   annotationsOpen: true,
   mindMapOpen: false,
+  qaOpen: false,
   color: "yellow",
 };
 
@@ -208,11 +218,13 @@ function loadReaderPreferences(): ReaderPreferences {
       ? (saved.color as AnnotationColor)
       : DEFAULT_PREFS.color;
     const mindMapOpen = saved.mindMapOpen ?? DEFAULT_PREFS.mindMapOpen;
+    const qaOpen = mindMapOpen ? false : (saved.qaOpen ?? DEFAULT_PREFS.qaOpen);
     return {
       outlineOpen: saved.outlineOpen ?? DEFAULT_PREFS.outlineOpen,
-      translateOpen: mindMapOpen ? false : (saved.translateOpen ?? DEFAULT_PREFS.translateOpen),
-      annotationsOpen: mindMapOpen ? false : (saved.annotationsOpen ?? DEFAULT_PREFS.annotationsOpen),
+      translateOpen: mindMapOpen || qaOpen ? false : (saved.translateOpen ?? DEFAULT_PREFS.translateOpen),
+      annotationsOpen: mindMapOpen || qaOpen ? false : (saved.annotationsOpen ?? DEFAULT_PREFS.annotationsOpen),
       mindMapOpen,
+      qaOpen,
       color,
     };
   } catch {
@@ -730,6 +742,7 @@ function ReaderToolbar({
   onToggleTranslate,
   onToggleAnnotations,
   onToggleMindMap,
+  onToggleQA,
   onColorChange,
 }: {
   title: string;
@@ -750,6 +763,7 @@ function ReaderToolbar({
   onToggleTranslate: () => void;
   onToggleAnnotations: () => void;
   onToggleMindMap: () => void;
+  onToggleQA: () => void;
   onColorChange: (color: AnnotationColor) => void;
 }) {
   const zoomText = typeof scaleValue === "number" ? `${Math.round(scaleValue * 100)}%` : "适宽";
@@ -820,6 +834,9 @@ function ReaderToolbar({
         </ToolbarButton>
         <ToolbarButton label="精读脑图" active={prefs.mindMapOpen} onClick={onToggleMindMap}>
           <Network className="size-4" />
+        </ToolbarButton>
+        <ToolbarButton label="小耄耋问答" active={prefs.qaOpen} onClick={onToggleQA}>
+          <MessageSquarePlus className="size-4" />
         </ToolbarButton>
       </div>
     </header>
@@ -1474,6 +1491,454 @@ function ReaderSidePanel({
   );
 }
 
+function refsFromMeta(meta?: Record<string, unknown>): Reference[] {
+  const raw = meta?.sources;
+  return Array.isArray(raw) ? (raw as Reference[]) : [];
+}
+
+function figuresFromRefs(refs: Reference[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const ref of refs) {
+    if (ref.block_type === "image" && ref.img_name && ref.doc_id) {
+      map[ref.img_name] = ref.doc_id;
+    }
+  }
+  return map;
+}
+
+function readerSourceLabel(ref: Reference, index: number) {
+  if (ref.block_type === "selection") {
+    return ref.page_no ? `选段 p.${ref.page_no}` : "选段";
+  }
+  if (ref.fallback_scope === "paper" && ref.page_no) {
+    return `全文补充 p.${ref.page_no}`;
+  }
+  if (ref.page_no) return `p.${ref.page_no}`;
+  return `来源 ${index + 1}`;
+}
+
+function ReaderQASources({ refs }: { refs: Reference[] }) {
+  if (refs.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {refs.slice(0, 6).map((ref, index) => {
+        const selectionRef = ref.block_type === "selection";
+        return (
+          <span
+            key={`${ref.id ?? index}`}
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-[11px]",
+              selectionRef
+                ? "border-primary/25 bg-primary/5 text-primary"
+                : "bg-muted/40 text-muted-foreground",
+            )}
+          >
+            {readerSourceLabel(ref, index)}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReaderQAMessage({ message }: { message: Message }) {
+  const assistant = message.role === "assistant";
+  const refs = assistant ? refsFromMeta(message.meta) : [];
+  return (
+    <article className={cn("flex flex-col gap-1.5", assistant ? "items-start" : "items-end")}>
+      {assistant ? (
+        <div className="w-full text-sm leading-6">
+          <Markdown figures={figuresFromRefs(refs)}>{message.content}</Markdown>
+          <ReaderQASources refs={refs} />
+        </div>
+      ) : (
+        <div className="max-w-[84%] rounded-2xl bg-primary px-3 py-2 text-sm leading-6 text-primary-foreground">
+          {message.content}
+        </div>
+      )}
+      <span className="px-0.5 text-[11px] text-muted-foreground">
+        {assistant ? "小耄耋" : "我"}
+      </span>
+    </article>
+  );
+}
+
+function readerSelectionPreview(text: string) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const runes = Array.from(normalized);
+  if (runes.length <= QA_SELECTION_PREVIEW_RUNES) return normalized;
+  return `${runes.slice(0, QA_SELECTION_PREVIEW_RUNES).join("")}...`;
+}
+
+const MAODIE_PROMPT_HINTS = [
+  "解释一下当前页的这段内容",
+  "这里的方法步骤是什么?",
+  "这个结论有什么依据?",
+];
+
+interface ReaderQASelection {
+  text: string;
+  pageNo: number;
+}
+
+type ReaderQAScope = "selection" | "page" | "paper";
+
+function isAbortError(err: unknown) {
+  return err instanceof Error && err.name === "AbortError";
+}
+
+function ReaderQAPanel({
+  paper,
+  currentPage,
+  selection,
+  onClearSelection,
+  onClose,
+}: {
+  paper: Paper | null;
+  currentPage: number;
+  selection: ReaderQASelection | null;
+  onClearSelection: () => void;
+  onClose: () => void;
+}) {
+  const [sessionID, setSessionID] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [scope, setScope] = useState<ReaderQAScope>(selection ? "selection" : "page");
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+  const localIDSeq = useRef(0);
+  const paperID = paper?.id || "";
+  const hasDraft = input.trim().length > 0;
+  const effectiveScope: ReaderQAScope = scope === "selection" && !selection ? "page" : scope;
+  const contextPage = effectiveScope === "selection" ? selection?.pageNo || currentPage : currentPage;
+  const selectedText = selection?.text || "";
+  const selectionPreview = selection ? readerSelectionPreview(selection.text) : "";
+  const contextLabel = effectiveScope === "paper" ? "全文" : `p.${contextPage || "-"}`;
+
+  useEffect(() => {
+    // StrictMode 会先跑一轮 setup→cleanup 再真正挂载,setup 必须把标记写回 true,
+    // 否则 cleanup 置 false 后所有 mountedRef 守卫的状态更新永久失效(答案不落地、spinner 不停)。
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selection) {
+      setScope("selection");
+    } else {
+      setScope((cur) => (cur === "selection" ? "page" : cur));
+    }
+  }, [selection]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "instant" });
+  }, [messages, sending]);
+
+  useEffect(() => {
+    let cancelled = false;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setSessionID("");
+    setMessages([]);
+    setError("");
+    setSending(false);
+    if (!paperID) return;
+    api
+      .listSessions()
+      .then((sessions) => {
+        if (cancelled) return null;
+        const session = sessions
+          .filter((item) => item.paper_id === paperID && item.agent_type === "maodie")
+          .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0];
+        if (!session) return null;
+        setSessionID(session.id);
+        return api.listMessages(session.id);
+      })
+      .then((list) => {
+        if (!cancelled && Array.isArray(list)) setMessages(list);
+      })
+      .catch((err) => {
+        if (!cancelled) setError((err as Error)?.message || "加载小耄耋会话失败");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [paperID]);
+
+  const ensureSession = async () => {
+    if (sessionID) return sessionID;
+    if (!paperID) throw new Error("缺少论文 id");
+    const session = await api.createSession(`${paperName(paper)} 小耄耋`, paperID, "maodie");
+    setSessionID(session.id);
+    return session.id;
+  };
+
+  const startNewSession = async () => {
+    if (!paperID) return;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setSending(false);
+    setError("");
+    setInput("");
+    setMessages([]);
+    localIDSeq.current = 0;
+    try {
+      const session = await api.createSession(`${paperName(paper)} 小耄耋`, paperID, "maodie");
+      if (!mountedRef.current) return;
+      setSessionID(session.id);
+    } catch (err) {
+      if (!mountedRef.current) return;
+      setError((err as Error)?.message || "新建小耄耋会话失败");
+    }
+  };
+
+  const readerContextForSubmit = (): ReaderContext => {
+    if (effectiveScope === "paper") {
+      return { scope: "paper" };
+    }
+    if (effectiveScope === "selection" && selection) {
+      return {
+        scope: "selection",
+        page_no: selection.pageNo,
+        selected_text: selectedText,
+      };
+    }
+    return {
+      scope: "page",
+      page_no: currentPage,
+    };
+  };
+
+  const closePanel = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    onClose();
+  };
+
+  const submit = async (draft?: string) => {
+    const query = (draft ?? input).trim();
+    if (!query || sending) return;
+    setInput("");
+    setError("");
+    setSending(true);
+    let placeholderID = "";
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      const sid = await ensureSession();
+      localIDSeq.current += 1;
+      const localUserID = `local-${localIDSeq.current}`;
+      placeholderID = `stream-${localIDSeq.current}`;
+      const createdAt = new Date().toISOString();
+      const localUser: Message = {
+        id: localUserID,
+        session_id: sid,
+        role: "user",
+        content: query,
+        created_at: createdAt,
+      };
+      const localAssistant: Message = {
+        id: placeholderID,
+        session_id: sid,
+        role: "assistant",
+        content: "",
+        intent: "maodie",
+        created_at: createdAt,
+        streaming: true,
+      };
+      setMessages((list) => [...list, localUser, localAssistant]);
+      const readerContext = readerContextForSubmit();
+      const data = await api.sendMessage(sid, query, undefined, {
+        onDelta: (text, reset) => {
+          if (!mountedRef.current || controller.signal.aborted) return;
+          setMessages((list) =>
+            list.map((message) =>
+              message.id === placeholderID
+                ? { ...message, content: reset ? text : message.content + text }
+                : message,
+            ),
+          );
+        },
+      }, readerContext, controller.signal);
+      if (!mountedRef.current || controller.signal.aborted) return;
+      setMessages((list) =>
+        list.map((message) =>
+          message.id === placeholderID
+            ? { ...data.message, id: data.message.id || placeholderID, meta: data.meta ?? data.message.meta }
+            : message,
+        ),
+      );
+    } catch (err) {
+      if (isAbortError(err)) return;
+      if (!mountedRef.current) return;
+      if (placeholderID) {
+        setMessages((list) => list.filter((message) => message.id !== placeholderID));
+      }
+      setError((err as Error)?.message || "小耄耋应答失败");
+    } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
+      if (mountedRef.current) {
+        setSending(false);
+      }
+    }
+  };
+
+  return (
+    <aside
+      className="h-full min-h-0 w-full self-stretch overflow-hidden border-l bg-background"
+      style={{ width: RIGHT_PANEL_WIDTH, minWidth: RIGHT_PANEL_WIDTH, maxWidth: RIGHT_PANEL_WIDTH }}
+    >
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <MessageSquarePlus className="size-4 text-muted-foreground" />
+              小耄耋
+            </div>
+            <div className="truncate text-xs text-muted-foreground">
+              {contextLabel} · {paperName(paper)}
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label="新开对话"
+              title="新开对话"
+              onClick={() => void startNewSession()}
+            >
+              <Plus className="size-3.5" />
+            </Button>
+            <Button type="button" variant="ghost" size="icon-xs" aria-label="关闭问答" onClick={closePanel}>
+              <X className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-5 px-4 py-4">
+            {messages.length === 0 ? (
+              <div className="space-y-3">
+	                <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
+	                  {effectiveScope === "paper"
+	                    ? "已切到全文。"
+	                    : effectiveScope === "selection"
+	                      ? "已绑定当前选段。"
+	                      : "默认绑定当前页。"}
+	                </div>
+                <div className="flex flex-wrap gap-2">
+                  {MAODIE_PROMPT_HINTS.map((hint) => (
+                    <Button key={hint} type="button" size="sm" variant="outline" onClick={() => void submit(hint)}>
+                      {hint}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              messages.map((message) => <ReaderQAMessage key={String(message.id)} message={message} />)
+            )}
+            {sending && !messages.some((message) => message.streaming) && (
+              <div className="inline-flex items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                小耄耋正在阅读当前上下文…
+              </div>
+            )}
+            {error && <div className="rounded-md border border-destructive/30 bg-background p-3 text-sm text-destructive">{error}</div>}
+            <div ref={bottomRef} />
+          </div>
+        </ScrollArea>
+        <form
+          className="shrink-0 border-t px-3 py-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <div className="mb-2 grid grid-cols-3 rounded-lg border bg-muted/30 p-0.5 text-xs">
+            {([
+              ["selection", "选段"],
+              ["page", "本页"],
+              ["paper", "全文"],
+            ] as const).map(([value, label]) => {
+              const disabled = value === "selection" && !selection;
+              const active = effectiveScope === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={disabled}
+                  className={cn(
+                    "h-7 rounded-md px-2 font-medium text-muted-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                    active && "bg-background text-foreground shadow-sm",
+                  )}
+                  onClick={() => setScope(value)}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          {selection && (
+            <div className="mb-2 flex max-w-full items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-2 py-1.5 text-xs">
+              <span className="shrink-0 rounded-md bg-background/80 px-1.5 py-0.5 font-medium text-primary">
+                p.{selection.pageNo}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">{selectionPreview}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="-mr-1 size-6 text-muted-foreground hover:text-foreground"
+                aria-label="取消选段绑定"
+                onClick={() => {
+                  onClearSelection();
+                  setScope("page");
+                }}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          )}
+          <div className="flex items-end gap-2 rounded-[1.4rem] border bg-card py-1.5 pl-2 pr-1.5 shadow-sm focus-within:border-ring/50">
+            <Textarea
+              rows={1}
+              value={input}
+              disabled={sending}
+              className="max-h-32 min-h-9 resize-none border-0 bg-transparent px-3 py-1.5 text-sm leading-6 shadow-none focus-visible:ring-0"
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+            />
+            {(hasDraft || sending) && (
+              <Button
+                type="submit"
+                size="icon"
+                className="size-9 shrink-0 rounded-full"
+                disabled={sending || !hasDraft}
+                aria-label={sending ? "正在发送" : "发送"}
+              >
+                {sending ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4 stroke-[2.6]" />}
+              </Button>
+            )}
+          </div>
+        </form>
+      </div>
+    </aside>
+  );
+}
+
 function ReaderPdfLoader({
   document,
   beforeLoad,
@@ -1530,10 +1995,12 @@ function SelectionToolbar({
   onTranslate,
   onHighlight,
   onAnnotate,
+  onAsk,
 }: {
   onTranslate: (selection: PdfSelection) => void;
   onHighlight: (selection: PdfSelection) => void;
   onAnnotate: (selection: PdfSelection) => void;
+  onAsk: (selection: PdfSelection) => void;
 }) {
   const utils = usePdfHighlighterContext();
 
@@ -1555,8 +2022,12 @@ function SelectionToolbar({
         高亮
       </Button>
       <Button type="button" size="sm" variant="ghost" onClick={() => applySelection(onAnnotate)}>
-        <MessageSquarePlus className="size-3.5" />
+        <NotebookPen className="size-3.5" />
         批注
+      </Button>
+      <Button type="button" size="sm" variant="ghost" onClick={() => applySelection(onAsk)}>
+        <MessageCircleQuestionMark className="size-3.5" />
+        问答
       </Button>
     </div>
   );
@@ -1630,6 +2101,7 @@ function ReaderPdf({
   onTranslateSelection,
   onSaveHighlight,
   onAnnotateSelection,
+  onAskSelection,
   onDeleteAnnotation,
   locatedAnnotationId,
   onDocumentReady,
@@ -1644,6 +2116,7 @@ function ReaderPdf({
   onTranslateSelection: (selection: PdfSelection) => void;
   onSaveHighlight: (selection: PdfSelection) => void;
   onAnnotateSelection: (selection: PdfSelection) => void;
+  onAskSelection: (selection: PdfSelection) => void;
   onDeleteAnnotation: (annotation: PaperAnnotation) => void;
   locatedAnnotationId: number | null;
   onDocumentReady: (pdfDocument: PDFDocumentProxy) => void;
@@ -1742,6 +2215,7 @@ function ReaderPdf({
           onTranslateSelection={onTranslateSelection}
           onSaveHighlight={onSaveHighlight}
           onAnnotateSelection={onAnnotateSelection}
+          onAskSelection={onAskSelection}
           onDeleteAnnotation={onDeleteAnnotation}
           locatedAnnotationId={locatedAnnotationId}
           onDocumentReady={onDocumentReady}
@@ -1760,6 +2234,7 @@ function LoadedPdfHighlighter({
   onTranslateSelection,
   onSaveHighlight,
   onAnnotateSelection,
+  onAskSelection,
   onDeleteAnnotation,
   locatedAnnotationId,
   onDocumentReady,
@@ -1772,6 +2247,7 @@ function LoadedPdfHighlighter({
   onTranslateSelection: (selection: PdfSelection) => void;
   onSaveHighlight: (selection: PdfSelection) => void;
   onAnnotateSelection: (selection: PdfSelection) => void;
+  onAskSelection: (selection: PdfSelection) => void;
   onDeleteAnnotation: (annotation: PaperAnnotation) => void;
   locatedAnnotationId: number | null;
   onDocumentReady: (pdfDocument: PDFDocumentProxy) => void;
@@ -1794,6 +2270,7 @@ function LoadedPdfHighlighter({
           onTranslate={onTranslateSelection}
           onHighlight={onSaveHighlight}
           onAnnotate={onAnnotateSelection}
+          onAsk={onAskSelection}
         />
       }
       utilsRef={setUtils}
@@ -1811,6 +2288,7 @@ function LoadedPdfHighlighter({
 }
 
 export function ReaderClient() {
+  const { activePaperID, selectPaper } = useApp();
   const id = useMemo(() => {
     if (typeof location === "undefined") return "";
     return new URLSearchParams(location.search).get("id") || "";
@@ -1826,6 +2304,7 @@ export function ReaderClient() {
   const [error, setError] = useState("");
   const [annotations, setAnnotations] = useState<PaperAnnotation[]>([]);
   const [translation, setTranslation] = useState<TranslationResult | null>(null);
+  const [qaSelection, setQASelection] = useState<ReaderQASelection | null>(null);
   const [translationErrors, setTranslationErrors] = useState<Record<number, string>>({});
   const [translatingIDs, setTranslatingIDs] = useState<Set<number>>(() => new Set());
   const [expandedAnnotationTextIDs, setExpandedAnnotationTextIDs] = useState<Set<number>>(() => new Set());
@@ -1853,11 +2332,13 @@ export function ReaderClient() {
   const highlights = useMemo(() => annotations.map(annotationToHighlight), [annotations]);
   const initialPage = Math.max(1, requestedPage || paper?.last_read_page || 1);
   const pdfUrl = useMemo(() => (ready && id ? api.paperFileUrl(id) : ""), [ready, id]);
-  const rightPanelOpen = !prefs.mindMapOpen && (prefs.translateOpen || prefs.annotationsOpen);
+  const qaPanelOpen = !prefs.mindMapOpen && prefs.qaOpen;
+  const rightPanelOpen = !prefs.mindMapOpen && !prefs.qaOpen && (prefs.translateOpen || prefs.annotationsOpen);
+  const sidePanelOpen = qaPanelOpen || rightPanelOpen;
   const gridClass =
     prefs.mindMapOpen
       ? "lg:grid-cols-[minmax(0,1fr)_var(--mind-map-panel-width)]"
-      : rightPanelOpen
+      : sidePanelOpen
         ? "lg:grid-cols-[minmax(0,1fr)_24rem]"
         : "lg:grid-cols-[minmax(0,1fr)]";
   const gridStyle = prefs.mindMapOpen
@@ -1871,14 +2352,24 @@ export function ReaderClient() {
   const toggleTranslatePanel = useCallback(() => {
     setPrefs((cur) => {
       const translateOpen = !cur.translateOpen;
-      return { ...cur, translateOpen, mindMapOpen: translateOpen ? false : cur.mindMapOpen };
+      return {
+        ...cur,
+        translateOpen,
+        mindMapOpen: translateOpen ? false : cur.mindMapOpen,
+        qaOpen: translateOpen ? false : cur.qaOpen,
+      };
     });
   }, []);
 
   const toggleAnnotationsPanel = useCallback(() => {
     setPrefs((cur) => {
       const annotationsOpen = !cur.annotationsOpen;
-      return { ...cur, annotationsOpen, mindMapOpen: annotationsOpen ? false : cur.mindMapOpen };
+      return {
+        ...cur,
+        annotationsOpen,
+        mindMapOpen: annotationsOpen ? false : cur.mindMapOpen,
+        qaOpen: annotationsOpen ? false : cur.qaOpen,
+      };
     });
   }, []);
 
@@ -1890,6 +2381,21 @@ export function ReaderClient() {
         mindMapOpen,
         translateOpen: mindMapOpen ? false : cur.translateOpen,
         annotationsOpen: mindMapOpen ? false : cur.annotationsOpen,
+        qaOpen: mindMapOpen ? false : cur.qaOpen,
+      };
+    });
+  }, []);
+
+  const toggleQAPanel = useCallback(() => {
+    setQASelection(null);
+    setPrefs((cur) => {
+      const qaOpen = !cur.qaOpen;
+      return {
+        ...cur,
+        qaOpen,
+        mindMapOpen: qaOpen ? false : cur.mindMapOpen,
+        translateOpen: qaOpen ? false : cur.translateOpen,
+        annotationsOpen: qaOpen ? false : cur.annotationsOpen,
       };
     });
   }, []);
@@ -1951,6 +2457,11 @@ export function ReaderClient() {
       if (!window.closed) location.href = "/";
     }, 120);
   }
+
+  useEffect(() => {
+    if (!id || activePaperID === id) return;
+    selectPaper(id);
+  }, [activePaperID, id, selectPaper]);
 
   useEffect(() => {
     const token = loadToken();
@@ -2132,7 +2643,7 @@ export function ReaderClient() {
       const annotation = annotations.find((item) => item.id === annotationID);
       const page = annotation?.page_no || pageNumber || 1;
       if (openAnnotations) {
-        updatePrefs({ annotationsOpen: true, mindMapOpen: false });
+        updatePrefs({ annotationsOpen: true, mindMapOpen: false, qaOpen: false });
         if (annotation?.note) {
           setExpandedAnnotationNoteIDs((prev) => new Set(prev).add(annotation.id));
         }
@@ -2277,7 +2788,7 @@ export function ReaderClient() {
           rects: selection.position.rects.map(scaledToRect),
         });
         setAnnotations((prev) => [annotation, ...prev]);
-        updatePrefs({ annotationsOpen: true, mindMapOpen: false });
+        updatePrefs({ annotationsOpen: true, mindMapOpen: false, qaOpen: false });
         window.getSelection()?.removeAllRanges();
         if (!note) void translateAnnotation(annotation);
         return true;
@@ -2298,7 +2809,7 @@ export function ReaderClient() {
       const seq = translateSeq.current + 1;
       translateSeq.current = seq;
       const pageNo = selection.position.boundingRect.pageNumber;
-      updatePrefs({ translateOpen: true, mindMapOpen: false });
+      updatePrefs({ translateOpen: true, mindMapOpen: false, qaOpen: false });
       setTranslation({ original: text, translation: "", pageNo, loading: true, error: "" });
       window.getSelection()?.removeAllRanges();
 
@@ -2330,6 +2841,25 @@ export function ReaderClient() {
       setNoteOpen(true);
     },
     [prefs.color],
+  );
+
+  const onAskSelection = useCallback(
+    (selection: PdfSelection) => {
+      const text = selection.content.text?.trim() || "";
+      if (!text) return;
+      setQASelection({
+        text,
+        pageNo: selection.position.boundingRect.pageNumber,
+      });
+      updatePrefs({
+        qaOpen: true,
+        mindMapOpen: false,
+        translateOpen: false,
+        annotationsOpen: false,
+      });
+      window.getSelection()?.removeAllRanges();
+    },
+    [updatePrefs],
   );
 
   const deleteAnnotation = useCallback(
@@ -2402,6 +2932,7 @@ export function ReaderClient() {
         onToggleTranslate={toggleTranslatePanel}
         onToggleAnnotations={toggleAnnotationsPanel}
         onToggleMindMap={toggleMindMapPanel}
+        onToggleQA={toggleQAPanel}
         onColorChange={(color) => updatePrefs({ color })}
       />
 
@@ -2443,6 +2974,7 @@ export function ReaderClient() {
                 onTranslateSelection={onTranslateSelection}
                 onSaveHighlight={(selection) => void saveAnnotation(selection, "", prefs.color)}
                 onAnnotateSelection={onAnnotateSelection}
+                onAskSelection={onAskSelection}
                 onDeleteAnnotation={deleteAnnotation}
                 locatedAnnotationId={locatedAnnotationId}
                 onDocumentReady={(pdfDocument) => void loadPdfOutlineFallback(pdfDocument)}
@@ -2483,6 +3015,18 @@ export function ReaderClient() {
             onColorChange={changeAnnotationColor}
             onRetryTranslate={(annotation) => void translateAnnotation(annotation)}
             onLocateAnnotation={(annotation) => goToAnnotation(annotation.id, annotation.page_no, false)}
+          />
+        )}
+        {qaPanelOpen && (
+          <ReaderQAPanel
+            paper={paper}
+            currentPage={currentPage}
+            selection={qaSelection}
+            onClearSelection={() => setQASelection(null)}
+            onClose={() => {
+              setQASelection(null);
+              updatePrefs({ qaOpen: false });
+            }}
           />
         )}
       </div>
