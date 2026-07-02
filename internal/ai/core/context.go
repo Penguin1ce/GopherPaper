@@ -7,6 +7,8 @@ import (
 
 type paperCtxKey struct{}
 
+type paperTitleCtxKey struct{}
+
 type streamCtxKey struct{}
 
 type flowSinkKey struct{}
@@ -94,6 +96,20 @@ func WithPaperID(ctx context.Context, paperID string) context.Context {
 // PaperIDFrom 取出 context 中的论文 ID，缺失返回空串表示跨库问答。
 func PaperIDFrom(ctx context.Context) string {
 	if v, ok := ctx.Value(paperCtxKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// WithPaperTitle 把当前绑定论文的标题注入 context，供问答链路写进 system prompt，
+// 让模型知道「这篇论文」指的是谁，不至于在检索前反问论文标识。
+func WithPaperTitle(ctx context.Context, title string) context.Context {
+	return context.WithValue(ctx, paperTitleCtxKey{}, title)
+}
+
+// PaperTitleFrom 取出 context 中的论文标题，缺失返回空串。
+func PaperTitleFrom(ctx context.Context) string {
+	if v, ok := ctx.Value(paperTitleCtxKey{}).(string); ok {
 		return v
 	}
 	return ""

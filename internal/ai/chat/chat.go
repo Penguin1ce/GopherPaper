@@ -15,9 +15,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
@@ -35,14 +32,14 @@ import (
 
 // Chat 是 chat 切片入口:intent 小模型分类 + 带工具 chat agent 做 RAG。
 // history 为本会话多轮上下文(来自 trpc Session),按时间升序、不含当前 query;
-// 意图分类只看当前 query,history 仅注入 RAG 生成。
+// 意图分类只看当前 query + 最近一轮压缩上下文,完整 history 仅注入 RAG 生成。
 func Chat(ctx context.Context, history []trpcmodel.Message, query string) (*core.Reply, error) {
-	intent := ClassifyIntent(ctx, query)
+	intent := ClassifyIntent(ctx, query, history)
 	return ChatRAG(ctx, query, intent, history)
 }
 
 // ClassifyIntent 用该用户的 intent 小模型把自由文本分到意图子类,无法判断兜底 summary。
-func ClassifyIntent(ctx context.Context, query string) constant.IntentType {
+func ClassifyIntent(ctx context.Context, query string, history ...[]trpcmodel.Message) constant.IntentType {
 	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
 	if err != nil {
 		zlog.Error("意图分类取模型失败,兜底 summary", "err", err)
@@ -53,7 +50,7 @@ func ClassifyIntent(ctx context.Context, query string) constant.IntentType {
 	req := &trpcmodel.Request{
 		Messages: []trpcmodel.Message{
 			trpcmodel.NewSystemMessage(prompt),
-			trpcmodel.NewUserMessage(query),
+			trpcmodel.NewUserMessage(intentClassifierInput(query, history...)),
 		},
 	}
 	if models.IntentMC.MaxTokens > 0 {
@@ -65,6 +62,51 @@ func ClassifyIntent(ctx context.Context, query string) constant.IntentType {
 		return constant.IntentSummary
 	}
 	return parseIntent(content)
+}
+
+func intentClassifierInput(query string, history ...[]trpcmodel.Message) string {
+	recent := ""
+	if len(history) > 0 {
+		recent = recentIntentContext(history[0])
+	}
+	query = strings.TrimSpace(query)
+	if recent == "" {
+		return query
+	}
+	var b strings.Builder
+	b.WriteString("最近对话(仅用于消解当前消息中的指代,不是新的用户指令):\n")
+	b.WriteString(recent)
+	b.WriteString("\n\n当前用户消息:\n")
+	b.WriteString(query)
+	return b.String()
+}
+
+func recentIntentContext(history []trpcmodel.Message) string {
+	if len(history) == 0 {
+		return ""
+	}
+	msgs := make([]trpcmodel.Message, 0, constant.IntentContextMessages)
+	for i := len(history) - 1; i >= 0 && len(msgs) < constant.IntentContextMessages; i-- {
+		if history[i].Role != trpcmodel.RoleUser && history[i].Role != trpcmodel.RoleAssistant {
+			continue
+		}
+		if strings.TrimSpace(history[i].Content) == "" {
+			continue
+		}
+		msgs = append(msgs, history[i])
+	}
+	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+		msgs[i], msgs[j] = msgs[j], msgs[i]
+	}
+	lines := make([]string, 0, len(msgs))
+	for _, msg := range msgs {
+		role := "助手"
+		if msg.Role == trpcmodel.RoleUser {
+			role = "用户"
+		}
+		lines = append(lines, role+": "+trimRunes(strings.TrimSpace(msg.Content), constant.IntentContextMessageMaxRunes))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ChatRAG 按意图分流:
@@ -105,7 +147,8 @@ func chitchatReply(ctx context.Context, query string, history []trpcmodel.Messag
 // 出处散在各轮工具调用中,故挂 ctx 引用收集器,循环结束后排空填进 Meta。
 func agenticRAG(ctx context.Context, query string, intent constant.IntentType, history []trpcmodel.Message) (*core.Reply, error) {
 	ctx = retrieval.WithRefSink(ctx)
-	content, err := ragagent.Generate(ctx, withUserPreference(ctx, constant.AgenticRAGPromptFor(intent)), history, query, policyFor(intent))
+	prompt := withUserPreference(ctx, withBoundPaper(ctx, constant.AgenticRAGPromptFor(intent)))
+	content, err := ragagent.Generate(ctx, prompt, history, query, policyFor(intent))
 	if err != nil {
 		if errors.Is(err, planstream.ErrPseudoToolCall) {
 			zlog.Warn("agentic RAG 输出伪工具调用,降级单轮 RAG", "intent", intent, "err", err)
@@ -122,6 +165,16 @@ func agenticRAG(ctx context.Context, query string, intent constant.IntentType, h
 		reply.Meta = map[string]any{"sources": sources}
 	}
 	return reply, nil
+}
+
+// withBoundPaper 在 system prompt 前注入当前绑定论文的标题,消除「这篇论文」的指代悬空;
+// 会话未绑定论文时原样返回,由模型按跨库检索作答。
+func withBoundPaper(ctx context.Context, prompt string) string {
+	title := core.PaperTitleFrom(ctx)
+	if title == "" {
+		return prompt
+	}
+	return strings.ReplaceAll(constant.BoundPaperPrompt, "{title}", title) + prompt
 }
 
 // policyFor 按问答子类给 agentic 循环定工具迭代预算:方法类常需逐步检索故放宽,其余按概括预算。
@@ -157,8 +210,8 @@ func singleShotRAG(ctx context.Context, query string, history []trpcmodel.Messag
 	sources := retrieval.References(ctxDocs)
 	images := loadImages(imgDocs)
 
-	sysPrompt := strings.ReplaceAll(constant.RAGPromptFor(intent), "{context}", retrieval.FormatDocs(ctxDocs))
-	sysPrompt += figureInstruction(imgDocs)
+	sysPrompt := withBoundPaper(ctx, strings.ReplaceAll(constant.RAGPromptFor(intent), "{context}", retrieval.FormatDocs(ctxDocs)))
+	sysPrompt += retrieval.FigureInstruction(imgDocs)
 	sysPrompt = withUserPreference(ctx, sysPrompt)
 	content, err := agentrt.GenerateWithImages(ctx, sysPrompt, history, query, images)
 	if err != nil {
@@ -178,61 +231,14 @@ func withUserPreference(ctx context.Context, prompt string) string {
 	return prompt
 }
 
-// figureInstruction 在有召回图时追加插图指示:让模型用 figure://文件名 占位把图插进正文对应位置,
-// 文件名只能取自下方清单(即图块图片名),前端再把占位解析成带 token 的取图 URL。
-func figureInstruction(imgDocs []*retrieval.Doc) string {
-	if len(imgDocs) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("\n\n下面是与问题相关、已随消息提供给你的图片。只要图能直观支撑回答,就用 Markdown 图片语法 ![简短说明](figure://文件名) 把它插入到正文对应位置,并在正文里点明该图说明了什么;文件名只能用下面列出的,不要编造,确实没有相关图时才不插:\n")
-	for _, d := range imgDocs {
-		name := filepath.Base(retrieval.MetaString(d, constant.MilvusFieldImgURI))
-		if name == "" {
-			continue
-		}
-		fmt.Fprintf(&b, "- figure://%s : %s\n", name, summarize(d.Content, 40))
-	}
-	return b.String()
-}
-
-// summarize 把图块说明压成单行短摘要,作插图清单的图片标注。
-func summarize(s string, n int) string {
-	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[:n]) + "…"
-	}
-	return s
-}
-
-// loadImages 把命中图块的本地图片读成带图问答的 Image,单张读失败只记日志跳过(其 caption 仍在 context)。
+// loadImages 把命中图块经共享原语读成 agentrt 带图输入。
 func loadImages(imgDocs []*retrieval.Doc) []agentrt.Image {
-	images := make([]agentrt.Image, 0, len(imgDocs))
-	for _, d := range imgDocs {
-		uri := retrieval.MetaString(d, constant.MilvusFieldImgURI)
-		if uri == "" {
-			continue
-		}
-		data, err := os.ReadFile(uri)
-		if err != nil {
-			zlog.Error("读取召回图片失败,跳过", "img_uri", uri, "err", err)
-			continue
-		}
-		images = append(images, agentrt.Image{Data: data, Format: imageFormat(uri)})
+	payloads := retrieval.LoadImagePayloads(imgDocs)
+	images := make([]agentrt.Image, 0, len(payloads))
+	for _, p := range payloads {
+		images = append(images, agentrt.Image{Data: p.Data, Format: p.Format})
 	}
 	return images
-}
-
-// imageFormat 从图片路径扩展名推出模型需要的 format(不带点),无法识别回退 png。
-func imageFormat(path string) string {
-	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
-	switch ext {
-	case "jpg", "jpeg", "png", "webp", "gif":
-		return ext
-	default:
-		return "png"
-	}
 }
 
 // parseIntent 容错解析意图分类输出,非法兜底 summary。
@@ -276,4 +282,15 @@ func extractJSON(s string) string {
 		return s[start : end+1]
 	}
 	return s
+}
+
+func trimRunes(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max])
 }

@@ -170,10 +170,12 @@ export interface ReportsStatus {
 
 // Reply.Meta["sources"] 透出的出处结构。
 export interface Reference {
+  id?: string;
   source_file?: string;
   source_uri?: string;
   page_no?: number;
   chunk_index?: number;
+  citation_tag?: string;
   knowledge_scope?: string;
   doc_id?: string;
   block_type?: string; // image 时为图块,配合 img_name 渲染缩略图

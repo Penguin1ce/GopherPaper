@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
+
+	"GopherPaper/internal/ai/core"
 	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/config"
 	"GopherPaper/internal/tenant"
@@ -83,6 +86,48 @@ func TestParseIntent(t *testing.T) {
 		if got := parseIntent(raw); got != want {
 			t.Errorf("parseIntent(%q) = %q, want %q", raw, got, want)
 		}
+	}
+}
+
+func TestIntentClassifierInputIncludesRecentContext(t *testing.T) {
+	history := []trpcmodel.Message{
+		{Role: trpcmodel.RoleUser, Content: "第一步是怎么做的?"},
+		{Role: trpcmodel.RoleAssistant, Content: "第一步是先构建检索索引。"},
+	}
+	got := intentClassifierInput("那第二个呢?", history)
+	for _, want := range []string{
+		"最近对话",
+		"用户: 第一步是怎么做的?",
+		"助手: 第一步是先构建检索索引。",
+		"当前用户消息:\n那第二个呢?",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("intentClassifierInput missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestIntentClassifierInputTrimsHistory(t *testing.T) {
+	long := strings.Repeat("很长", constant.IntentContextMessageMaxRunes)
+	got := recentIntentContext([]trpcmodel.Message{{Role: trpcmodel.RoleUser, Content: long}})
+	if len([]rune(got)) > constant.IntentContextMessageMaxRunes+len([]rune("用户: ")) {
+		t.Fatalf("recentIntentContext 未截断, runes=%d", len([]rune(got)))
+	}
+}
+
+// TestWithBoundPaper 验证 ctx 带论文标题时导语拼在 prompt 前,未绑定时原样返回。
+func TestWithBoundPaper(t *testing.T) {
+	base := constant.SummaryAgenticPrompt
+	if got := withBoundPaper(context.Background(), base); got != base {
+		t.Errorf("未绑定论文时 prompt 被改写")
+	}
+	ctx := core.WithPaperTitle(context.Background(), "Agent Security Bench")
+	got := withBoundPaper(ctx, base)
+	if !strings.HasPrefix(got, "当前会话已绑定论文《Agent Security Bench》") {
+		t.Errorf("导语未注入论文标题: %q", got[:min(len(got), 60)])
+	}
+	if !strings.HasSuffix(got, base) {
+		t.Errorf("原 prompt 未完整保留在导语之后")
 	}
 }
 
