@@ -368,27 +368,36 @@ export function ReportGallery() {
                   return (
                     <div
                       key={paper.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${compareMode ? "选择对比" : "选择论文"} ${paperTitle(paper)}`}
                       className={cn(
-                        "relative flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors",
+                        "relative flex w-full cursor-pointer select-none items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
                         active
                           ? "bg-card shadow-sm before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sienna"
                           : "hover:bg-accent/60",
                         selectedForCompare && "ring-1 ring-sienna/35",
                       )}
-                    >
-                      <button
-                        type="button"
-                        aria-label={`${compareMode ? "选择对比" : "选择论文"} ${paperTitle(paper)}`}
-                        className="absolute inset-0 rounded-md focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-                        onClick={() => {
+                      onClick={() => {
+                        if (compareMode) {
+                          toggleComparePaper(paper.id);
+                          return;
+                        }
+                        setActiveCompareReport(null);
+                        selectPaper(paper.id);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
                           if (compareMode) {
                             toggleComparePaper(paper.id);
                             return;
                           }
                           setActiveCompareReport(null);
                           selectPaper(paper.id);
-                        }}
-                      />
+                        }
+                      }}
+                    >
                       {compareMode ? (
                         <span className="relative z-10 mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-md text-sienna">
                           {selectedForCompare ? (
