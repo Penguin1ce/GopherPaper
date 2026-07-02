@@ -37,13 +37,14 @@ type MindMapReadingData struct {
 }
 
 type sectionBuildNode struct {
-	key        string
-	section    model.PaperSection
-	level      int
-	parentKey  string
-	children   []string
-	highlights []model.PaperAnnotation
-	include    bool
+	key         string
+	section     model.PaperSection
+	level       int
+	parentKey   string
+	children    []string
+	highlights  []model.PaperAnnotation
+	annotations []model.PaperAnnotation
+	include     bool
 }
 
 // BuildMindMapFromReadingData builds a deterministic graph from reading data only.
@@ -82,6 +83,10 @@ func BuildMindMapFromReadingData(in MindMapReadingData) model.MindMapGraph {
 			highlightIDs[h.ID] = true
 			addReadingMarkNode(&graph, excerptGroupID, 0, h, in.Annotations)
 		}
+		for _, ann := range standaloneAnnotations(in.Annotations, highlightIDs) {
+			highlightIDs[ann.ID] = true
+			addAnnotationNode(&graph, excerptGroupID, 0, ann)
+		}
 	} else {
 		for _, h := range in.Highlights {
 			highlightIDs[h.ID] = true
@@ -94,8 +99,20 @@ func BuildMindMapFromReadingData(in MindMapReadingData) model.MindMapGraph {
 			node.highlights = append(node.highlights, h)
 			markSectionIncluded(sections, key)
 		}
+		for _, ann := range standaloneAnnotations(in.Annotations, highlightIDs) {
+			highlightIDs[ann.ID] = true
+			key := matchSectionForHighlight(sections, sectionOrder, ann)
+			if key == "" {
+				unclassified = append(unclassified, ann)
+				continue
+			}
+			node := sections[key]
+			node.annotations = append(node.annotations, ann)
+			markSectionIncluded(sections, key)
+		}
 		for _, key := range sectionOrder {
 			sortHighlights(sections[key].highlights)
+			sortHighlights(sections[key].annotations)
 		}
 		appendIncludedSections(&graph, rootID, sections, sectionOrder, in.Annotations)
 	}
@@ -109,7 +126,11 @@ func BuildMindMapFromReadingData(in MindMapReadingData) model.MindMapGraph {
 		}))
 		graph.Edges = append(graph.Edges, newMindMapEdge(rootID, groupID, false))
 		for _, h := range unclassified {
-			addReadingMarkNode(&graph, groupID, 0, h, in.Annotations)
+			if mindMapAnnotationKind(h) == constant.AnnotationKindSelection {
+				addReadingMarkNode(&graph, groupID, 0, h, in.Annotations)
+			} else {
+				addAnnotationNode(&graph, groupID, 0, h)
+			}
 		}
 	}
 
@@ -210,15 +231,21 @@ func buildCurrentMindMap(ctx context.Context, ownerID, paperID string) (*model.M
 		return nil, err
 	}
 	sections = ensureMindMapSectionCoordinates(ctx, p, sections)
-	highlights, err := paperdao.ListAnnotations(ctx, paperID)
+	annotations, err := paperdao.ListAnnotations(ctx, paperID)
 	if err != nil {
 		return nil, err
 	}
-	notes := make([]model.PaperAnnotation, 0, len(highlights))
-	for _, h := range highlights {
-		if strings.TrimSpace(h.Note) != "" {
-			notes = append(notes, h)
+	highlights := make([]model.PaperAnnotation, 0, len(annotations))
+	notes := make([]model.PaperAnnotation, 0, len(annotations))
+	for _, ann := range annotations {
+		if mindMapAnnotationKind(ann) == constant.AnnotationKindSelection {
+			highlights = append(highlights, ann)
+			if strings.TrimSpace(ann.Note) != "" {
+				notes = append(notes, ann)
+			}
+			continue
 		}
+		notes = append(notes, ann)
 	}
 	graph := BuildMindMapFromReadingData(MindMapReadingData{
 		Paper:       p,
@@ -563,6 +590,9 @@ func appendIncludedSections(graph *model.MindMapGraph, rootID string, sections m
 		for _, h := range section.highlights {
 			addReadingMarkNode(graph, section.key, section.section.ID, h, annotations)
 		}
+		for _, ann := range section.annotations {
+			addAnnotationNode(graph, section.key, section.section.ID, ann)
+		}
 	}
 }
 
@@ -592,24 +622,27 @@ func addHighlightNode(graph *model.MindMapGraph, parentID string, sectionID uint
 }
 
 func addAnnotationNode(graph *model.MindMapGraph, parentID string, sectionID uint64, ann model.PaperAnnotation) {
-	note := strings.TrimSpace(ann.Note)
-	if note == "" {
+	label := annotationMindMapLabel(ann)
+	if label == "" {
 		return
 	}
 	rect := ann.BoundingRect
 	nodeID := annotationNodeID(ann.ID)
 	graph.Nodes = append(graph.Nodes, newMindMapNode(nodeID, constant.MindMapNodeAnnotation, parentID, model.MindMapNodeData{
-		Label:        note,
+		Label:        label,
 		ParentID:     parentID,
 		SectionID:    sectionID,
 		HighlightID:  ann.ID,
 		AnnotationID: ann.ID,
 		PageNumber:   ann.PageNo,
 		Text:         ann.Text,
-		Note:         note,
+		Note:         strings.TrimSpace(ann.Note),
 		Color:        ann.Color,
 		BoundingRect: &rect,
 		Rects:        append(model.AnnotationRects(nil), ann.Rects...),
+		Meta: map[string]any{
+			"kind": mindMapAnnotationKind(ann),
+		},
 	}))
 	graph.Edges = append(graph.Edges, newMindMapEdge(parentID, nodeID, false))
 }
@@ -626,10 +659,24 @@ func noteAnnotationForHighlight(h model.PaperAnnotation, annotations []model.Pap
 	return model.PaperAnnotation{}, false
 }
 
+func standaloneAnnotations(annotations []model.PaperAnnotation, linkedIDs map[uint64]bool) []model.PaperAnnotation {
+	out := make([]model.PaperAnnotation, 0)
+	for _, ann := range annotations {
+		if linkedIDs[ann.ID] {
+			continue
+		}
+		if mindMapAnnotationKind(ann) != constant.AnnotationKindSelection {
+			out = append(out, ann)
+		}
+	}
+	sortHighlights(out)
+	return out
+}
+
 func orphanNoteAnnotations(annotations []model.PaperAnnotation, highlightIDs map[uint64]bool) []model.PaperAnnotation {
 	out := make([]model.PaperAnnotation, 0)
 	for _, ann := range annotations {
-		if strings.TrimSpace(ann.Note) != "" && !highlightIDs[ann.ID] {
+		if (strings.TrimSpace(ann.Note) != "" || mindMapAnnotationKind(ann) != constant.AnnotationKindSelection) && !highlightIDs[ann.ID] {
 			out = append(out, ann)
 		}
 	}
@@ -640,11 +687,34 @@ func orphanNoteAnnotations(annotations []model.PaperAnnotation, highlightIDs map
 func countNoteAnnotations(annotations []model.PaperAnnotation) int {
 	n := 0
 	for _, ann := range annotations {
-		if strings.TrimSpace(ann.Note) != "" {
+		if strings.TrimSpace(ann.Note) != "" || mindMapAnnotationKind(ann) != constant.AnnotationKindSelection {
 			n++
 		}
 	}
 	return n
+}
+
+func mindMapAnnotationKind(ann model.PaperAnnotation) constant.AnnotationKind {
+	if ann.Kind == "" {
+		return constant.AnnotationKindSelection
+	}
+	if ann.Kind.Valid() {
+		return ann.Kind
+	}
+	return constant.AnnotationKindSelection
+}
+
+func annotationMindMapLabel(ann model.PaperAnnotation) string {
+	if note := strings.TrimSpace(ann.Note); note != "" {
+		return note
+	}
+	if text := strings.TrimSpace(ann.Text); text != "" {
+		return text
+	}
+	if mindMapAnnotationKind(ann) == constant.AnnotationKindDrawing {
+		return "手绘标注"
+	}
+	return ""
 }
 
 func sortHighlights(items []model.PaperAnnotation) {

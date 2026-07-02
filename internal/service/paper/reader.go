@@ -13,29 +13,36 @@ import (
 )
 
 const (
-	defaultAnnotationColor        = "yellow"
+	defaultAnnotationColor        = string(constant.AnnotationColorYellow)
 	maxAnnotationNoteRunes        = 2000
 	maxAnnotationTranslationRunes = constant.MaxTranslateRunes * 2
+	maxAnnotationContentRunes     = 2 << 20
 )
-
-var annotationColors = map[string]bool{
-	"yellow": true,
-	"blue":   true,
-	"green":  true,
-	"pink":   true,
-	"purple": true,
-	"orange": true,
-}
 
 // AnnotationInput 是创建精读批注所需的业务字段。
 type AnnotationInput struct {
 	PageNo       int
+	Kind         constant.AnnotationKind
 	Text         string
 	Note         string
 	Translation  string
 	Color        string
 	BoundingRect model.AnnotationRect
 	Rects        model.AnnotationRects
+	StyleJSON    model.JSONMap
+	ContentJSON  model.JSONMap
+}
+
+// AnnotationUpdateInput 是更新精读批注的可编辑字段。
+type AnnotationUpdateInput struct {
+	Text         *string
+	Note         *string
+	Translation  *string
+	Color        *string
+	BoundingRect *model.AnnotationRect
+	Rects        *model.AnnotationRects
+	StyleJSON    *model.JSONMap
+	ContentJSON  *model.JSONMap
 }
 
 // UpdateReadProgress 保存某篇论文的最近阅读页与百分比进度。
@@ -87,6 +94,7 @@ func CreateAnnotation(ctx context.Context, ownerID, paperID string, in Annotatio
 	annotation := &model.PaperAnnotation{
 		PaperID:      paperID,
 		OwnerID:      ownerID,
+		Kind:         in.Kind,
 		PageNo:       in.PageNo,
 		Text:         in.Text,
 		Note:         in.Note,
@@ -94,6 +102,8 @@ func CreateAnnotation(ctx context.Context, ownerID, paperID string, in Annotatio
 		Color:        in.Color,
 		BoundingRect: in.BoundingRect,
 		Rects:        in.Rects,
+		StyleJSON:    in.StyleJSON,
+		ContentJSON:  in.ContentJSON,
 	}
 	if err := paperdao.CreateAnnotation(ctx, annotation); err != nil {
 		return nil, err
@@ -101,8 +111,8 @@ func CreateAnnotation(ctx context.Context, ownerID, paperID string, in Annotatio
 	return annotation, nil
 }
 
-// UpdateAnnotation 更新批注颜色或笔记。
-func UpdateAnnotation(ctx context.Context, ownerID, paperID string, annotationID uint64, note, translation, color *string) (*model.PaperAnnotation, error) {
+// UpdateAnnotation 更新批注内容、位置或样式。
+func UpdateAnnotation(ctx context.Context, ownerID, paperID string, annotationID uint64, in AnnotationUpdateInput) (*model.PaperAnnotation, error) {
 	if _, err := owned(ctx, ownerID, paperID); err != nil {
 		return nil, err
 	}
@@ -111,29 +121,72 @@ func UpdateAnnotation(ctx context.Context, ownerID, paperID string, annotationID
 		return nil, err
 	}
 	fields := map[string]any{}
-	if note != nil {
-		value := strings.TrimSpace(*note)
+	kind := normalizeAnnotationKind(annotation.Kind)
+	if in.Text != nil {
+		value := strings.TrimSpace(*in.Text)
+		if annotationTextRequired(kind) && value == "" {
+			return nil, fmt.Errorf("service/paper: 批注文本为空")
+		}
+		if value != "" && runeLen(value) > constant.MaxTranslateRunes {
+			return nil, fmt.Errorf("service/paper: 批注文本过长")
+		}
+		fields["text"] = value
+		annotation.Text = value
+	}
+	if in.Note != nil {
+		value := strings.TrimSpace(*in.Note)
 		if runeLen(value) > maxAnnotationNoteRunes {
 			return nil, fmt.Errorf("service/paper: 批注笔记过长")
 		}
 		fields["note"] = value
 		annotation.Note = value
 	}
-	if translation != nil {
-		value, err := normalizeAnnotationTranslation(*translation)
+	if in.Translation != nil {
+		value, err := normalizeAnnotationTranslation(*in.Translation)
 		if err != nil {
 			return nil, err
 		}
 		fields["translation"] = value
 		annotation.Translation = value
 	}
-	if color != nil {
-		value, err := normalizeAnnotationColor(*color)
+	if in.Color != nil {
+		value, err := normalizeAnnotationColor(*in.Color)
 		if err != nil {
 			return nil, err
 		}
 		fields["color"] = value
 		annotation.Color = value
+	}
+	if in.BoundingRect != nil {
+		if err := validateAnnotationRect(*in.BoundingRect, annotation.PageNo); err != nil {
+			return nil, err
+		}
+		fields["bounding_rect"] = *in.BoundingRect
+		annotation.BoundingRect = *in.BoundingRect
+	}
+	if in.Rects != nil {
+		rects := normalizeAnnotationRects(*in.Rects, annotation.BoundingRect)
+		for _, rect := range rects {
+			if err := validateAnnotationRect(rect, annotation.PageNo); err != nil {
+				return nil, fmt.Errorf("service/paper: 批注坐标无效")
+			}
+		}
+		fields["rects"] = rects
+		annotation.Rects = rects
+	}
+	if in.StyleJSON != nil {
+		fields["style_json"] = *in.StyleJSON
+		annotation.StyleJSON = *in.StyleJSON
+	}
+	if in.ContentJSON != nil {
+		if err := validateAnnotationContent(kind, *in.ContentJSON); err != nil {
+			return nil, err
+		}
+		fields["content_json"] = *in.ContentJSON
+		annotation.ContentJSON = *in.ContentJSON
+	}
+	if err := validateAnnotationByKind(kind, annotation.Text, annotation.ContentJSON); err != nil {
+		return nil, err
 	}
 	if err := paperdao.UpdateAnnotation(ctx, annotationID, fields); err != nil {
 		return nil, err
@@ -167,6 +220,7 @@ func ownedAnnotation(ctx context.Context, ownerID, paperID string, annotationID 
 }
 
 func normalizeAnnotationInput(in AnnotationInput) (AnnotationInput, error) {
+	in.Kind = normalizeAnnotationKind(in.Kind)
 	in.Text = strings.TrimSpace(in.Text)
 	in.Note = strings.TrimSpace(in.Note)
 	var err error
@@ -177,11 +231,11 @@ func normalizeAnnotationInput(in AnnotationInput) (AnnotationInput, error) {
 	if in.PageNo <= 0 {
 		return in, fmt.Errorf("service/paper: 批注页码无效")
 	}
-	if in.Text == "" {
-		return in, fmt.Errorf("service/paper: 批注原文为空")
+	if err := validateAnnotationByKind(in.Kind, in.Text, in.ContentJSON); err != nil {
+		return in, err
 	}
-	if runeLen(in.Text) > constant.MaxTranslateRunes {
-		return in, fmt.Errorf("service/paper: 批注原文过长")
+	if in.Text != "" && runeLen(in.Text) > constant.MaxTranslateRunes {
+		return in, fmt.Errorf("service/paper: 批注文本过长")
 	}
 	if runeLen(in.Note) > maxAnnotationNoteRunes {
 		return in, fmt.Errorf("service/paper: 批注笔记过长")
@@ -191,16 +245,17 @@ func normalizeAnnotationInput(in AnnotationInput) (AnnotationInput, error) {
 		return in, err
 	}
 	in.Color = color
-	if len(in.Rects) == 0 {
-		return in, fmt.Errorf("service/paper: 批注位置为空")
-	}
 	if err := validateAnnotationRect(in.BoundingRect, in.PageNo); err != nil {
 		return in, err
 	}
+	in.Rects = normalizeAnnotationRects(in.Rects, in.BoundingRect)
 	for _, rect := range in.Rects {
 		if err := validateAnnotationRect(rect, in.PageNo); err != nil {
 			return in, fmt.Errorf("service/paper: 批注坐标无效")
 		}
+	}
+	if err := validateAnnotationContent(in.Kind, in.ContentJSON); err != nil {
+		return in, err
 	}
 	return in, nil
 }
@@ -210,10 +265,70 @@ func normalizeAnnotationColor(color string) (string, error) {
 	if color == "" {
 		return defaultAnnotationColor, nil
 	}
-	if !annotationColors[color] {
+	if !constant.AnnotationColor(color).Valid() {
 		return "", fmt.Errorf("service/paper: 不支持的批注颜色")
 	}
 	return color, nil
+}
+
+func normalizeAnnotationKind(kind constant.AnnotationKind) constant.AnnotationKind {
+	if kind == "" {
+		return constant.AnnotationKindSelection
+	}
+	if kind.Valid() {
+		return kind
+	}
+	return constant.AnnotationKind("")
+}
+
+func annotationTextRequired(kind constant.AnnotationKind) bool {
+	return kind == constant.AnnotationKindSelection || kind == constant.AnnotationKindFreetext
+}
+
+func normalizeAnnotationRects(rects model.AnnotationRects, fallback model.AnnotationRect) model.AnnotationRects {
+	if len(rects) > 0 {
+		return rects
+	}
+	return model.AnnotationRects{fallback}
+}
+
+func validateAnnotationByKind(kind constant.AnnotationKind, text string, content model.JSONMap) error {
+	if !kind.Valid() {
+		return fmt.Errorf("service/paper: 不支持的批注类型")
+	}
+	if annotationTextRequired(kind) && strings.TrimSpace(text) == "" {
+		return fmt.Errorf("service/paper: 批注文本为空")
+	}
+	if kind == constant.AnnotationKindDrawing {
+		return validateDrawingContent(content)
+	}
+	return nil
+}
+
+func validateAnnotationContent(kind constant.AnnotationKind, content model.JSONMap) error {
+	if content == nil {
+		content = model.JSONMap{}
+	}
+	if runeLen(fmt.Sprint(content)) > maxAnnotationContentRunes {
+		return fmt.Errorf("service/paper: 批注内容过大")
+	}
+	if kind == constant.AnnotationKindDrawing {
+		return validateDrawingContent(content)
+	}
+	return nil
+}
+
+func validateDrawingContent(content model.JSONMap) error {
+	if content == nil {
+		return fmt.Errorf("service/paper: 绘图内容为空")
+	}
+	if image, ok := content["image"].(string); ok && strings.HasPrefix(image, "data:image/") {
+		return nil
+	}
+	if strokes, ok := content["strokes"].([]any); ok && len(strokes) > 0 {
+		return nil
+	}
+	return fmt.Errorf("service/paper: 绘图内容为空")
 }
 
 func normalizeAnnotationTranslation(translation string) (string, error) {

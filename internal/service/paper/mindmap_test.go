@@ -134,6 +134,34 @@ func TestBuildMindMapFromReadingDataUsesSectionYOnSamePage(t *testing.T) {
 	}
 }
 
+func TestBuildMindMapFromReadingDataClassifiesFreetextAndDrawingByY(t *testing.T) {
+	graph := BuildMindMapFromReadingData(MindMapReadingData{
+		Paper: &model.Paper{ID: "paper-marks", Title: "Marks"},
+		Outline: []model.PaperSection{
+			sectionAtY(200, "paper-marks", 1, "2 Related Work", 4, 1, 89),
+			sectionAtY(300, "paper-marks", 1, "3 Method", 4, 2, 713),
+		},
+		Annotations: []model.PaperAnnotation{
+			annotationAtKind(31, 4, 240, "边读边写", "yellow", "", constant.AnnotationKindFreetext),
+			annotationAtKind(32, 4, 740, "", "red", "", constant.AnnotationKindDrawing),
+		},
+	})
+
+	freetext := requireNode(t, graph, "annotation:31")
+	if freetext.Data.SectionID != 200 || freetext.Data.Label != "边读边写" {
+		t.Fatalf("freetext node mismatch: %#v", freetext.Data)
+	}
+	drawing := requireNode(t, graph, "annotation:32")
+	if drawing.Data.SectionID != 300 || drawing.Data.Label != "手绘标注" {
+		t.Fatalf("drawing node mismatch: %#v", drawing.Data)
+	}
+	requireEdge(t, graph, "section:200", "annotation:31")
+	requireEdge(t, graph, "section:300", "annotation:32")
+	if hasNode(graph, "group:orphan-annotations") {
+		t.Fatal("classified freetext/drawing annotations should not be duplicated as orphans")
+	}
+}
+
 func TestBuildMindMapFromReadingDataKeepsOrphanAnnotations(t *testing.T) {
 	graph := BuildMindMapFromReadingData(MindMapReadingData{
 		Paper:      &model.Paper{ID: "paper-3", Title: "Orphans"},
@@ -191,10 +219,15 @@ func sectionAtY(id uint64, paperID string, level int, title string, page, order 
 }
 
 func annotationAt(id uint64, page int, y float64, text, color, note string) model.PaperAnnotation {
+	return annotationAtKind(id, page, y, text, color, note, constant.AnnotationKindSelection)
+}
+
+func annotationAtKind(id uint64, page int, y float64, text, color, note string, kind constant.AnnotationKind) model.PaperAnnotation {
 	return model.PaperAnnotation{
 		ID:      id,
 		PaperID: "paper-1",
 		OwnerID: "student-1",
+		Kind:    kind,
 		PageNo:  page,
 		Text:    text,
 		Note:    note,

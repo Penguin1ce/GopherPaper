@@ -232,17 +232,22 @@ export interface AnnotationRect {
   pageNumber: number;
 }
 
+export type PaperAnnotationKind = "selection" | "freetext" | "drawing";
+
 export interface PaperAnnotation {
   id: number;
   paper_id: string;
   owner_id: string;
+  kind?: PaperAnnotationKind | string;
   page_no: number;
   text: string;
   note?: string;
   translation?: string;
-  color: "yellow" | "blue" | "green" | "pink" | "purple" | "orange" | string;
+  color: string;
   bounding_rect: AnnotationRect;
   rects: AnnotationRect[];
+  style_json?: Record<string, unknown>;
+  content_json?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }

@@ -92,12 +92,15 @@ export function createAnnotation(
   id: string,
   payload: {
     page_no: number;
+    kind?: string;
     text: string;
     note?: string;
     translation?: string;
     color?: string;
     bounding_rect: AnnotationRect;
     rects: AnnotationRect[];
+    style_json?: Record<string, unknown>;
+    content_json?: Record<string, unknown>;
   },
 ) {
   return request<PaperAnnotation>(`/papers/${encodeURIComponent(id)}/annotations`, {
@@ -109,7 +112,16 @@ export function createAnnotation(
 export function updateAnnotation(
   id: string,
   annotationID: number,
-  payload: { note?: string; translation?: string; color?: string },
+  payload: {
+    text?: string;
+    note?: string;
+    translation?: string;
+    color?: string;
+    bounding_rect?: AnnotationRect;
+    rects?: AnnotationRect[];
+    style_json?: Record<string, unknown>;
+    content_json?: Record<string, unknown>;
+  },
 ) {
   return request<PaperAnnotation>(
     `/papers/${encodeURIComponent(id)}/annotations/${encodeURIComponent(annotationID)}`,

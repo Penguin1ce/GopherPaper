@@ -1,34 +1,17 @@
 "use client";
 
+import "@/lib/pdfjs-global";
 import {
-  ArrowLeft,
   ArrowUp,
-  BookMarked,
   Check,
-  ChevronLeft,
   ChevronRight,
-  Languages,
   ListTree,
   Loader2,
-  Maximize2,
-  MessageCircleQuestionMark,
   MessageSquarePlus,
-  Minus,
-  MoreHorizontal,
-  Network,
-  NotebookPen,
-  Palette,
   Plus,
-  Trash2,
   X,
 } from "lucide-react";
-import {
-  GlobalWorkerOptions,
-  getDocument,
-  type OnProgressParameters,
-  type PDFDocumentProxy,
-} from "pdfjs-dist";
-import type { DocumentInitParameters } from "pdfjs-dist/types/src/display/api";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import { PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
 import {
   useCallback,
@@ -37,25 +20,19 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type FormEvent,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode,
 } from "react";
 import {
-  MonitoredHighlightContainer,
-  PdfHighlighter,
-  TextHighlight,
-  scaledPositionToViewport,
-  useHighlightContainerContext,
-  usePdfHighlighterContext,
-  type Highlight,
+  type DrawingStroke,
   type PdfHighlighterUtils,
   type PdfScaleValue,
   type PdfSelection,
   type Scaled,
+  type ScaledPosition,
 } from "react-pdf-highlighter-plus";
 import "pdfjs-dist/web/pdf_viewer.css";
 import "react-pdf-highlighter-plus/style/style.css";
+import "./components/reader-overrides.css";
 
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/gopherpaper/markdown";
@@ -67,20 +44,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import * as api from "@/lib/gopherpaper/api";
 import { useApp } from "@/lib/gopherpaper/store";
 import type {
@@ -93,9 +58,36 @@ import type {
   Reference,
 } from "@/lib/gopherpaper/types";
 import { cn } from "@/lib/utils";
+import {
+  ReaderLeftRail as CompactReaderLeftRail,
+  ReaderToolbar as CompactReaderToolbar,
+} from "./components/reader-toolbar";
+import {
+  ReaderPdf as InteractiveReaderPdf,
+  annotationToHighlight as splitAnnotationToHighlight,
+  scrollHighlightToTop as scrollSplitHighlightToTop,
+} from "./components/reader-pdf";
+import { ReaderSidePanel as SplitReaderSidePanel } from "./components/reader-side-panel";
+import {
+  DEFAULT_DRAWING_SIZE,
+  DEFAULT_TEXT_SIZE,
+  DRAWING_LABEL,
+  FREETEXT_CREATE_TEXT,
+  FREETEXT_EMPTY_DRAFT,
+  COLOR_KEYS as READER_COLOR_KEYS,
+  annotationKind,
+  defaultFreetextPosition,
+  drawingStyle,
+  drawingStyleForColor,
+  freetextStyle,
+  freetextStyleForColor,
+  normalizeFreetextText,
+  positionToRects,
+  type AnnotationColor as ReaderAnnotationColor,
+  type ReaderTool,
+} from "./lib/annotations";
 
 const AUTH_KEY = "gopherpaper.auth";
-const PDF_WORKER = "/pdfjs/pdf.worker.min.mjs";
 const PDF_VIEWER_PATCH_FLAG = "__gopherpaperSkipSameDocumentSet";
 const READER_PREFS_KEY = "gopherpaper.reader.preferences";
 const RIGHT_PANEL_WIDTH = "24rem";
@@ -107,6 +99,8 @@ const PDF_MAX_SCALE = 2.4;
 const LOCATE_TOP_GAP = 32;
 const LOCATED_ANNOTATION_SCROLL_RESUME_MS = 600;
 const QA_SELECTION_PREVIEW_RUNES = 48;
+const FREETEXT_DUPLICATE_POSITION_EPSILON = 8;
+const FREETEXT_CREATE_COOLDOWN_MS = 800;
 
 type PatchablePDFViewer = {
   pdfDocument?: PDFDocumentProxy | null;
@@ -114,7 +108,16 @@ type PatchablePDFViewer = {
   [PDF_VIEWER_PATCH_FLAG]?: boolean;
 };
 
-type AnnotationColor = "yellow" | "blue" | "green" | "pink" | "purple" | "orange";
+type AnnotationColor =
+  | "yellow"
+  | "red"
+  | "green"
+  | "blue"
+  | "purple"
+  | "magenta"
+  | "orange"
+  | "gray"
+  | "black";
 
 const COLOR_META: Record<
   AnnotationColor,
@@ -124,6 +127,11 @@ const COLOR_META: Record<
     label: "黄色",
     className: "bg-amber-300",
     value: "rgba(255, 226, 143, 0.62)",
+  },
+  red: {
+    label: "红色",
+    className: "bg-red-400",
+    value: "rgba(248, 113, 113, 0.5)",
   },
   blue: {
     label: "蓝色",
@@ -135,20 +143,30 @@ const COLOR_META: Record<
     className: "bg-emerald-300",
     value: "rgba(134, 239, 172, 0.5)",
   },
-  pink: {
-    label: "粉色",
-    className: "bg-rose-300",
-    value: "rgba(253, 164, 175, 0.5)",
-  },
   purple: {
     label: "紫色",
     className: "bg-violet-300",
     value: "rgba(196, 181, 253, 0.54)",
   },
+  magenta: {
+    label: "洋红色",
+    className: "bg-fuchsia-400",
+    value: "rgba(217, 70, 239, 0.38)",
+  },
   orange: {
     label: "橙色",
     className: "bg-orange-300",
     value: "rgba(253, 186, 116, 0.56)",
+  },
+  gray: {
+    label: "灰色",
+    className: "bg-neutral-400",
+    value: "rgba(163, 163, 163, 0.45)",
+  },
+  black: {
+    label: "黑色",
+    className: "bg-black",
+    value: "rgba(24, 24, 27, 0.3)",
   },
 };
 
@@ -160,7 +178,10 @@ interface ReaderPreferences {
   annotationsOpen: boolean;
   mindMapOpen: boolean;
   qaOpen: boolean;
-  color: AnnotationColor;
+  color: ReaderAnnotationColor;
+  activeTool: ReaderTool;
+  textSize: number;
+  drawingSize: number;
 }
 
 const DEFAULT_PREFS: ReaderPreferences = {
@@ -170,7 +191,17 @@ const DEFAULT_PREFS: ReaderPreferences = {
   mindMapOpen: false,
   qaOpen: false,
   color: "yellow",
+  activeTool: "select",
+  textSize: DEFAULT_TEXT_SIZE,
+  drawingSize: DEFAULT_DRAWING_SIZE,
 };
+
+interface RecentFreetextCreate {
+  pageNumber: number;
+  x1: number;
+  y1: number;
+  until: number;
+}
 
 function patchPdfViewerSetDocument() {
   const prototype = PDFViewer.prototype as unknown as PatchablePDFViewer;
@@ -214,11 +245,23 @@ function loadReaderPreferences(): ReaderPreferences {
     const raw = localStorage.getItem(READER_PREFS_KEY);
     if (!raw) return DEFAULT_PREFS;
     const saved = JSON.parse(raw) as Partial<ReaderPreferences>;
-    const color = COLOR_KEYS.includes(saved.color as AnnotationColor)
-      ? (saved.color as AnnotationColor)
+    const color = READER_COLOR_KEYS.includes(saved.color as ReaderAnnotationColor)
+      ? (saved.color as ReaderAnnotationColor)
       : DEFAULT_PREFS.color;
     const mindMapOpen = saved.mindMapOpen ?? DEFAULT_PREFS.mindMapOpen;
     const qaOpen = mindMapOpen ? false : (saved.qaOpen ?? DEFAULT_PREFS.qaOpen);
+    const activeTool =
+      saved.activeTool === "freetext" || saved.activeTool === "drawing" || saved.activeTool === "select"
+        ? saved.activeTool
+        : DEFAULT_PREFS.activeTool;
+    const textSize =
+      typeof saved.textSize === "number" && Number.isFinite(saved.textSize)
+        ? clamp(saved.textSize, 10, 28)
+        : DEFAULT_PREFS.textSize;
+    const drawingSize =
+      typeof saved.drawingSize === "number" && Number.isFinite(saved.drawingSize)
+        ? clamp(saved.drawingSize, 1, 8)
+        : DEFAULT_PREFS.drawingSize;
     return {
       outlineOpen: saved.outlineOpen ?? DEFAULT_PREFS.outlineOpen,
       translateOpen: mindMapOpen || qaOpen ? false : (saved.translateOpen ?? DEFAULT_PREFS.translateOpen),
@@ -226,6 +269,9 @@ function loadReaderPreferences(): ReaderPreferences {
       mindMapOpen,
       qaOpen,
       color,
+      activeTool,
+      textSize,
+      drawingSize,
     };
   } catch {
     localStorage.removeItem(READER_PREFS_KEY);
@@ -237,24 +283,8 @@ function paperName(paper: Paper | null, fallback = "") {
   return paper?.title || paper?.file_name || fallback || "论文精读";
 }
 
-function colorValue(color?: string) {
-  return COLOR_META[(color as AnnotationColor) || "yellow"]?.value || COLOR_META.yellow.value;
-}
-
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
-}
-
-function rectToScaled(rect: AnnotationRect): Scaled {
-  return {
-    x1: rect.x1,
-    y1: rect.y1,
-    x2: rect.x2,
-    y2: rect.y2,
-    width: rect.width,
-    height: rect.height,
-    pageNumber: rect.pageNumber,
-  };
 }
 
 function scaledToRect(rect: Scaled): AnnotationRect {
@@ -269,50 +299,115 @@ function scaledToRect(rect: Scaled): AnnotationRect {
   };
 }
 
-interface ReaderHighlight extends Highlight {
-  type: "text";
-  annotation: PaperAnnotation;
-  content: { text: string };
+const RECT_EPSILON = 0.0001;
+const RECT_NUMBER_FIELDS = ["x1", "y1", "x2", "y2", "width", "height"] as const;
+
+function sameAnnotationRect(a: AnnotationRect, b: AnnotationRect) {
+  return (
+    a.pageNumber === b.pageNumber &&
+    RECT_NUMBER_FIELDS.every((field) => Math.abs(a[field] - b[field]) <= RECT_EPSILON)
+  );
 }
 
-function annotationToHighlight(annotation: PaperAnnotation): ReaderHighlight {
+function sameAnnotationRects(a: AnnotationRect[] | undefined, b: AnnotationRect[]) {
+  if ((a?.length ?? 0) !== b.length) return false;
+  return b.every((rect, index) => {
+    const candidate = a?.[index];
+    return candidate != null && sameAnnotationRect(candidate, rect);
+  });
+}
+
+function annotationUpdatedAt(annotation: PaperAnnotation) {
+  const updated = Date.parse(annotation.updated_at || "");
+  if (Number.isFinite(updated)) return updated;
+  const created = Date.parse(annotation.created_at || "");
+  return Number.isFinite(created) ? created : 0;
+}
+
+function isDraftFreetext(annotation: PaperAnnotation) {
+  const text = normalizeFreetextText(annotation.text);
+  return !text || text === FREETEXT_CREATE_TEXT;
+}
+
+function sameDraftFreetextLayer(a: PaperAnnotation, b: PaperAnnotation) {
+  if (annotationKind(a) !== "freetext" || annotationKind(b) !== "freetext") return false;
+  if (!isDraftFreetext(a) && !isDraftFreetext(b)) return false;
+  const ar = a.bounding_rect;
+  const br = b.bounding_rect;
+  return (
+    ar.pageNumber === br.pageNumber &&
+    Math.abs(ar.x1 - br.x1) <= FREETEXT_DUPLICATE_POSITION_EPSILON &&
+    Math.abs(ar.y1 - br.y1) <= FREETEXT_DUPLICATE_POSITION_EPSILON
+  );
+}
+
+function shouldPreferFreetext(candidate: PaperAnnotation, existing: PaperAnnotation) {
+  const candidateDraft = isDraftFreetext(candidate);
+  const existingDraft = isDraftFreetext(existing);
+  if (candidateDraft !== existingDraft) return !candidateDraft;
+  const candidateTime = annotationUpdatedAt(candidate);
+  const existingTime = annotationUpdatedAt(existing);
+  return candidateTime > existingTime || (candidateTime === existingTime && candidate.id > existing.id);
+}
+
+function visibleReaderAnnotations(items: PaperAnnotation[]) {
+  const result: PaperAnnotation[] = [];
+  const indexById = new Map<number, number>();
+  const freetextIndexes: number[] = [];
+
+  for (const item of items) {
+    const duplicatedIndex = indexById.get(item.id);
+    if (duplicatedIndex != null) {
+      if (annotationUpdatedAt(item) >= annotationUpdatedAt(result[duplicatedIndex])) {
+        result[duplicatedIndex] = item;
+      }
+      continue;
+    }
+
+    if (annotationKind(item) !== "freetext") {
+      indexById.set(item.id, result.length);
+      result.push(item);
+      continue;
+    }
+
+    const existingIndex = freetextIndexes.find((index) => sameDraftFreetextLayer(result[index], item));
+    if (existingIndex == null) {
+      indexById.set(item.id, result.length);
+      freetextIndexes.push(result.length);
+      result.push(item);
+      continue;
+    }
+
+    const existing = result[existingIndex];
+    if (shouldPreferFreetext(item, existing)) {
+      result[existingIndex] = item;
+    }
+  }
+
+  return result;
+}
+
+function annotationWithPosition(
+  annotation: PaperAnnotation,
+  boundingRect: AnnotationRect,
+  rects: AnnotationRect[],
+): PaperAnnotation {
   return {
-    id: String(annotation.id),
-    type: "text",
-    annotation,
-    content: { text: annotation.text },
-    position: {
-      boundingRect: rectToScaled(annotation.bounding_rect),
-      rects: annotation.rects.map(rectToScaled),
-    },
+    ...annotation,
+    page_no: boundingRect.pageNumber,
+    bounding_rect: boundingRect,
+    rects,
   };
 }
 
-function scrollHighlightToTop(
-  utils: PdfHighlighterUtils,
-  highlight: ReaderHighlight,
-): HTMLElement | null {
-  const viewer = utils.getViewer();
-  if (!viewer) return null;
-  const pageNumber = highlight.position.boundingRect.pageNumber;
-  const pageView = viewer.getPageView(pageNumber - 1);
-  const viewport = pageView?.viewport;
-  if (!viewport) return null;
-  const viewportPosition = scaledPositionToViewport(highlight.position, viewer);
-
-  viewer.scrollPageIntoView({
-    pageNumber,
-    destArray: [
-      null,
-      { name: "XYZ" },
-        ...viewport.convertToPdfPoint(
-          0,
-          Math.max(0, viewportPosition.boundingRect.top - LOCATE_TOP_GAP),
-        ),
-      0,
-    ],
-  });
-  return viewer.container ?? null;
+function isRecentFreetextCreate(recent: RecentFreetextCreate | null, rect: AnnotationRect) {
+  return Boolean(
+    recent &&
+      Date.now() < recent.until &&
+      recent.pageNumber === rect.pageNumber &&
+      Math.abs(recent.x1 - rect.x1) <= FREETEXT_DUPLICATE_POSITION_EPSILON &&
+      Math.abs(recent.y1 - rect.y1) <= FREETEXT_DUPLICATE_POSITION_EPSILON,
+  );
 }
 
 interface TranslationResult {
@@ -321,13 +416,6 @@ interface TranslationResult {
   pageNo: number;
   loading: boolean;
   error: string;
-}
-
-type EventBusCallback = (evt: { pageNumber?: number } | unknown) => void;
-
-interface EventBusLike {
-  on: (event: string, callback: EventBusCallback) => void;
-  off: (event: string, callback: EventBusCallback) => void;
 }
 
 interface PdfViewerScaleLike {
@@ -353,21 +441,10 @@ interface OutlineNode extends OutlineEntry {
   children: OutlineNode[];
 }
 
-function isEventBus(value: unknown): value is EventBusLike {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as { on?: unknown; off?: unknown };
-  return typeof candidate.on === "function" && typeof candidate.off === "function";
-}
-
 function pdfViewerWithScale(utils: PdfHighlighterUtils | null): PdfViewerScaleLike | null {
   const viewer = utils?.getViewer();
   if (!viewer || typeof viewer !== "object") return null;
   return viewer as PdfViewerScaleLike;
-}
-
-function toPdfError(error: unknown): Error {
-  if (error instanceof Error) return error;
-  return new Error(String(error || "PDF 加载失败"));
 }
 
 function splitSectionNumber(title: string): { number: string; title: string } | null {
@@ -640,49 +717,6 @@ async function extractPdfOutline(pdfDocument: PDFDocumentProxy, paperID: string)
   return sections;
 }
 
-function ToolbarButton({
-  label,
-  active,
-  disabled,
-  onClick,
-  children,
-}: {
-  label: string;
-  active?: boolean;
-  disabled?: boolean;
-  onClick?: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            variant={active ? "secondary" : "ghost"}
-            size="icon-sm"
-            disabled={disabled}
-            aria-label={label}
-            aria-pressed={active}
-            className={cn(
-              "size-8 rounded-md text-muted-foreground hover:text-foreground",
-              active && "text-foreground",
-            )}
-          >
-            {children}
-          </Button>
-        }
-        onClick={onClick}
-      />
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-function ToolbarDivider() {
-  return <span className="mx-1 h-6 w-px bg-border" aria-hidden="true" />;
-}
-
 function ColorSwatches({
   value,
   onChange,
@@ -723,124 +757,116 @@ function ColorSwatches({
   );
 }
 
-function ReaderToolbar({
-  title,
-  currentPage,
-  numPages,
-  pageDraft,
-  scaleValue,
-  prefs,
-  onClose,
-  onPrevPage,
-  onNextPage,
-  onPageDraftChange,
-  onPageSubmit,
-  onZoomIn,
-  onZoomOut,
-  onResetZoom,
-  onFitWidth,
-  onToggleTranslate,
-  onToggleAnnotations,
-  onToggleMindMap,
-  onToggleQA,
-  onColorChange,
-}: {
-  title: string;
-  currentPage: number;
-  numPages: number;
-  pageDraft: string;
-  scaleValue: PdfScaleValue;
-  prefs: ReaderPreferences;
-  onClose: () => void;
-  onPrevPage: () => void;
-  onNextPage: () => void;
-  onPageDraftChange: (value: string) => void;
-  onPageSubmit: () => void;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onResetZoom: () => void;
-  onFitWidth: () => void;
-  onToggleTranslate: () => void;
-  onToggleAnnotations: () => void;
-  onToggleMindMap: () => void;
-  onToggleQA: () => void;
-  onColorChange: (color: AnnotationColor) => void;
-}) {
-  const zoomText = typeof scaleValue === "number" ? `${Math.round(scaleValue * 100)}%` : "适宽";
+async function annotationColorPatch(
+  annotation: PaperAnnotation,
+  color: ReaderAnnotationColor,
+): Promise<Parameters<typeof api.updateAnnotation>[2]> {
+  if (annotation.kind === "freetext") {
+    const current = freetextStyle(annotation);
+    return {
+      color,
+      style_json: {
+        ...(annotation.style_json ?? {}),
+        ...freetextStyleForColor(color, current.fontSize),
+      },
+    };
+  }
 
-  const submitPage = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    onPageSubmit();
+  if (annotation.kind === "drawing") {
+    const current = drawingStyle(annotation);
+    const nextStyle = drawingStyleForColor(color, current.strokeWidth);
+    const contentJson = await recolorDrawingContent(annotation, nextStyle.strokeColor);
+    return {
+      color,
+      style_json: {
+        ...(annotation.style_json ?? {}),
+        ...nextStyle,
+      },
+      ...(contentJson ? { content_json: contentJson } : {}),
+    };
+  }
+
+  return { color };
+}
+
+async function recolorDrawingContent(annotation: PaperAnnotation, strokeColor: string) {
+  const content = annotation.content_json ?? {};
+  const strokes = storedDrawingStrokes(content.strokes);
+  if (!strokes || strokes.length === 0) return undefined;
+
+  const nextStrokes = strokes.map((stroke) => ({ ...stroke, color: strokeColor }));
+  const size = await drawingImageSize(content.image, nextStrokes);
+  const image = renderDrawingStrokesToImage(nextStrokes, size.width, size.height);
+  if (!image) return { ...content, strokes: nextStrokes };
+  return { ...content, image, strokes: nextStrokes };
+}
+
+function storedDrawingStrokes(value: unknown): DrawingStroke[] | null {
+  if (!Array.isArray(value)) return null;
+  const strokes = value.filter((stroke): stroke is DrawingStroke => {
+    if (!stroke || typeof stroke !== "object") return false;
+    const candidate = stroke as DrawingStroke;
+    return (
+      Array.isArray(candidate.points) &&
+      candidate.points.every((point) =>
+        point &&
+        typeof point === "object" &&
+        typeof point.x === "number" &&
+        typeof point.y === "number",
+      ) &&
+      typeof candidate.width === "number"
+    );
+  });
+  return strokes.length > 0 ? strokes : null;
+}
+
+async function drawingImageSize(value: unknown, strokes: DrawingStroke[]) {
+  if (typeof value === "string" && value.startsWith("data:image/") && typeof Image !== "undefined") {
+    const size = await new Promise<{ width: number; height: number } | null>((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+      image.onerror = () => resolve(null);
+      image.src = value;
+    });
+    if (size && size.width > 0 && size.height > 0) return size;
+  }
+
+  const maxStrokeWidth = Math.max(1, ...strokes.map((stroke) => stroke.width || 1));
+  const padding = maxStrokeWidth * 2;
+  let maxX = 1;
+  let maxY = 1;
+  for (const stroke of strokes) {
+    for (const point of stroke.points) {
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    }
+  }
+  return {
+    width: Math.ceil(maxX + padding),
+    height: Math.ceil(maxY + padding),
   };
+}
 
-  return (
-    <header className="grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b bg-background/95 px-3 shadow-sm backdrop-blur">
-      <div className="flex min-w-0 items-center gap-2">
-        <ToolbarButton label="返回工作台" onClick={onClose}>
-          <ArrowLeft className="size-4" />
-        </ToolbarButton>
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold">{title}</div>
-        </div>
-      </div>
-      <div className="flex min-w-0 items-center justify-center gap-2">
-        <ToolbarButton label="上一页" disabled={currentPage <= 1} onClick={onPrevPage}>
-          <ChevronLeft className="size-4" />
-        </ToolbarButton>
-        <form onSubmit={submitPage} className="flex items-center gap-1 text-xs text-muted-foreground">
-          <input
-            value={pageDraft}
-            onChange={(event) => onPageDraftChange(event.target.value)}
-            inputMode="numeric"
-            aria-label="页码"
-            className="h-8 w-14 rounded-md border bg-background px-2 text-center text-sm font-medium text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-          />
-          <span className="min-w-10">/ {numPages || "-"}</span>
-        </form>
-        <ToolbarButton
-          label="下一页"
-          disabled={numPages > 0 && currentPage >= numPages}
-          onClick={onNextPage}
-        >
-          <ChevronRight className="size-4" />
-        </ToolbarButton>
-        <ToolbarDivider />
-        <ToolbarButton label="缩小" onClick={onZoomOut}>
-          <Minus className="size-4" />
-        </ToolbarButton>
-        <button
-          type="button"
-          onClick={onResetZoom}
-          className="h-8 min-w-14 rounded-md px-2 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
-        >
-          {zoomText}
-        </button>
-        <ToolbarButton label="放大" onClick={onZoomIn}>
-          <Plus className="size-4" />
-        </ToolbarButton>
-        <ToolbarButton label="适宽展示" active={scaleValue === "page-width"} onClick={onFitWidth}>
-          <Maximize2 className="size-4" />
-        </ToolbarButton>
-        <ToolbarDivider />
-        <Palette className="ml-1 size-4 text-muted-foreground" />
-        <ColorSwatches value={prefs.color} onChange={onColorChange} compact />
-      </div>
-      <div className="flex min-w-0 items-center justify-end gap-1">
-        <ToolbarButton label="翻译面板" active={prefs.translateOpen} onClick={onToggleTranslate}>
-          <Languages className="size-4" />
-        </ToolbarButton>
-        <ToolbarButton label="批注面板" active={prefs.annotationsOpen} onClick={onToggleAnnotations}>
-          <BookMarked className="size-4" />
-        </ToolbarButton>
-        <ToolbarButton label="精读脑图" active={prefs.mindMapOpen} onClick={onToggleMindMap}>
-          <Network className="size-4" />
-        </ToolbarButton>
-        <ToolbarButton label="小耄耋问答" active={prefs.qaOpen} onClick={onToggleQA}>
-          <MessageSquarePlus className="size-4" />
-        </ToolbarButton>
-      </div>
-    </header>
-  );
+function renderDrawingStrokesToImage(strokes: DrawingStroke[], width: number, height: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.ceil(width));
+  canvas.height = Math.max(1, Math.ceil(height));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+  for (const stroke of strokes) {
+    if (stroke.points.length < 2) continue;
+    ctx.strokeStyle = stroke.color;
+    ctx.lineWidth = stroke.width;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+    for (const point of stroke.points.slice(1)) {
+      ctx.lineTo(point.x, point.y);
+    }
+    ctx.stroke();
+  }
+  return canvas.toDataURL("image/png");
 }
 
 function OutlineTreeNode({
@@ -1118,379 +1144,6 @@ function OutlineDrawer({
   );
 }
 
-function ReaderLeftRail({
-  outlineOpen,
-  onToggleOutline,
-}: {
-  outlineOpen: boolean;
-  onToggleOutline: () => void;
-}) {
-  if (outlineOpen) return null;
-  return (
-    <div className="absolute left-3 top-5 z-30 flex flex-col gap-2">
-      <ToolbarButton label="打开目录" active={outlineOpen} onClick={onToggleOutline}>
-        <ListTree className="size-4" />
-      </ToolbarButton>
-    </div>
-  );
-}
-
-function TranslationPanel({
-  translation,
-  onClear,
-}: {
-  translation: TranslationResult | null;
-  onClear: () => void;
-}) {
-  return (
-    <section className="w-full shrink-0 border-b">
-      <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-        <div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
-          <Languages className="size-3.5" />
-          选段翻译
-        </div>
-        {translation && (
-          <Button type="button" variant="ghost" size="icon-xs" aria-label="清空翻译" onClick={onClear}>
-            <X className="size-3.5" />
-          </Button>
-        )}
-      </div>
-      <div className="p-3 text-sm">
-        {!translation ? (
-          <div className="rounded-md border border-dashed bg-muted/30 p-3 text-muted-foreground">
-            选中 PDF 原文后点击翻译。
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div>
-              <div className="mb-1 text-xs text-muted-foreground">原文 · p.{translation.pageNo}</div>
-              <div className="line-clamp-3 rounded-md bg-muted p-2 text-muted-foreground">
-                {translation.original}
-              </div>
-            </div>
-            <div className="rounded-md border bg-background p-3 leading-6">
-              {translation.loading ? (
-                <span className="inline-flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                  翻译中...
-                </span>
-              ) : translation.error ? (
-                <span className="text-destructive">{translation.error}</span>
-              ) : (
-                translation.translation
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function AnnotationCard({
-  annotation,
-  busy,
-  translating,
-  translationError,
-  textExpanded,
-  transExpanded,
-  noteExpanded,
-  onToggleTextExpanded,
-  onToggleTransExpanded,
-  onToggleNoteExpanded,
-  onDelete,
-  onColorChange,
-  onRetryTranslate,
-  onLocate,
-}: {
-  annotation: PaperAnnotation;
-  busy: string;
-  translating: boolean;
-  translationError?: string;
-  textExpanded: boolean;
-  transExpanded: boolean;
-  noteExpanded: boolean;
-  onToggleTextExpanded: (annotation: PaperAnnotation) => void;
-  onToggleTransExpanded: (annotation: PaperAnnotation) => void;
-  onToggleNoteExpanded: (annotation: PaperAnnotation) => void;
-  onDelete: (annotation: PaperAnnotation) => void;
-  onColorChange: (annotation: PaperAnnotation, color: AnnotationColor) => void;
-  onRetryTranslate: (annotation: PaperAnnotation) => void;
-  onLocate: (annotation: PaperAnnotation) => void;
-}) {
-  const color = (annotation.color as AnnotationColor) || "yellow";
-  return (
-    <article className="rounded-md border bg-background p-3 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => onLocate(annotation)}
-          className="flex min-w-0 items-center gap-2 text-left text-sm font-semibold"
-        >
-          <span
-            className={cn(
-              "size-3 shrink-0 rounded-sm",
-              COLOR_META[color]?.className || COLOR_META.yellow.className,
-            )}
-          />
-          <span className="truncate">页 {annotation.page_no}</span>
-        </button>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button type="button" variant="ghost" size="icon-xs" aria-label="批注操作">
-                {busy === `delete-${annotation.id}` ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <MoreHorizontal className="size-3.5" />
-                )}
-              </Button>
-            }
-          />
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onClick={() => onLocate(annotation)}>跳转到原文</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onRetryTranslate(annotation)}>
-              {annotation.translation ? "重新翻译" : "翻译"}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              disabled={busy === `delete-${annotation.id}`}
-              onClick={() => onDelete(annotation)}
-              variant="destructive"
-            >
-              删除
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      <div className="mt-3 space-y-3 text-sm">
-        <button
-          type="button"
-          aria-expanded={textExpanded}
-          onClick={() => onToggleTextExpanded(annotation)}
-          className={cn(
-            "w-full rounded-md bg-muted px-3 py-2 text-left leading-6 text-muted-foreground transition hover:bg-muted/80",
-            !textExpanded && "line-clamp-3",
-          )}
-        >
-          {annotation.text}
-        </button>
-        <div className="rounded-md border bg-muted/20 p-2 leading-6">
-          {translating ? (
-            <span className="inline-flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
-              正在自动翻译
-            </span>
-          ) : translationError ? (
-            <div className="flex items-center justify-between gap-2 text-destructive">
-              <span className="min-w-0">{translationError}</span>
-              <Button
-                type="button"
-                size="xs"
-                variant="ghost"
-                onClick={() => onRetryTranslate(annotation)}
-              >
-                重试
-              </Button>
-            </div>
-          ) : annotation.translation ? (
-            <button
-              type="button"
-              aria-expanded={transExpanded}
-              onClick={() => onToggleTransExpanded(annotation)}
-              className={cn(
-                "w-full text-left leading-6 transition",
-                !transExpanded && "line-clamp-3",
-              )}
-            >
-              {annotation.translation}
-            </button>
-          ) : (
-            <div className="flex items-center justify-between gap-2 text-muted-foreground">
-              <span>暂无译文</span>
-              <Button type="button" size="xs" variant="ghost" onClick={() => onRetryTranslate(annotation)}>
-                翻译
-              </Button>
-            </div>
-          )}
-        </div>
-        {annotation.note && (
-          <button
-            type="button"
-            aria-expanded={noteExpanded}
-            onClick={() => onToggleNoteExpanded(annotation)}
-            className={cn(
-              "w-full rounded-md bg-muted/40 px-3 py-2 text-left leading-6 transition hover:bg-muted/60",
-              !noteExpanded && "line-clamp-3",
-            )}
-          >
-            {annotation.note}
-          </button>
-        )}
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs text-muted-foreground">颜色</span>
-          <ColorSwatches
-            value={annotation.color}
-            disabled={busy === `color-${annotation.id}`}
-            onChange={(nextColor) => onColorChange(annotation, nextColor)}
-            compact
-          />
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function AnnotationPanel({
-  annotations,
-  busy,
-  translatingIDs,
-  translationErrors,
-  textExpandedIDs,
-  transExpandedIDs,
-  noteExpandedIDs,
-  onToggleTextExpanded,
-  onToggleTransExpanded,
-  onToggleNoteExpanded,
-  onDelete,
-  onColorChange,
-  onRetryTranslate,
-  onLocateAnnotation,
-}: {
-  annotations: PaperAnnotation[];
-  busy: string;
-  translatingIDs: Set<number>;
-  translationErrors: Record<number, string>;
-  textExpandedIDs: Set<number>;
-  transExpandedIDs: Set<number>;
-  noteExpandedIDs: Set<number>;
-  onToggleTextExpanded: (annotation: PaperAnnotation) => void;
-  onToggleTransExpanded: (annotation: PaperAnnotation) => void;
-  onToggleNoteExpanded: (annotation: PaperAnnotation) => void;
-  onDelete: (annotation: PaperAnnotation) => void;
-  onColorChange: (annotation: PaperAnnotation, color: AnnotationColor) => void;
-  onRetryTranslate: (annotation: PaperAnnotation) => void;
-  onLocateAnnotation: (annotation: PaperAnnotation) => void;
-}) {
-  return (
-    <section className="flex min-h-0 w-full flex-1 flex-col">
-      <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-        <div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
-          <BookMarked className="size-3.5" />
-          高亮与批注
-        </div>
-        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-          {annotations.length}
-        </span>
-      </div>
-      <ScrollArea className="min-h-0 w-full flex-1">
-        <div className="w-full space-y-3 p-3">
-          {annotations.length === 0 ? (
-            <div className="rounded-md border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground">
-              选中 PDF 原文后点击高亮或批注。
-            </div>
-          ) : (
-            annotations.map((annotation) => (
-              <AnnotationCard
-                key={annotation.id}
-                annotation={annotation}
-                busy={busy}
-                translating={translatingIDs.has(annotation.id)}
-                translationError={translationErrors[annotation.id]}
-                textExpanded={textExpandedIDs.has(annotation.id)}
-                transExpanded={transExpandedIDs.has(annotation.id)}
-                noteExpanded={noteExpandedIDs.has(annotation.id)}
-                onToggleTextExpanded={onToggleTextExpanded}
-                onToggleTransExpanded={onToggleTransExpanded}
-                onToggleNoteExpanded={onToggleNoteExpanded}
-                onDelete={onDelete}
-                onColorChange={onColorChange}
-                onRetryTranslate={onRetryTranslate}
-                onLocate={onLocateAnnotation}
-              />
-            ))
-          )}
-        </div>
-      </ScrollArea>
-    </section>
-  );
-}
-
-function ReaderSidePanel({
-  showTranslation,
-  showAnnotations,
-  translation,
-  annotations,
-  busy,
-  translatingIDs,
-  translationErrors,
-  expandedAnnotationTextIDs,
-  expandedAnnotationTransIDs,
-  expandedAnnotationNoteIDs,
-  onClearTranslation,
-  onToggleAnnotationTextExpanded,
-  onToggleAnnotationTransExpanded,
-  onToggleAnnotationNoteExpanded,
-  onDelete,
-  onColorChange,
-  onRetryTranslate,
-  onLocateAnnotation,
-}: {
-  showTranslation: boolean;
-  showAnnotations: boolean;
-  translation: TranslationResult | null;
-  annotations: PaperAnnotation[];
-  busy: string;
-  translatingIDs: Set<number>;
-  translationErrors: Record<number, string>;
-  expandedAnnotationTextIDs: Set<number>;
-  expandedAnnotationTransIDs: Set<number>;
-  expandedAnnotationNoteIDs: Set<number>;
-  onClearTranslation: () => void;
-  onToggleAnnotationTextExpanded: (annotation: PaperAnnotation) => void;
-  onToggleAnnotationTransExpanded: (annotation: PaperAnnotation) => void;
-  onToggleAnnotationNoteExpanded: (annotation: PaperAnnotation) => void;
-  onDelete: (annotation: PaperAnnotation) => void;
-  onColorChange: (annotation: PaperAnnotation, color: AnnotationColor) => void;
-  onRetryTranslate: (annotation: PaperAnnotation) => void;
-  onLocateAnnotation: (annotation: PaperAnnotation) => void;
-}) {
-  return (
-    <aside
-      className="h-full min-h-0 w-full self-stretch overflow-hidden border-l bg-background"
-      style={{ width: RIGHT_PANEL_WIDTH, minWidth: RIGHT_PANEL_WIDTH, maxWidth: RIGHT_PANEL_WIDTH }}
-    >
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="border-b px-3 py-2">
-          <div className="text-sm font-semibold">研读面板</div>
-          <div className="text-xs text-muted-foreground">翻译 · 批注</div>
-        </div>
-        {showTranslation && (
-          <TranslationPanel translation={translation} onClear={onClearTranslation} />
-        )}
-        {showAnnotations && (
-          <AnnotationPanel
-            annotations={annotations}
-            busy={busy}
-            translatingIDs={translatingIDs}
-            translationErrors={translationErrors}
-            textExpandedIDs={expandedAnnotationTextIDs}
-            transExpandedIDs={expandedAnnotationTransIDs}
-            noteExpandedIDs={expandedAnnotationNoteIDs}
-            onToggleTextExpanded={onToggleAnnotationTextExpanded}
-            onToggleTransExpanded={onToggleAnnotationTransExpanded}
-            onToggleNoteExpanded={onToggleAnnotationNoteExpanded}
-            onDelete={onDelete}
-            onColorChange={onColorChange}
-            onRetryTranslate={onRetryTranslate}
-            onLocateAnnotation={onLocateAnnotation}
-          />
-        )}
-      </div>
-    </aside>
-  );
-}
-
 function refsFromMeta(meta?: Record<string, unknown>): Reference[] {
   const raw = meta?.sources;
   return Array.isArray(raw) ? (raw as Reference[]) : [];
@@ -1507,12 +1160,8 @@ function figuresFromRefs(refs: Reference[]): Record<string, string> {
 }
 
 function readerSourceLabel(ref: Reference, index: number) {
-  if (ref.block_type === "selection") {
-    return ref.page_no ? `选段 p.${ref.page_no}` : "选段";
-  }
-  if (ref.fallback_scope === "paper" && ref.page_no) {
-    return `全文补充 p.${ref.page_no}`;
-  }
+  if (ref.block_type === "selection") return ref.page_no ? `选段 p.${ref.page_no}` : "选段";
+  if (ref.fallback_scope === "paper" && ref.page_no) return `全文补充 p.${ref.page_no}`;
   if (ref.page_no) return `p.${ref.page_no}`;
   return `来源 ${index + 1}`;
 }
@@ -1528,9 +1177,7 @@ function ReaderQASources({ refs }: { refs: Reference[] }) {
             key={`${ref.id ?? index}`}
             className={cn(
               "rounded-full border px-2 py-0.5 text-[11px]",
-              selectionRef
-                ? "border-primary/25 bg-primary/5 text-primary"
-                : "bg-muted/40 text-muted-foreground",
+              selectionRef ? "border-primary/25 bg-primary/5 text-primary" : "bg-muted/40 text-muted-foreground",
             )}
           >
             {readerSourceLabel(ref, index)}
@@ -1556,9 +1203,7 @@ function ReaderQAMessage({ message }: { message: Message }) {
           {message.content}
         </div>
       )}
-      <span className="px-0.5 text-[11px] text-muted-foreground">
-        {assistant ? "小耄耋" : "我"}
-      </span>
+      <span className="px-0.5 text-[11px] text-muted-foreground">{assistant ? "小耄耋" : "我"}</span>
     </article>
   );
 }
@@ -1619,8 +1264,6 @@ function ReaderQAPanel({
   const contextLabel = effectiveScope === "paper" ? "全文" : `p.${contextPage || "-"}`;
 
   useEffect(() => {
-    // StrictMode 会先跑一轮 setup→cleanup 再真正挂载,setup 必须把标记写回 true,
-    // 否则 cleanup 置 false 后所有 mountedRef 守卫的状态更新永久失效(答案不落地、spinner 不停)。
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -1629,11 +1272,8 @@ function ReaderQAPanel({
   }, []);
 
   useEffect(() => {
-    if (selection) {
-      setScope("selection");
-    } else {
-      setScope((cur) => (cur === "selection" ? "page" : cur));
-    }
+    if (selection) setScope("selection");
+    else setScope((cur) => (cur === "selection" ? "page" : cur));
   }, [selection]);
 
   useEffect(() => {
@@ -1699,20 +1339,11 @@ function ReaderQAPanel({
   };
 
   const readerContextForSubmit = (): ReaderContext => {
-    if (effectiveScope === "paper") {
-      return { scope: "paper" };
-    }
+    if (effectiveScope === "paper") return { scope: "paper" };
     if (effectiveScope === "selection" && selection) {
-      return {
-        scope: "selection",
-        page_no: selection.pageNo,
-        selected_text: selectedText,
-      };
+      return { scope: "selection", page_no: selection.pageNo, selected_text: selectedText };
     }
-    return {
-      scope: "page",
-      page_no: currentPage,
-    };
+    return { scope: "page", page_no: currentPage };
   };
 
   const closePanel = () => {
@@ -1753,19 +1384,25 @@ function ReaderQAPanel({
         streaming: true,
       };
       setMessages((list) => [...list, localUser, localAssistant]);
-      const readerContext = readerContextForSubmit();
-      const data = await api.sendMessage(sid, query, undefined, {
-        onDelta: (text, reset) => {
-          if (!mountedRef.current || controller.signal.aborted) return;
-          setMessages((list) =>
-            list.map((message) =>
-              message.id === placeholderID
-                ? { ...message, content: reset ? text : message.content + text }
-                : message,
-            ),
-          );
+      const data = await api.sendMessage(
+        sid,
+        query,
+        undefined,
+        {
+          onDelta: (text, reset) => {
+            if (!mountedRef.current || controller.signal.aborted) return;
+            setMessages((list) =>
+              list.map((message) =>
+                message.id === placeholderID
+                  ? { ...message, content: reset ? text : message.content + text }
+                  : message,
+              ),
+            );
+          },
         },
-      }, readerContext, controller.signal);
+        readerContextForSubmit(),
+        controller.signal,
+      );
       if (!mountedRef.current || controller.signal.aborted) return;
       setMessages((list) =>
         list.map((message) =>
@@ -1777,17 +1414,11 @@ function ReaderQAPanel({
     } catch (err) {
       if (isAbortError(err)) return;
       if (!mountedRef.current) return;
-      if (placeholderID) {
-        setMessages((list) => list.filter((message) => message.id !== placeholderID));
-      }
+      if (placeholderID) setMessages((list) => list.filter((message) => message.id !== placeholderID));
       setError((err as Error)?.message || "小耄耋应答失败");
     } finally {
-      if (abortRef.current === controller) {
-        abortRef.current = null;
-      }
-      if (mountedRef.current) {
-        setSending(false);
-      }
+      if (abortRef.current === controller) abortRef.current = null;
+      if (mountedRef.current) setSending(false);
     }
   };
 
@@ -1827,13 +1458,13 @@ function ReaderQAPanel({
           <div className="space-y-5 px-4 py-4">
             {messages.length === 0 ? (
               <div className="space-y-3">
-	                <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
-	                  {effectiveScope === "paper"
-	                    ? "已切到全文。"
-	                    : effectiveScope === "selection"
-	                      ? "已绑定当前选段。"
-	                      : "默认绑定当前页。"}
-	                </div>
+                <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
+                  {effectiveScope === "paper"
+                    ? "已切到全文。"
+                    : effectiveScope === "selection"
+                      ? "已绑定当前选段。"
+                      : "默认绑定当前页。"}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {MAODIE_PROMPT_HINTS.map((hint) => (
                     <Button key={hint} type="button" size="sm" variant="outline" onClick={() => void submit(hint)}>
@@ -1848,10 +1479,14 @@ function ReaderQAPanel({
             {sending && !messages.some((message) => message.streaming) && (
               <div className="inline-flex items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
-                小耄耋正在阅读当前上下文…
+                小耄耋正在阅读当前上下文...
               </div>
             )}
-            {error && <div className="rounded-md border border-destructive/30 bg-background p-3 text-sm text-destructive">{error}</div>}
+            {error && (
+              <div className="rounded-md border border-destructive/30 bg-background p-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
             <div ref={bottomRef} />
           </div>
         </ScrollArea>
@@ -1939,354 +1574,6 @@ function ReaderQAPanel({
   );
 }
 
-function ReaderPdfLoader({
-  document,
-  beforeLoad,
-  errorMessage,
-  children,
-}: {
-  document: DocumentInitParameters;
-  beforeLoad: (progress: OnProgressParameters | null) => ReactNode;
-  errorMessage: (error: Error) => ReactNode;
-  children: (pdfDocument: PDFDocumentProxy) => ReactNode;
-}) {
-  const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
-  const [loadingProgress, setLoadingProgress] = useState<OnProgressParameters | null>(null);
-  const [error, setError] = useState<Error | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    setError(null);
-    setPdfDocument(null);
-    setLoadingProgress(null);
-    GlobalWorkerOptions.workerSrc = PDF_WORKER;
-
-    const loadingTask = getDocument(document);
-    loadingTask.onProgress = (progress: OnProgressParameters) => {
-      if (cancelled) return;
-      setLoadingProgress(progress.loaded > progress.total ? null : progress);
-    };
-    loadingTask.promise
-      .then((loaded) => {
-        if (cancelled) return;
-        setPdfDocument(loaded);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(toPdfError(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingProgress(null);
-      });
-
-    return () => {
-      cancelled = true;
-      void loadingTask.destroy().catch(() => {});
-    };
-  }, [document]);
-
-  if (error) return errorMessage(error);
-  if (!pdfDocument) return beforeLoad(loadingProgress);
-  return children(pdfDocument);
-}
-
-function SelectionToolbar({
-  onTranslate,
-  onHighlight,
-  onAnnotate,
-  onAsk,
-}: {
-  onTranslate: (selection: PdfSelection) => void;
-  onHighlight: (selection: PdfSelection) => void;
-  onAnnotate: (selection: PdfSelection) => void;
-  onAsk: (selection: PdfSelection) => void;
-}) {
-  const utils = usePdfHighlighterContext();
-
-  const applySelection = (fn: (selection: PdfSelection) => void) => {
-    const selection = utils.getCurrentSelection();
-    if (!selection?.content.text?.trim()) return;
-    fn(selection);
-    utils.setTip(null);
-  };
-
-  return (
-    <div className="flex items-center gap-1 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg">
-      <Button type="button" size="sm" variant="ghost" onClick={() => applySelection(onTranslate)}>
-        <Languages className="size-3.5" />
-        翻译
-      </Button>
-      <Button type="button" size="sm" variant="ghost" onClick={() => applySelection(onHighlight)}>
-        <BookMarked className="size-3.5" />
-        高亮
-      </Button>
-      <Button type="button" size="sm" variant="ghost" onClick={() => applySelection(onAnnotate)}>
-        <NotebookPen className="size-3.5" />
-        批注
-      </Button>
-      <Button type="button" size="sm" variant="ghost" onClick={() => applySelection(onAsk)}>
-        <MessageCircleQuestionMark className="size-3.5" />
-        问答
-      </Button>
-    </div>
-  );
-}
-
-function HighlightTip({
-  annotation,
-  onDelete,
-}: {
-  annotation: PaperAnnotation;
-  onDelete: (annotation: PaperAnnotation) => void;
-}) {
-  return (
-    <div className="max-w-xs rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-lg">
-      <div className="line-clamp-3 leading-5">{annotation.text}</div>
-      {annotation.translation && (
-        <div className="mt-2 line-clamp-3 rounded-md bg-muted px-2 py-1.5 text-muted-foreground">
-          {annotation.translation}
-        </div>
-      )}
-      {annotation.note && (
-        <div className="mt-2 rounded-md bg-muted px-2 py-1.5 text-muted-foreground">
-          {annotation.note}
-        </div>
-      )}
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-muted-foreground">p.{annotation.page_no}</span>
-        <Button type="button" size="xs" variant="ghost" onClick={() => onDelete(annotation)}>
-          <Trash2 className="size-3" />
-          删除
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function HighlightContainer({
-  onDelete,
-  locatedAnnotationId,
-}: {
-  onDelete: (annotation: PaperAnnotation) => void;
-  locatedAnnotationId: number | null;
-}) {
-  const { highlight, isScrolledTo } = useHighlightContainerContext<ReaderHighlight>();
-  const annotation = highlight.annotation;
-  return (
-    <MonitoredHighlightContainer
-      highlightTip={{
-        position: highlight.position,
-        content: <HighlightTip annotation={annotation} onDelete={onDelete} />,
-      }}
-    >
-      <TextHighlight
-        highlight={highlight}
-        isScrolledTo={isScrolledTo || locatedAnnotationId === annotation.id}
-        highlightColor={colorValue(annotation.color)}
-        copyText={annotation.text}
-        onDelete={() => onDelete(annotation)}
-      />
-    </MonitoredHighlightContainer>
-  );
-}
-
-function ReaderPdf({
-  pdfUrl,
-  highlights,
-  initialPage,
-  scaleValue,
-  onPageChange,
-  onPageCount,
-  onTranslateSelection,
-  onSaveHighlight,
-  onAnnotateSelection,
-  onAskSelection,
-  onDeleteAnnotation,
-  locatedAnnotationId,
-  onDocumentReady,
-  onUtilsReady,
-}: {
-  pdfUrl: string;
-  highlights: ReaderHighlight[];
-  initialPage: number;
-  scaleValue: PdfScaleValue;
-  onPageChange: (page: number) => void;
-  onPageCount: (pages: number) => void;
-  onTranslateSelection: (selection: PdfSelection) => void;
-  onSaveHighlight: (selection: PdfSelection) => void;
-  onAnnotateSelection: (selection: PdfSelection) => void;
-  onAskSelection: (selection: PdfSelection) => void;
-  onDeleteAnnotation: (annotation: PaperAnnotation) => void;
-  locatedAnnotationId: number | null;
-  onDocumentReady: (pdfDocument: PDFDocumentProxy) => void;
-  onUtilsReady: (utils: PdfHighlighterUtils | null) => void;
-}) {
-  const utilsRef = useRef<PdfHighlighterUtils | null>(null);
-  const restoredRef = useRef(false);
-  const [utilsVersion, setUtilsVersion] = useState(0);
-  const [pagesReady, setPagesReady] = useState(false);
-  const pdfDocument = useMemo(() => ({ url: pdfUrl }), [pdfUrl]);
-
-  const setUtils = useCallback(
-    (utils: PdfHighlighterUtils) => {
-      if (utilsRef.current === utils) return;
-      utilsRef.current = utils;
-      onUtilsReady(utils);
-      setUtilsVersion((v) => v + 1);
-    },
-    [onUtilsReady],
-  );
-
-  useEffect(() => {
-    restoredRef.current = false;
-    setPagesReady(false);
-    return () => onUtilsReady(null);
-  }, [onUtilsReady, pdfUrl]);
-
-  useEffect(() => {
-    const utils = utilsRef.current;
-    if (!utils) return;
-    const eventBus = utils.getEventBus();
-    if (!isEventBus(eventBus)) return;
-    const handler: EventBusCallback = (evt) => {
-      const pageNumber =
-        evt && typeof evt === "object" && "pageNumber" in evt
-          ? (evt.pageNumber as unknown)
-          : undefined;
-      if (typeof pageNumber === "number" && pageNumber > 0) {
-        onPageChange(pageNumber);
-      }
-    };
-    eventBus.on("pagechanging", handler);
-    eventBus.on("pagechange", handler);
-    return () => {
-      eventBus.off("pagechanging", handler);
-      eventBus.off("pagechange", handler);
-    };
-  }, [onPageChange, utilsVersion]);
-
-  useEffect(() => {
-    const utils = utilsRef.current;
-    if (!utils) return;
-    const eventBus = utils.getEventBus();
-    if (!isEventBus(eventBus)) return;
-    const markPagesReady = () => setPagesReady(true);
-    eventBus.on("pagesinit", markPagesReady);
-    eventBus.on("pagesloaded", markPagesReady);
-    if (utils.getViewer()?.pagesCount) {
-      markPagesReady();
-    }
-    return () => {
-      eventBus.off("pagesinit", markPagesReady);
-      eventBus.off("pagesloaded", markPagesReady);
-    };
-  }, [utilsVersion]);
-
-  useEffect(() => {
-    if (restoredRef.current || initialPage <= 1 || !pagesReady) return;
-    const utils = utilsRef.current;
-    if (!utils) return;
-    restoredRef.current = true;
-    window.setTimeout(() => utils.goToPage(initialPage), 250);
-  }, [initialPage, pagesReady, utilsVersion]);
-
-  return (
-    <ReaderPdfLoader
-      document={pdfDocument}
-      beforeLoad={() => (
-        <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          加载 PDF...
-        </div>
-      )}
-      errorMessage={(error) => (
-        <div className="flex h-full items-center justify-center p-8 text-sm text-destructive">
-          PDF 加载失败：{error.message}
-        </div>
-      )}
-    >
-      {(pdfDocument) => (
-        <LoadedPdfHighlighter
-          pdfDocument={pdfDocument}
-          highlights={highlights}
-          scaleValue={pagesReady ? scaleValue : "auto"}
-          onPageCount={onPageCount}
-          onTranslateSelection={onTranslateSelection}
-          onSaveHighlight={onSaveHighlight}
-          onAnnotateSelection={onAnnotateSelection}
-          onAskSelection={onAskSelection}
-          onDeleteAnnotation={onDeleteAnnotation}
-          locatedAnnotationId={locatedAnnotationId}
-          onDocumentReady={onDocumentReady}
-          setUtils={setUtils}
-        />
-      )}
-    </ReaderPdfLoader>
-  );
-}
-
-function LoadedPdfHighlighter({
-  pdfDocument,
-  highlights,
-  scaleValue,
-  onPageCount,
-  onTranslateSelection,
-  onSaveHighlight,
-  onAnnotateSelection,
-  onAskSelection,
-  onDeleteAnnotation,
-  locatedAnnotationId,
-  onDocumentReady,
-  setUtils,
-}: {
-  pdfDocument: PDFDocumentProxy;
-  highlights: ReaderHighlight[];
-  scaleValue: PdfScaleValue;
-  onPageCount: (pages: number) => void;
-  onTranslateSelection: (selection: PdfSelection) => void;
-  onSaveHighlight: (selection: PdfSelection) => void;
-  onAnnotateSelection: (selection: PdfSelection) => void;
-  onAskSelection: (selection: PdfSelection) => void;
-  onDeleteAnnotation: (annotation: PaperAnnotation) => void;
-  locatedAnnotationId: number | null;
-  onDocumentReady: (pdfDocument: PDFDocumentProxy) => void;
-  setUtils: (utils: PdfHighlighterUtils) => void;
-}) {
-  useEffect(() => {
-    onPageCount(pdfDocument.numPages);
-    onDocumentReady(pdfDocument);
-  }, [onDocumentReady, onPageCount, pdfDocument]);
-
-  return (
-    <PdfHighlighter
-      pdfDocument={pdfDocument}
-      highlights={highlights}
-      pdfScaleValue={scaleValue}
-      enableAreaSelection={() => false}
-      textSelectionColor="rgba(14, 165, 233, 0.22)"
-      selectionTip={
-        <SelectionToolbar
-          onTranslate={onTranslateSelection}
-          onHighlight={onSaveHighlight}
-          onAnnotate={onAnnotateSelection}
-          onAsk={onAskSelection}
-        />
-      }
-      utilsRef={setUtils}
-      theme={{
-        mode: "light",
-        containerBackgroundColor: "oklch(0.96 0.003 230)",
-        scrollbarThumbColor: "oklch(0.72 0.01 230)",
-        scrollbarTrackColor: "oklch(0.92 0.004 230)",
-      }}
-      style={{ height: "100%" }}
-    >
-      <HighlightContainer onDelete={onDeleteAnnotation} locatedAnnotationId={locatedAnnotationId} />
-    </PdfHighlighter>
-  );
-}
-
 export function ReaderClient() {
   const { activePaperID, selectPaper } = useApp();
   const id = useMemo(() => {
@@ -2320,16 +1607,25 @@ export function ReaderClient() {
   const [pdfUtils, setPdfUtils] = useState<PdfHighlighterUtils | null>(null);
   const [outlineActiveSectionId, setOutlineActiveSectionId] = useState<number | null>(null);
   const [locatedAnnotationId, setLocatedAnnotationId] = useState<number | null>(null);
+  const [pendingFreetextFocusId, setPendingFreetextFocusId] = useState<number | null>(null);
+  const [suppressFreetextTipId, setSuppressFreetextTipId] = useState<number | null>(null);
   const translateSeq = useRef(0);
   const progressLoadedRef = useRef(false);
   const outlineFallbackTriedRef = useRef(false);
   const outlineJumpRef = useRef<{ sectionId: number; pageNo: number; ignoreUntil: number } | null>(null);
   const locatedScrollTimerRef = useRef<number | null>(null);
   const locatedScrollCleanupRef = useRef<(() => void) | null>(null);
+  const positionPatchSeqRef = useRef(new Map<number, number>());
+  const freetextCreateInFlightRef = useRef(false);
+  const recentFreetextCreateRef = useRef<RecentFreetextCreate | null>(null);
   const mindMapGridRef = useRef<HTMLDivElement | null>(null);
   const pdfWheelRef = useRef<HTMLDivElement | null>(null);
 
-  const highlights = useMemo(() => annotations.map(annotationToHighlight), [annotations]);
+  const visibleAnnotations = useMemo(() => visibleReaderAnnotations(annotations), [annotations]);
+  const highlights = useMemo(
+    () => visibleAnnotations.map(splitAnnotationToHighlight),
+    [visibleAnnotations],
+  );
   const initialPage = Math.max(1, requestedPage || paper?.last_read_page || 1);
   const pdfUrl = useMemo(() => (ready && id ? api.paperFileUrl(id) : ""), [ready, id]);
   const qaPanelOpen = !prefs.mindMapOpen && prefs.qaOpen;
@@ -2348,6 +1644,33 @@ export function ReaderClient() {
   const updatePrefs = useCallback((patch: Partial<ReaderPreferences>) => {
     setPrefs((cur) => ({ ...cur, ...patch }));
   }, []);
+
+  const changeActiveTool = useCallback((tool: ReaderTool) => {
+    setPrefs((cur) => ({
+      ...cur,
+      activeTool: cur.activeTool === tool && tool !== "select" ? "select" : tool,
+    }));
+  }, []);
+
+  const exitDrawingMode = useCallback(() => {
+    updatePrefs({ activeTool: "select" });
+  }, [updatePrefs]);
+
+  const clearActiveDrawing = useCallback(() => {
+    document.querySelector<HTMLButtonElement>(".DrawingCanvas__clearButton")?.click();
+  }, []);
+
+  const handleFreetextFocusHandled = useCallback((annotationID: number) => {
+    setPendingFreetextFocusId((cur) => (cur === annotationID ? null : cur));
+  }, []);
+
+  useEffect(() => {
+    if (suppressFreetextTipId == null) return;
+    const timer = window.setTimeout(() => {
+      setSuppressFreetextTipId((cur) => (cur === suppressFreetextTipId ? null : cur));
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [suppressFreetextTipId]);
 
   const toggleTranslatePanel = useCallback(() => {
     setPrefs((cur) => {
@@ -2474,6 +1797,7 @@ export function ReaderClient() {
       setError("缺少论文 id");
       return;
     }
+    positionPatchSeqRef.current.clear();
     outlineFallbackTriedRef.current = false;
     setSections([]);
     setReady(true);
@@ -2652,7 +1976,7 @@ export function ReaderClient() {
       setCurrentPage(page);
       setPageDraft(String(page));
       if (annotation && pdfUtils) {
-        const container = scrollHighlightToTop(pdfUtils, annotationToHighlight(annotation));
+        const container = scrollSplitHighlightToTop(pdfUtils, splitAnnotationToHighlight(annotation));
         if (container) {
           setLocatedAnnotationId(annotation.id);
           scheduleLocatedAnnotationScrollClear(container);
@@ -2737,7 +2061,7 @@ export function ReaderClient() {
 
   const translateAnnotation = useCallback(
     async (annotation: PaperAnnotation) => {
-      if (!id || !annotation.text.trim()) return;
+      if (!id || annotation.kind === "drawing" || !annotation.text.trim()) return;
       setTranslatingIDs((prev) => new Set(prev).add(annotation.id));
       setTranslationErrors((prev) => {
         const next = { ...prev };
@@ -2781,6 +2105,7 @@ export function ReaderClient() {
       try {
         const annotation = await api.createAnnotation(id, {
           page_no: pageNo,
+          kind: "selection",
           text,
           note,
           color,
@@ -2845,7 +2170,7 @@ export function ReaderClient() {
 
   const onAskSelection = useCallback(
     (selection: PdfSelection) => {
-      const text = selection.content.text?.trim() || "";
+      const text = selection.content.text?.trim();
       if (!text) return;
       setQASelection({
         text,
@@ -2868,6 +2193,8 @@ export function ReaderClient() {
       try {
         await api.deleteAnnotation(id, annotation.id);
         setAnnotations((prev) => prev.filter((item) => item.id !== annotation.id));
+        setPendingFreetextFocusId((cur) => (cur === annotation.id ? null : cur));
+        setSuppressFreetextTipId((cur) => (cur === annotation.id ? null : cur));
         if (locatedAnnotationId === annotation.id) {
           clearLocatedAnnotation();
         }
@@ -2884,7 +2211,8 @@ export function ReaderClient() {
     async (annotation: PaperAnnotation, color: AnnotationColor) => {
       setBusy(`color-${annotation.id}`);
       try {
-        const updated = await api.updateAnnotation(id, annotation.id, { color });
+        const payload = await annotationColorPatch(annotation, color);
+        const updated = await api.updateAnnotation(id, annotation.id, payload);
         setAnnotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       } catch (err) {
         setError((err as Error)?.message || "更新批注失败");
@@ -2904,6 +2232,217 @@ export function ReaderClient() {
     setNoteDraft("");
   };
 
+  const createFreetextAnnotation = useCallback(
+    async (position: ScaledPosition) => {
+      if (!id) return;
+      if (freetextCreateInFlightRef.current) return;
+      const normalizedPosition = defaultFreetextPosition(position);
+      const { boundingRect, rects } = positionToRects(normalizedPosition);
+      if (isRecentFreetextCreate(recentFreetextCreateRef.current, boundingRect)) return;
+      freetextCreateInFlightRef.current = true;
+      recentFreetextCreateRef.current = {
+        pageNumber: boundingRect.pageNumber,
+        x1: boundingRect.x1,
+        y1: boundingRect.y1,
+        until: Date.now() + FREETEXT_CREATE_COOLDOWN_MS,
+      };
+      updatePrefs({ activeTool: "select" });
+      setBusy("freetext");
+      try {
+        const annotation = await api.createAnnotation(id, {
+          page_no: boundingRect.pageNumber,
+          kind: "freetext",
+          text: FREETEXT_CREATE_TEXT,
+          color: prefs.color,
+          bounding_rect: boundingRect,
+          rects,
+          style_json: freetextStyleForColor(prefs.color, prefs.textSize),
+        });
+        setAnnotations((prev) => [{ ...annotation, text: FREETEXT_EMPTY_DRAFT }, ...prev]);
+        setPendingFreetextFocusId(annotation.id);
+        setSuppressFreetextTipId(annotation.id);
+        updatePrefs({ activeTool: "select", annotationsOpen: true, mindMapOpen: false, qaOpen: false });
+      } catch (err) {
+        setError((err as Error)?.message || "保存文字批注失败");
+      } finally {
+        freetextCreateInFlightRef.current = false;
+        setBusy("");
+      }
+    },
+    [id, prefs.color, prefs.textSize, updatePrefs],
+  );
+
+  const createDrawingAnnotation = useCallback(
+    async (dataUrl: string, position: ScaledPosition, strokes: DrawingStroke[], snapshot?: string) => {
+      updatePrefs({ activeTool: "select" });
+      if (!id) return;
+      const { boundingRect, rects } = positionToRects(position);
+      const contentJson: Record<string, unknown> = {
+        image: dataUrl,
+        strokes,
+      };
+      if (snapshot) {
+        contentJson.snapshot = snapshot;
+      }
+      setBusy("drawing");
+      try {
+        const annotation = await api.createAnnotation(id, {
+          page_no: boundingRect.pageNumber,
+          kind: "drawing",
+          text: DRAWING_LABEL,
+          color: prefs.color,
+          bounding_rect: boundingRect,
+          rects,
+          style_json: drawingStyleForColor(prefs.color, prefs.drawingSize),
+          content_json: contentJson,
+        });
+        setAnnotations((prev) => [annotation, ...prev]);
+        updatePrefs({ activeTool: "select", annotationsOpen: true, mindMapOpen: false, qaOpen: false });
+      } catch (err) {
+        setError((err as Error)?.message || "保存手绘标注失败");
+      } finally {
+        setBusy("");
+      }
+    },
+    [id, prefs.color, prefs.drawingSize, updatePrefs],
+  );
+
+  const patchAnnotation = useCallback(
+    async (annotation: PaperAnnotation, payload: Parameters<typeof api.updateAnnotation>[2], busyKey: string) => {
+      setBusy(busyKey);
+      try {
+        const updated = await api.updateAnnotation(id, annotation.id, payload);
+        setAnnotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      } catch (err) {
+        setError((err as Error)?.message || "更新批注失败");
+      } finally {
+        setBusy("");
+      }
+    },
+    [id],
+  );
+
+  const updateAnnotationPosition = useCallback(
+    (annotation: PaperAnnotation, position: ScaledPosition, snapshot?: string) => {
+      const { boundingRect, rects } = positionToRects(position);
+      const nextContentJson =
+        annotation.kind === "drawing" && snapshot
+          ? {
+              ...(annotation.content_json ?? {}),
+              snapshot,
+            }
+          : undefined;
+      if (
+        sameAnnotationRect(annotation.bounding_rect, boundingRect) &&
+        sameAnnotationRects(annotation.rects, rects) &&
+        !nextContentJson
+      ) {
+        return;
+      }
+
+      const seq = (positionPatchSeqRef.current.get(annotation.id) ?? 0) + 1;
+      positionPatchSeqRef.current.set(annotation.id, seq);
+      const previousPageNo = annotation.page_no;
+      const previousBoundingRect = annotation.bounding_rect;
+      const previousRects = annotation.rects;
+      const previousContentJson = annotation.content_json;
+
+      setAnnotations((prev) =>
+        prev.map((item) =>
+          item.id === annotation.id
+            ? {
+                ...annotationWithPosition(item, boundingRect, rects),
+                ...(nextContentJson
+                  ? {
+                      content_json: {
+                        ...(item.content_json ?? {}),
+                        snapshot,
+                      },
+                    }
+                  : {}),
+              }
+            : item,
+        ),
+      );
+
+      api
+        .updateAnnotation(id, annotation.id, {
+          bounding_rect: boundingRect,
+          rects,
+          ...(nextContentJson ? { content_json: nextContentJson } : {}),
+        })
+        .then((updated) => {
+          if (positionPatchSeqRef.current.get(annotation.id) !== seq) return;
+          setAnnotations((prev) =>
+            prev.map((item) =>
+              item.id === updated.id
+                ? {
+                    ...item,
+                    page_no: updated.page_no,
+                    bounding_rect: updated.bounding_rect,
+                    rects: updated.rects,
+                    ...(nextContentJson ? { content_json: updated.content_json } : {}),
+                    updated_at: updated.updated_at,
+                  }
+                : item,
+            ),
+          );
+        })
+        .catch((err) => {
+          if (positionPatchSeqRef.current.get(annotation.id) !== seq) return;
+          setAnnotations((prev) =>
+            prev.map((item) =>
+              item.id === annotation.id
+                ? {
+                    ...item,
+                    page_no: previousPageNo,
+                    bounding_rect: previousBoundingRect,
+                    rects: previousRects,
+                    content_json: previousContentJson,
+                  }
+                : item,
+            ),
+          );
+          setError((err as Error)?.message || "鏇存柊鎵规敞澶辫触");
+        })
+        .finally(() => {
+          if (positionPatchSeqRef.current.get(annotation.id) === seq) {
+            positionPatchSeqRef.current.delete(annotation.id);
+          }
+        });
+    },
+    [id],
+  );
+
+  const updateAnnotationText = useCallback(
+    (annotation: PaperAnnotation, text: string) => {
+      const nextText = normalizeFreetextText(text);
+      if (annotation.kind === "freetext" && (!nextText || nextText === FREETEXT_CREATE_TEXT)) {
+        void deleteAnnotation(annotation);
+        return;
+      }
+      void patchAnnotation(annotation, { text: nextText }, `text-${annotation.id}`);
+    },
+    [deleteAnnotation, patchAnnotation],
+  );
+
+  const updateAnnotationDrawing = useCallback(
+    (annotation: PaperAnnotation, image: string, strokes: DrawingStroke[]) => {
+      void patchAnnotation(
+        annotation,
+        {
+          content_json: {
+            ...(annotation.content_json ?? {}),
+            image,
+            strokes,
+          },
+        },
+        `drawing-${annotation.id}`,
+      );
+    },
+    [patchAnnotation],
+  );
+
   const zoomBy = (delta: number) => {
     setScaleValue((cur) => {
       const base = typeof cur === "number" ? cur : 1;
@@ -2913,7 +2452,7 @@ export function ReaderClient() {
 
   return (
     <main className="flex h-dvh flex-col overflow-hidden bg-muted/50">
-      <ReaderToolbar
+      <CompactReaderToolbar
         title={paperName(paper)}
         currentPage={currentPage}
         numPages={numPages}
@@ -2933,7 +2472,12 @@ export function ReaderClient() {
         onToggleAnnotations={toggleAnnotationsPanel}
         onToggleMindMap={toggleMindMapPanel}
         onToggleQA={toggleQAPanel}
+        onToolChange={changeActiveTool}
         onColorChange={(color) => updatePrefs({ color })}
+        onTextSizeChange={(textSize) => updatePrefs({ textSize })}
+        onDrawingSizeChange={(drawingSize) => updatePrefs({ drawingSize })}
+        onDrawingClear={clearActiveDrawing}
+        onDrawingCancel={exitDrawingMode}
       />
 
       <div ref={mindMapGridRef} className={cn("grid min-h-0 flex-1 grid-cols-1", gridClass)} style={gridStyle}>
@@ -2948,7 +2492,7 @@ export function ReaderClient() {
               </div>
             </div>
           )}
-          <ReaderLeftRail
+          <CompactReaderLeftRail
             outlineOpen={prefs.outlineOpen}
             onToggleOutline={() => updatePrefs({ outlineOpen: true })}
           />
@@ -2964,19 +2508,33 @@ export function ReaderClient() {
           )}
           <div ref={pdfWheelRef} className="relative h-full min-h-0 overflow-hidden">
             {ready && pdfUrl ? (
-              <ReaderPdf
+              <InteractiveReaderPdf
                 pdfUrl={pdfUrl}
                 highlights={highlights}
                 initialPage={initialPage}
                 scaleValue={scaleValue}
+                activeTool={prefs.activeTool}
+                color={prefs.color}
+                drawingSize={prefs.drawingSize}
                 onPageChange={handlePdfPageChange}
                 onPageCount={setPageCount}
                 onTranslateSelection={onTranslateSelection}
                 onSaveHighlight={(selection) => void saveAnnotation(selection, "", prefs.color)}
                 onAnnotateSelection={onAnnotateSelection}
                 onAskSelection={onAskSelection}
+                onCreateFreetext={(position) => void createFreetextAnnotation(position)}
+                onCreateDrawing={(dataUrl, position, strokes, snapshot) =>
+                  void createDrawingAnnotation(dataUrl, position, strokes, snapshot)
+                }
+                onDrawingCancel={exitDrawingMode}
+                onUpdateAnnotationPosition={updateAnnotationPosition}
+                onUpdateAnnotationText={updateAnnotationText}
+                onUpdateAnnotationDrawing={updateAnnotationDrawing}
                 onDeleteAnnotation={deleteAnnotation}
                 locatedAnnotationId={locatedAnnotationId}
+                pendingFreetextFocusId={pendingFreetextFocusId}
+                suppressTipAnnotationId={suppressFreetextTipId}
+                onFreetextFocusHandled={handleFreetextFocusHandled}
                 onDocumentReady={(pdfDocument) => void loadPdfOutlineFallback(pdfDocument)}
                 onUtilsReady={setPdfUtils}
               />
@@ -2996,11 +2554,11 @@ export function ReaderClient() {
           />
         )}
         {rightPanelOpen && (
-          <ReaderSidePanel
+          <SplitReaderSidePanel
             showTranslation={prefs.translateOpen}
             showAnnotations={prefs.annotationsOpen}
             translation={translation}
-            annotations={annotations}
+            annotations={visibleAnnotations}
             busy={busy}
             translatingIDs={translatingIDs}
             translationErrors={translationErrors}
