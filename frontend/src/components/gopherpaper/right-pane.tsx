@@ -23,7 +23,7 @@ export function RightPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
 
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-background">
-      <div className="flex h-16 shrink-0 items-center justify-between gap-4 border-b px-5">
+      <div className="flex h-14 shrink-0 items-center justify-between gap-4 border-b px-5">
         <div className="flex min-w-0 items-center gap-2">
           {onExpandSidebar && (
             <Button
