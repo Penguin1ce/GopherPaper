@@ -97,6 +97,21 @@ type PaperStructured struct {
 	FutureWork        []string `json:"future_work"`
 }
 
+// PaperCompareInput 是多论文对比生成的结构化输入。
+type PaperCompareInput struct {
+	ID                string   `json:"id"`
+	Title             string   `json:"title"`
+	FileName          string   `json:"file_name"`
+	Authors           []string `json:"authors"`
+	PublishYear       int      `json:"publish_year"`
+	Venue             string   `json:"venue"`
+	Keywords          []string `json:"keywords"`
+	ResearchQuestions []string `json:"research_questions"`
+	Methods           string   `json:"methods"`
+	Experiments       string   `json:"experiments"`
+	Results           string   `json:"results"`
+}
+
 // ReportInput 是研读报告输入：围绕某篇论文按类型生成。论文 owner 从 ctx 的 tenant 取。
 type ReportInput struct {
 	PaperID    string              `json:"paper_id"`

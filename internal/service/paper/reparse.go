@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"GopherPaper/internal/ai"
+	paperdao "GopherPaper/internal/dao/paper"
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/mq"
 	"GopherPaper/internal/parser"
@@ -17,6 +18,7 @@ import (
 	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
+	"GopherPaper/pkg/errs"
 )
 
 // ReparseOptions 控制离线 MinerU 归档重解析。
@@ -32,6 +34,57 @@ type ReparseResult struct {
 	Done    int
 	Skipped int
 	Failed  int
+}
+
+// Reparse 重新投递某篇论文的完整解析流水线。
+func Reparse(ctx context.Context, ownerID, paperID string) (*model.Paper, error) {
+	p, err := owned(ctx, ownerID, paperID)
+	if err != nil {
+		return nil, err
+	}
+	if reparseBusy(p.Status) {
+		return nil, errs.ErrPaperBusy
+	}
+	task := taskOf(p)
+	if _, err := os.Stat(p.FileURI); err != nil {
+		if os.IsNotExist(err) {
+			setStatus(ctx, task, constant.PaperFailed, "原始 PDF 文件不存在,无法重新解析")
+			return nil, errs.ErrPaperFileMissing
+		}
+		return nil, fmt.Errorf("service/paper: 检查原始 PDF 失败: %w", err)
+	}
+	if err := paperdao.DeleteReports(ctx, paperID); err != nil {
+		return nil, err
+	}
+	invalidateReadyCache(ctx, paperID)
+	if err := paperdao.UpdateParseProgress(ctx, paperID, 0, 0, 0); err != nil {
+		zlog.Warn("重置论文解析进度失败,继续重新解析", "paper_id", paperID, "err", err)
+	}
+	setStatus(ctx, task, constant.PaperUploaded, "重新解析任务已提交")
+	if mqClient != nil {
+		if err := publishParse(ctx, p); err != nil {
+			zlog.Error("投递重新解析队列失败,改为后台解析", "paper_id", p.ID, "err", err)
+			go runPipeline(context.WithoutCancel(ctx), task)
+		}
+	} else {
+		zlog.Warn("MQ 未初始化,改为后台解析", "paper_id", p.ID)
+		go runPipeline(context.WithoutCancel(ctx), task)
+	}
+	p.Status = constant.PaperUploaded
+	p.FailReason = "重新解析任务已提交"
+	p.ParseProgress = 0
+	p.ParsedPages = 0
+	p.TotalPages = 0
+	return p, nil
+}
+
+func reparseBusy(status constant.PaperStatus) bool {
+	switch status {
+	case constant.PaperParsing, constant.PaperExtracted, constant.PaperIndexed:
+		return true
+	default:
+		return false
+	}
 }
 
 // EnqueueReparseMinerUArchives 扫描论文 MinerU 归档并投递重解析任务到 MQ。
@@ -115,13 +168,16 @@ func ReparseMinerUArchives(ctx context.Context, papers []model.Paper, opts Repar
 
 func runReparsePipeline(ctx context.Context, task parseTask) {
 	dir := mineruDir(task.PaperID)
+	uctx := tenant.With(ctx, tenant.Tenant{StudentID: task.OwnerID})
 	ok, err := hasMinerUArchive(dir)
 	if err != nil {
 		zlog.Error("检查 MinerU 归档失败,跳过重解析", "paper_id", task.PaperID, "dir", dir, "err", err)
+		fail(uctx, task, "检查 MinerU 归档失败", err, time.Now())
 		return
 	}
 	if !ok {
 		zlog.Info("跳过重解析: 未找到 MinerU 归档", "paper_id", task.PaperID, "file", task.FileName, "dir", dir)
+		setStatus(uctx, task, constant.PaperFailed, "未找到 MinerU 归档,无法离线重新解析")
 		return
 	}
 	if err := reparseOneFromMinerU(ctx, task, dir); err != nil {

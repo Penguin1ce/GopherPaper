@@ -125,6 +125,65 @@ func Search(c *gin.Context) {
 	response.OK(c, papers)
 }
 
+// Compare 多论文对比分析。
+// POST /api/v1/papers/compare
+func Compare(c *gin.Context) {
+	var req dto.PaperCompareRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	ids := normalizeRequestPaperIDs(req.PaperIDs)
+	if len(ids) < 2 {
+		response.Fail(c, http.StatusBadRequest, "请至少选择两篇论文")
+		return
+	}
+	if len(ids) > constant.ComparePapersMaxCount {
+		response.Fail(c, http.StatusBadRequest, "单次最多对比 "+strconv.Itoa(constant.ComparePapersMaxCount)+" 篇论文")
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	report, err := paperservice.Compare(c.Request.Context(), ownerID, ids)
+	if err != nil {
+		if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errs.ErrPaperForbidden) {
+			writePaperErr(c, err, "对比失败")
+			return
+		}
+		zlog.Error("多论文对比失败", "owner", ownerID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "对比失败")
+		return
+	}
+	response.OK(c, report)
+}
+
+// CompareReports 列出当前用户的历史多论文对比报告。
+// GET /api/v1/papers/compare/reports
+func CompareReports(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	reports, err := paperservice.ListCompareReports(c.Request.Context(), ownerID)
+	if err != nil {
+		zlog.Error("查询多论文对比报告失败", "owner", ownerID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "查询对比报告失败")
+		return
+	}
+	response.OK(c, reports)
+}
+
+// DeleteCompareReport 删除当前用户的一份历史多论文对比报告。
+// DELETE /api/v1/papers/compare/reports/:report_id
+func DeleteCompareReport(c *gin.Context) {
+	reportID, ok := parseCompareReportID(c)
+	if !ok {
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	if err := paperservice.DeleteCompareReport(c.Request.Context(), ownerID, reportID); err != nil {
+		writePaperErr(c, err, "删除对比报告失败")
+		return
+	}
+	response.OK(c, nil)
+}
+
 // Status 查论文解析状态,SSE 断线兜底用。
 // GET /api/v1/papers/:id/status
 //
@@ -150,6 +209,31 @@ func Status(c *gin.Context) {
 		"id": p.ID, "status": p.Status, "fail_reason": p.FailReason,
 		"parse_progress": p.ParseProgress, "parsed_pages": p.ParsedPages, "total_pages": p.TotalPages,
 	})
+}
+
+// Reparse 重新投递当前用户拥有的论文解析任务。
+// POST /api/v1/papers/:id/reparse
+//
+// @Summary 重新解析论文
+// @Description 清理旧报告缓存并重新投递论文解析任务。正在解析中的论文不可重复投递。
+// @Tags papers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "论文 ID"
+// @Success 200 {object} dto.Response{data=model.Paper}
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 409 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /papers/{id}/reparse [post]
+func Reparse(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	p, err := paperservice.Reparse(c.Request.Context(), ownerID, c.Param("id"))
+	if err != nil {
+		writePaperErr(c, err, "重新解析失败")
+		return
+	}
+	response.OK(c, p)
 }
 
 // Detail 取论文及其结构化元信息与章节。
@@ -685,6 +769,20 @@ func SyncMindMap(c *gin.Context) {
 	response.OK(c, mindMap)
 }
 
+func normalizeRequestPaperIDs(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
 func parseAnnotationID(c *gin.Context) (uint64, bool) {
 	id, err := strconv.ParseUint(c.Param("annotation_id"), 10, 64)
 	if err != nil || id == 0 {
@@ -698,6 +796,15 @@ func parseMindMapID(c *gin.Context) (uint64, bool) {
 	id, err := strconv.ParseUint(c.Param("mind_map_id"), 10, 64)
 	if err != nil || id == 0 {
 		response.Fail(c, http.StatusBadRequest, "脑图 ID 无效")
+		return 0, false
+	}
+	return id, true
+}
+
+func parseCompareReportID(c *gin.Context) (uint64, bool) {
+	id, err := strconv.ParseUint(c.Param("report_id"), 10, 64)
+	if err != nil || id == 0 {
+		response.Fail(c, http.StatusBadRequest, "对比报告 ID 无效")
 		return 0, false
 	}
 	return id, true
@@ -744,10 +851,16 @@ func writePaperErr(c *gin.Context, err error, fallback string) {
 		response.Fail(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, errs.ErrMindMapInvalid):
 		response.Fail(c, http.StatusBadRequest, err.Error())
+	case errors.Is(err, errs.ErrReportNotFound):
+		response.Fail(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, errs.ErrPaperForbidden):
 		response.Fail(c, http.StatusForbidden, err.Error())
 	case errors.Is(err, errs.ErrPaperNotReady):
 		response.Fail(c, http.StatusConflict, err.Error())
+	case errors.Is(err, errs.ErrPaperBusy):
+		response.Fail(c, http.StatusConflict, err.Error())
+	case errors.Is(err, errs.ErrPaperFileMissing):
+		response.Fail(c, http.StatusNotFound, err.Error())
 	default:
 		zlog.Error("论文接口错误", "err", err)
 		response.Fail(c, http.StatusInternalServerError, fallback)

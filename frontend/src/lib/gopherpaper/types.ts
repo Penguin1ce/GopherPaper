@@ -201,6 +201,17 @@ export interface ChatResponse {
   meta?: Record<string, unknown>;
 }
 
+export interface PaperCompareReport {
+  id: number;
+  owner_id: string;
+  title: string;
+  paper_ids: string[];
+  content: string;
+  meta?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AnnotationRect {
   x1: number;
   y1: number;

@@ -16,6 +16,7 @@ import type {
   AnnotationRect,
   Paper,
   PaperAnnotation,
+  PaperCompareReport,
   PaperDeleteConfirmPayload,
   PaperDetail,
   PaperFlow,
@@ -309,6 +310,23 @@ export function searchPapers(q: string) {
   return request<Paper[]>(`/papers/search?q=${encodeURIComponent(q)}`);
 }
 
+export function comparePapers(paperIDs: string[]) {
+  return request<PaperCompareReport>("/papers/compare", {
+    method: "POST",
+    body: JSON.stringify({ paper_ids: paperIDs }),
+  });
+}
+
+export function listCompareReports() {
+  return request<PaperCompareReport[]>("/papers/compare/reports");
+}
+
+export function deleteCompareReport(id: number) {
+  return request<null>(`/papers/compare/reports/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 export function paperStatus(id: string) {
   return request<
     Pick<
@@ -337,6 +355,12 @@ export function rebuildPaperSections(id: string) {
 export function deletePaper(id: string) {
   return request<null>(`/papers/${encodeURIComponent(id)}`, {
     method: "DELETE",
+  });
+}
+
+export function reparsePaper(id: string) {
+  return request<Paper>(`/papers/${encodeURIComponent(id)}/reparse`, {
+    method: "POST",
   });
 }
 

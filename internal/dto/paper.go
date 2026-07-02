@@ -42,6 +42,11 @@ type ReadyReportsResponse struct {
 	Running []ReportRun           `json:"running"`
 }
 
+// PaperCompareRequest 是多论文对比分析请求。
+type PaperCompareRequest struct {
+	PaperIDs []string `json:"paper_ids" binding:"required,min=2"`
+}
+
 // TranslateResponse 是选段翻译响应。
 type TranslateResponse struct {
 	Translation string `json:"translation"`

@@ -110,6 +110,7 @@ interface AppContextValue {
   clearAvatar: () => Promise<void>;
   refreshPapers: (query?: string) => Promise<void>;
   uploadPaper: (file: File) => Promise<void>;
+  reparsePaper: (id: string) => Promise<void>;
   removePaper: (id: string) => Promise<void>;
   selectPaper: (id: string) => void;
   refreshSessions: () => Promise<void>;
@@ -787,6 +788,32 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     [queryClient],
   );
 
+  const reparsePaper = useCallback(
+    async (id: string) => {
+      const paper = await api.reparsePaper(id);
+      if (paper?.id) {
+        const patch: Partial<Paper> = {
+          ...paper,
+          status: paper.status ?? "uploaded",
+          fail_reason: "",
+          status_detail: paper.fail_reason || "重新解析任务已提交",
+          parse_progress: 0,
+          parsed_pages: 0,
+          total_pages: 0,
+        };
+        papersRef.current = papersRef.current.map((p) =>
+          p.id === id ? { ...p, ...patch } : p,
+        );
+        setPapers((list) =>
+          list.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+        );
+      }
+      await queryClient.invalidateQueries({ queryKey: ["paper-status-poll"] });
+      toast("已提交重新解析任务");
+    },
+    [queryClient, setPapers, toast],
+  );
+
   const removePaper = useCallback(
     async (id: string) => {
       const paperIndex = papers.findIndex((p) => p.id === id);
@@ -1134,6 +1161,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       clearAvatar,
       refreshPapers,
       uploadPaper,
+      reparsePaper,
       removePaper,
       selectPaper,
       refreshSessions,
@@ -1176,6 +1204,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       clearAvatar,
       refreshPapers,
       uploadPaper,
+      reparsePaper,
       removePaper,
       selectPaper,
       refreshSessions,
