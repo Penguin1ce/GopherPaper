@@ -233,6 +233,20 @@ type PaperReport struct {
 
 func (PaperReport) TableName() string { return "paper_reports" }
 
+// PaperCompareReport 保存多论文对比分析报告, 供研究报告页历史记录复用。
+type PaperCompareReport struct {
+	ID        uint64      `gorm:"primaryKey" json:"id"`
+	OwnerID   string      `gorm:"size:64;not null;index" json:"owner_id"`
+	Title     string      `gorm:"size:512;not null" json:"title"`
+	PaperIDs  JSONStrings `gorm:"type:text" json:"paper_ids"`
+	Content   string      `gorm:"type:longtext" json:"content"`
+	Meta      JSONMap     `gorm:"type:text" json:"meta,omitempty"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
+}
+
+func (PaperCompareReport) TableName() string { return "paper_compare_reports" }
+
 // PaperAnnotation 是精读页保存的文本高亮与可选笔记。
 type PaperAnnotation struct {
 	ID           uint64          `gorm:"primaryKey" json:"id"`

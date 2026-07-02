@@ -24,6 +24,8 @@ var (
 	ErrPaperNotFound      = errors.New("paper: 论文不存在")
 	ErrPaperForbidden     = errors.New("paper: 无权访问该论文")
 	ErrInvalidFile        = errors.New("paper: 文件无效，仅支持 PDF")
+	ErrPaperBusy          = errors.New("paper: 论文正在解析中")
+	ErrPaperFileMissing   = errors.New("paper: 原始 PDF 文件不存在")
 	ErrParseFailed        = errors.New("paper: PDF 解析失败")
 	ErrReportNotFound     = errors.New("paper: 研读报告缓存不存在")
 	ErrReportGenerating   = errors.New("paper: 研读报告正在生成中")

@@ -7,6 +7,7 @@ import {
   MessagesSquare,
   PanelLeftOpen,
   RefreshCw,
+  RotateCcw,
   Search,
   Trash2,
   X,
@@ -38,6 +39,7 @@ import type { Paper, Session } from "@/lib/gopherpaper/types";
 import {
   formatSize,
   formatTime,
+  isSettled,
   paperTitle,
   sessionsForPaper,
   sessionTitle,
@@ -454,6 +456,7 @@ export function PaperPane({
     activePaperID,
     selectPaper,
     uploadPaper,
+    reparsePaper,
     removePaper,
     refreshPapers,
     sessions,
@@ -468,6 +471,7 @@ export function PaperPane({
   const [uploadOpen, setUploadOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Paper | null>(null);
   const [deletingID, setDeletingID] = useState("");
+  const [reparsingID, setReparsingID] = useState("");
   const [query, setQuery] = useState("");
   const [activeKw, setActiveKw] = useState<string[]>([]);
 
@@ -512,6 +516,14 @@ export function PaperPane({
       await removePaper(id);
       setDeleteTarget(null);
     }).finally(() => setDeletingID(""));
+  };
+
+  const onReparse = (paper: Paper) => {
+    if (reparsingID) return;
+    setReparsingID(paper.id);
+    guard(async () => {
+      await reparsePaper(paper.id);
+    }).finally(() => setReparsingID(""));
   };
 
   const showStrip = activePaper && activePaper.status !== "ready";
@@ -579,7 +591,7 @@ export function PaperPane({
           <Input
             value={query}
             className="rounded-full bg-card px-8"
-            placeholder="搜索论文 · 回车"
+            placeholder="搜索标题、关键词、作者 · 回车"
             onChange={(e) => setQuery(e.target.value)}
           />
           {query && (
@@ -620,6 +632,18 @@ export function PaperPane({
             shownPapers.map((p) => {
               const active = p.id === activePaperID;
               const paperSessions = sessionsForPaper(sessions, p.id);
+              const canReparse = isSettled(p.status) || p.status === "uploaded";
+              const reparsing = reparsingID === p.id;
+              const detailText =
+                p.status === "failed"
+                  ? p.fail_reason || "解析失败,可重新解析"
+                  : [
+                      p.file_name,
+                      formatSize(p.size),
+                      formatTime(p.updated_at || p.created_at),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
               return (
                 <div
                   key={p.id}
@@ -636,23 +660,22 @@ export function PaperPane({
                     className="absolute inset-0 z-0 rounded-md focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                     onClick={() => selectPaper(p.id)}
                   />
-                  <div className="pointer-events-none relative z-10 flex items-start justify-between gap-2.5">
-                    <strong className="pointer-events-none line-clamp-2 min-w-0 text-sm font-medium leading-snug">
+                  <div className="relative z-10 flex items-start justify-between gap-2.5">
+                    <strong className="pointer-events-none line-clamp-2 min-w-0 flex-1 text-sm font-medium leading-snug">
                       {paperTitle(p)}
                     </strong>
                     <div className="pointer-events-none">
                       <StatusBadge status={p.status} />
                     </div>
                   </div>
-                  <div className="pointer-events-none relative z-10 mt-1.5 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 text-xs text-muted-foreground">
-                    <span className="pointer-events-none line-clamp-1 min-w-0">
-                      {[
-                        p.file_name,
-                        formatSize(p.size),
-                        formatTime(p.updated_at || p.created_at),
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
+                  <div className="pointer-events-none relative z-10 mt-1.5 grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 text-xs text-muted-foreground">
+                    <span
+                      className={cn(
+                        "pointer-events-none line-clamp-1 min-w-0",
+                        p.status === "failed" && "text-destructive",
+                      )}
+                    >
+                      {detailText}
                     </span>
                     {active && (
                       <div className="pointer-events-auto">
@@ -666,6 +689,27 @@ export function PaperPane({
                         />
                       </div>
                     )}
+                    <button
+                      type="button"
+                      aria-label={`重新解析 ${paperTitle(p)}`}
+                      title={canReparse ? "重新解析论文" : "论文正在解析中"}
+                      disabled={!canReparse || Boolean(reparsingID)}
+                      className={cn(
+                        "pointer-events-auto inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 outline-none transition hover:bg-sienna/10 hover:text-sienna focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 sm:opacity-0 sm:group-hover/paper:opacity-100 sm:group-focus-within/paper:opacity-100",
+                        (reparsing || p.status === "failed") &&
+                          "opacity-100 sm:opacity-100",
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onReparse(p);
+                      }}
+                    >
+                      {reparsing ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="size-3.5" />
+                      )}
+                    </button>
                     <button
                       type="button"
                       aria-label={`删除 ${paperTitle(p)}`}

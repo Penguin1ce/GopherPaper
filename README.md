@@ -62,7 +62,10 @@ Next 前端,并对 `/api/v1/events` 和聊天消息 SSE 关闭代理缓冲。
 | JWT | POST | `/api/v1/user/logout` | 注销当前登录,清服务端登录态与用户模型缓存 |
 | JWT | POST | `/api/v1/papers` | 上传 PDF,multipart `file`,上限 50MB,触发异步解析 |
 | JWT | GET | `/api/v1/papers` | 列出当前用户论文 |
-| JWT | GET | `/api/v1/papers/search?q=` | 历史文献检索 |
+| JWT | GET | `/api/v1/papers/search?q=` | 历史文献检索,支持标题、文件名、作者和关键词 |
+| JWT | POST | `/api/v1/papers/compare` | 生成并保存多论文对比报告,body `paper_ids`: 2~6 篇论文 ID |
+| JWT | GET | `/api/v1/papers/compare/reports` | 列出历史多论文对比报告 |
+| JWT | DELETE | `/api/v1/papers/compare/reports/:report_id` | 删除历史多论文对比报告 |
 | JWT | GET | `/api/v1/papers/:id` | 论文详情、结构化元信息与章节大纲 |
 | JWT | GET | `/api/v1/papers/:id/status` | 查询解析状态,作为 WebSocket 断线兜底 |
 | JWT | POST | `/api/v1/papers/:id/report` | 生成或读取研读报告,body `type`: `quickread`、`method`、`result`、`innovation`、`future` |
