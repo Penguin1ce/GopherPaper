@@ -193,10 +193,16 @@ func ensureReport(ctx context.Context, paperID string, t constant.ReportType) (*
 		zlog.Error("报告进度快照初始化失败", "paper_id", paperID, "type", string(t), "err", err)
 	}
 
-	reply, err := ai.GenerateReport(ctx, paperID, t)
-	if err != nil {
-		metricErr = err
-		return nil, err
+	var reply *core.Reply
+	var genErr error
+	if t == constant.ReportRelated {
+		reply, genErr = generateRelatedResearch(ctx, paperID)
+	} else {
+		reply, genErr = ai.GenerateReport(ctx, paperID, t)
+	}
+	if genErr != nil {
+		metricErr = genErr
+		return nil, genErr
 	}
 	attachReportProgressSteps(ctx, paperID, t, reply)
 	rec := &model.PaperReport{PaperID: paperID, ReportType: t, Content: reply.Content}

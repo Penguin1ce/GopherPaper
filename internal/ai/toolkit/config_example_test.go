@@ -18,9 +18,6 @@ func TestConfigExampleNamesBuiltinTools(t *testing.T) {
 	if !strings.Contains(content, `openalex_api_key = ""`) {
 		t.Fatal("config.example.toml should include openalex_api_key")
 	}
-	if !strings.Contains(content, `gopher_flow_skills = ["skills/gopher-flow"]`) {
-		t.Fatal("config.example.toml should include gopher_flow_skills")
-	}
 	for name, display := range builtinToolDisplayNames {
 		want := fmt.Sprintf(`%s = "%s"`, name, display)
 		if !strings.Contains(content, want) {

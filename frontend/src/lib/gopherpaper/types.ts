@@ -385,7 +385,7 @@ export interface ResetPasswordPayload extends PasswordResetCodePayload {
 }
 
 export type ReportType =
-  "quickread" | "method" | "result" | "innovation" | "future";
+  "quickread" | "method" | "result" | "innovation" | "related";
 
 export interface RegisterPayload {
   student_id: string;

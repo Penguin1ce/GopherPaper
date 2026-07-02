@@ -372,8 +372,8 @@ export function generateReport(id: string, type: ReportType) {
   });
 }
 
-// generatePaperFlow 为某篇论文画一张研究思路流程图,返回 content 为自包含 SVG 的 ChatResponse。
-// 同步生成不缓存,论文未就绪时后端返回 409。
+// generatePaperFlow 为某篇论文生成小云雀同款研究思路图,返回 meta.flow。
+// 后端持久化缓存,论文未就绪时返回 409。
 export function generatePaperFlow(id: string) {
   return request<ChatResponse>(`/papers/${encodeURIComponent(id)}/flow`, {
     method: "POST",

@@ -33,6 +33,9 @@ func Detail(ctx context.Context, ownerID, paperID string) (*model.Paper, *model.
 	if err != nil && err != errs.ErrPaperNotFound {
 		return nil, nil, nil, err
 	}
+	if meta != nil {
+		p.Keywords = meta.Keywords
+	}
 	sections, err := paperdao.ListSections(ctx, paperID)
 	if err != nil {
 		return nil, nil, nil, err

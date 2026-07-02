@@ -73,7 +73,6 @@ thinking = "disabled"
 skills = []                            # 论文助教的本地 skill 目录
 pioneer_skills = ["skills/pioneer"]    # 小云雀的本地 skill 目录
 gopher_skills = ["skills/gopher"]      # 小囊鼠研读报告 agent 的检索流程 skill
-gopher_flow_skills = ["skills/gopher-flow"]  # 小囊鼠论文思路图的 infographic-charts skill(画 SVG)
 baidu_map_ak = ""                      # 百度地图开放平台 AK,非空时给小云雀挂 geocode 地理编码工具
 baidu_map_sk = ""                      # AK 开了 SN 校验时填对应 SK,留空表示 AK 走 IP 白名单校验
 tavily_api_key = ""                    # Tavily 联网搜索密钥,非空时给小云雀挂 web_search 工具,补足实时信息

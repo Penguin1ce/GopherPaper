@@ -183,6 +183,9 @@ func Delete(ctx context.Context, id string) error {
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperReport{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperFlowCache{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperAnnotation{}).Error; err != nil {
 			return err
 		}
@@ -267,6 +270,33 @@ func SaveReport(ctx context.Context, r *model.PaperReport) error {
 	}).Create(r).Error
 	if err != nil {
 		return fmt.Errorf("dao/paper: 写入研读报告失败: %w", err)
+	}
+	return nil
+}
+
+// GetPaperFlow 取某篇论文的小云雀同款思路图缓存。
+func GetPaperFlow(ctx context.Context, ownerID, paperID string) (*model.PaperFlowCache, error) {
+	var r model.PaperFlowCache
+	err := dao.DB.WithContext(ctx).
+		Where("owner_id = ? and paper_id = ?", ownerID, paperID).
+		First(&r).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errs.ErrPaperFlowNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询论文思路图失败: %w", err)
+	}
+	return &r, nil
+}
+
+// SavePaperFlow 写入或覆盖某篇论文的小云雀同款思路图缓存。
+func SavePaperFlow(ctx context.Context, r *model.PaperFlowCache) error {
+	err := dao.DB.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "owner_id"}, {Name: "paper_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"flow_json", "updated_at"}),
+	}).Create(r).Error
+	if err != nil {
+		return fmt.Errorf("dao/paper: 写入论文思路图失败: %w", err)
 	}
 	return nil
 }

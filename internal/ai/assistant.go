@@ -134,9 +134,13 @@ func GenerateReport(ctx context.Context, paperID string, t constant.ReportType) 
 	})
 }
 
-// GeneratePaperFlowSVG 围绕某篇论文画一张研究思路流程图,返回自包含 SVG,由前端按钮触发。
-// 经小囊鼠的单轮 agent(挂 infographic-charts skill)同步生成,不缓存、不落库。
+// GenerateRelatedResearch 沿当前论文参考文献链路收集相关研究链接。
+func GenerateRelatedResearch(ctx context.Context, paperTitle string, refs []string) (*core.Reply, error) {
+	return pioneerflow.RelatedResearch(ctx, paperTitle, refs)
+}
+
+// GeneratePaperFlow 围绕某篇论文生成小云雀同款节点思路图,由前端按钮触发。
 // ctx 须注入论文 owner 供检索隔离与模型选取。
-func GeneratePaperFlowSVG(ctx context.Context, paperID string) (*core.Reply, error) {
-	return gopherflow.GenerateFlowSVG(ctx, paperID)
+func GeneratePaperFlow(ctx context.Context, paperID string) (*core.Reply, error) {
+	return gopherflow.GenerateFlow(ctx, paperID)
 }
