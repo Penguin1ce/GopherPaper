@@ -294,6 +294,61 @@ func Search(ctx context.Context, query, ownerID, docID string, topK int) (*vecto
 	return searchWithFilter(ctx, query, scopeCondition(ownerID, docID), topK)
 }
 
+// SearchPageRange 在可见范围内限定到某篇论文的一段页码做语义检索。
+// 精读页优先用 QueryPageRange 取完整页块;这里保留给需要页码过滤的向量检索场景。
+func SearchPageRange(ctx context.Context, query, ownerID, docID string, pageStart, pageEnd, topK int) (*vectorstore.SearchResult, error) {
+	filter := searchfilter.And(
+		scopeCondition(ownerID, docID),
+		pageRangeCondition(pageStart, pageEnd),
+	)
+	return searchWithFilter(ctx, query, filter, topK)
+}
+
+// QueryPageRange 按标量条件直接取某篇论文页码区间内的块,不做向量化与语义检索。
+// 精读页小耄耋用它保证当前页上下文完整;结果顺序由调用方按 chunk_index 整理。
+func QueryPageRange(ctx context.Context, ownerID, docID string, pageStart, pageEnd, limit int) (*vectorstore.SearchResult, error) {
+	if trpcStore == nil {
+		return nil, fmt.Errorf("knowledge: trpc store 未初始化")
+	}
+	if limit <= 0 {
+		limit = constant.MaodiePageQueryLimit
+	}
+	filter := searchfilter.And(
+		scopeCondition(ownerID, docID),
+		pageRangeCondition(pageStart, pageEnd),
+	)
+	res, err := trpcStore.Search(ctx, &vectorstore.SearchQuery{
+		Limit:      limit,
+		SearchMode: vectorstore.SearchModeFilter,
+		Filter:     &vectorstore.SearchFilter{FilterCondition: filter},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "no results found") {
+			return &vectorstore.SearchResult{}, nil
+		}
+		return nil, err
+	}
+	return res, nil
+}
+
+// pageRangeCondition 匹配与页码区间 [pageStart, pageEnd] 有交集的知识块:
+// 起始页落在区间内,或跨页块从区间前延伸进来(page_no<=pageEnd 且 page_end>=pageStart)。
+// 缺 page_end 的旧块仍由起始页分支命中。
+func pageRangeCondition(pageStart, pageEnd int) *searchfilter.UniversalFilterCondition {
+	pageField := metadataPrefix + constant.MilvusFieldPageNo
+	endField := metadataPrefix + constant.MilvusFieldPageEnd
+	return searchfilter.Or(
+		searchfilter.And(
+			searchfilter.GreaterThanOrEqual(pageField, pageStart),
+			searchfilter.LessThanOrEqual(pageField, pageEnd),
+		),
+		searchfilter.And(
+			searchfilter.LessThanOrEqual(pageField, pageEnd),
+			searchfilter.GreaterThanOrEqual(endField, pageStart),
+		),
+	)
+}
+
 // SearchImages 只检索图块(block_type==image),用于问答时单独一轮带图召回,
 // 不与正文同池竞争。可见性过滤同 Search。
 func SearchImages(ctx context.Context, query, ownerID, docID string, topK int) (*vectorstore.SearchResult, error) {

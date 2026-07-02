@@ -556,7 +556,7 @@ func buildChunks(task parseTask, doc *core.ParsedDoc) []knowledge.Chunk {
 		}
 		meta := map[string]any{"section": curSection}
 		if endPage > startPage {
-			meta["page_end"] = endPage // 块跨页时记终页,出处页码取起始页
+			meta[constant.MilvusFieldPageEnd] = endPage // 块跨页时记终页,出处页码取起始页
 		}
 		chunks = append(chunks, knowledge.Chunk{
 			Content:    content,

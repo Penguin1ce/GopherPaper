@@ -10,6 +10,13 @@ type Reply struct {
 	Meta    map[string]any      `json:"meta,omitempty"` // 链路特有的结构化数据
 }
 
+// ReaderContext 是精读页局部问答随消息携带的阅读上下文。
+type ReaderContext struct {
+	Scope        string `json:"scope,omitempty"`         // selection/page 等前端作用域
+	PageNo       int    `json:"page_no,omitempty"`       // 当前 PDF 页码
+	SelectedText string `json:"selected_text,omitempty"` // 用户选中的原文片段
+}
+
 // ParsedDoc 是 PDF 解析后的结构化中间产物，由 parser 产出，供抽取与分块共用。
 // 不与具体解析器耦合，MinerU 的细节在 parser 包内消化。
 type ParsedDoc struct {

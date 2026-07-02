@@ -172,9 +172,10 @@ func (e *fixedEmbedder) GetDimensions() int {
 }
 
 type insertOnlyVectorStore struct {
-	docs      map[string]*document.Document
-	addIDs    []string
-	deleteIDs [][]string
+	docs          map[string]*document.Document
+	addIDs        []string
+	deleteIDs     [][]string
+	searchQueries []*vectorstore.SearchQuery
 }
 
 func (s *insertOnlyVectorStore) Add(_ context.Context, doc *document.Document, embedding []float64) error {
@@ -216,7 +217,8 @@ func (s *insertOnlyVectorStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (s *insertOnlyVectorStore) Search(_ context.Context, _ *vectorstore.SearchQuery) (*vectorstore.SearchResult, error) {
+func (s *insertOnlyVectorStore) Search(_ context.Context, query *vectorstore.SearchQuery) (*vectorstore.SearchResult, error) {
+	s.searchQueries = append(s.searchQueries, query)
 	return &vectorstore.SearchResult{}, nil
 }
 

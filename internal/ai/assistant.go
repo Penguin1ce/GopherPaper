@@ -20,6 +20,7 @@ import (
 	extractflow "GopherPaper/internal/ai/extract"
 	figureflow "GopherPaper/internal/ai/figure"
 	gopherflow "GopherPaper/internal/ai/gopher"
+	maodieflow "GopherPaper/internal/ai/maodie"
 	pioneerflow "GopherPaper/internal/ai/pioneer"
 	ragagentflow "GopherPaper/internal/ai/ragagent"
 	"GopherPaper/internal/ai/retrieval"
@@ -83,6 +84,14 @@ func PioneerChat(ctx context.Context, sessionID, query string) (*core.Reply, err
 		reply.Meta = map[string]any{"flow": flow}
 	}
 	return reply, nil
+}
+
+// MaodieChat 是精读页小耄耋入口:围绕当前页/选段做局部问答,不走全量 agentic RAG。
+func MaodieChat(ctx context.Context, hist []model.Message, query string, rc core.ReaderContext) (*core.Reply, error) {
+	if !ready {
+		return nil, fmt.Errorf("ai: 编排器未初始化")
+	}
+	return maodieflow.Chat(ctx, toHistory(hist), query, rc)
 }
 
 // toHistory 把存储层的历史消息转成 trpc 对话消息,喂给 RAG 链路做多轮上下文。
