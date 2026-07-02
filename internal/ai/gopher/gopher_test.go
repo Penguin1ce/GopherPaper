@@ -2,12 +2,17 @@ package gopher
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"GopherPaper/internal/ai/core"
 	"GopherPaper/internal/ai/retrieval"
 	"GopherPaper/pkg/constant"
+
+	"trpc.group/trpc-go/trpc-agent-go/event"
+	"trpc.group/trpc-go/trpc-agent-go/graph"
+	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
 )
 
 // 报告 prompt 必须带 {focus} 占位符,Generate 据此按报告类型注入聚焦点。
@@ -20,9 +25,10 @@ func TestReportPromptHasFocusPlaceholder(t *testing.T) {
 	if strings.Contains(out, "{focus}") || !strings.Contains(out, constant.ReportMethodFocus) {
 		t.Fatalf("focus 注入异常: %q", out)
 	}
-	for _, want := range []string{"researcher", "writer", "reviewer"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("chain 任务缺少 %s 阶段: %q", want, out)
+	// 共享用户消息不得下达角色顺序指令,否则挂 planner 的 researcher 会把写作评审规划进自己任务。
+	for _, role := range []string{"researcher", "writer", "reviewer"} {
+		if strings.Contains(out, role) {
+			t.Fatalf("共享任务简报不应出现 %s 角色指令: %q", role, out)
 		}
 	}
 }
@@ -63,6 +69,36 @@ func TestEmitReportPhase(t *testing.T) {
 	}
 	if !strings.Contains(ev.Delta, "写报告") {
 		t.Fatalf("阶段文案缺少写报告提示: %q", ev.Delta)
+	}
+}
+
+func TestResearcherEventContent(t *testing.T) {
+	ev := &event.Event{Response: &trpcmodel.Response{
+		Choices: []trpcmodel.Choice{{Message: trpcmodel.Message{Content: "  证据笔记  "}}},
+	}}
+	if got := researcherEventContent(ev); got != "证据笔记" {
+		t.Fatalf("researcherEventContent = %q, want 证据笔记", got)
+	}
+	toolEv := &event.Event{Response: &trpcmodel.Response{
+		Object:  trpcmodel.ObjectTypeToolResponse,
+		Choices: []trpcmodel.Choice{{Message: trpcmodel.Message{Content: "工具结果"}}},
+	}}
+	if got := researcherEventContent(toolEv); got != "" {
+		t.Fatalf("工具响应不应作为 researcher 最终内容: %q", got)
+	}
+}
+
+func TestResearcherEventContentFromStateDelta(t *testing.T) {
+	raw, err := json.Marshal("state 证据笔记")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := &event.Event{
+		Response:   &trpcmodel.Response{},
+		StateDelta: map[string][]byte{graph.StateKeyLastResponse: raw},
+	}
+	if got := researcherEventContent(ev); got != "state 证据笔记" {
+		t.Fatalf("researcherEventContent state = %q", got)
 	}
 }
 

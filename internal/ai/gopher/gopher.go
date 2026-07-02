@@ -7,6 +7,7 @@ package gopher
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -17,6 +18,7 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/agent/chainagent"
 	"trpc.group/trpc-go/trpc-agent-go/agent/llmagent"
 	"trpc.group/trpc-go/trpc-agent-go/event"
+	"trpc.group/trpc-go/trpc-agent-go/graph"
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
 	"trpc.group/trpc-go/trpc-agent-go/planner/react"
 	"trpc.group/trpc-go/trpc-agent-go/runner"
@@ -170,7 +172,14 @@ func newReportStageAgent(inner agent.Agent, phase, text string) agent.Agent {
 
 func (a *reportStageAgent) Run(ctx context.Context, invocation *agent.Invocation) (<-chan *event.Event, error) {
 	emitReportPhase(ctx, a.phase, a.text)
-	return a.inner.Run(ctx, invocation)
+	ch, err := a.inner.Run(ctx, invocation)
+	if err != nil {
+		return nil, err
+	}
+	if a.phase == constant.ReportPhaseResearching {
+		return logResearcherFinalContent(ctx, ch), nil
+	}
+	return ch, nil
 }
 
 func (a *reportStageAgent) Tools() []tool.Tool {
@@ -195,6 +204,58 @@ func emitReportPhase(ctx context.Context, phase, text string) {
 	}
 }
 
+func logResearcherFinalContent(ctx context.Context, in <-chan *event.Event) <-chan *event.Event {
+	out := make(chan *event.Event)
+	go func() {
+		defer close(out)
+		var finalContent string
+		for ev := range in {
+			if content := researcherEventContent(ev); content != "" {
+				finalContent = content
+			}
+			out <- ev
+		}
+		finalContent = strings.TrimSpace(finalContent)
+		if finalContent == "" {
+			zlog.Info("小囊鼠 researcher 最终内容为空", "paper_id", core.PaperIDFrom(ctx))
+			return
+		}
+		zlog.Info("小囊鼠 researcher 最终内容",
+			"paper_id", core.PaperIDFrom(ctx),
+			"chars", len([]rune(finalContent)),
+			"content", finalContent,
+		)
+	}()
+	return out
+}
+
+func researcherEventContent(ev *event.Event) string {
+	if ev == nil || ev.Response == nil || ev.Object == trpcmodel.ObjectTypeToolResponse {
+		return ""
+	}
+	if content := strings.TrimSpace(responseContent(ev)); content != "" {
+		return content
+	}
+	if raw := ev.StateDelta[graph.StateKeyLastResponse]; len(raw) > 0 {
+		var s string
+		if err := json.Unmarshal(raw, &s); err == nil {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
+}
+
+func responseContent(ev *event.Event) string {
+	if ev == nil || ev.Response == nil || ev.IsPartial {
+		return ""
+	}
+	var b strings.Builder
+	for _, c := range ev.Choices {
+		b.WriteString(c.Message.Content)
+	}
+	return strings.TrimSpace(b.String())
+}
+
 // EvictUser 清除该用户缓存的小囊鼠 runner(含思路图),登出时调用。下次访问自动重建。
 func EvictUser(userID string) {
 	runners.Delete(userID)
@@ -204,9 +265,10 @@ func EvictUser(userID string) {
 // reportH1 匹配 Markdown 一级标题行。一份报告至多一个一级标题,出现第二个即模型跑飞重写了第二份。
 var reportH1 = regexp.MustCompile(`(?m)^#\s+\S`)
 
+// reportQuery 生成链上三段共享的用户消息:只有任务简报与共享约束,不下达角色顺序指令。
+// 顺序由 chainagent 结构保证,消息里写了角色流程会让挂 planner 的 researcher 把写作评审也规划进去。
 func reportQuery(focus string) string {
-	brief := strings.ReplaceAll(constant.GopherReportPrompt, "{focus}", focus)
-	return brief + "\n\n当前任务: 请按小囊鼠 researcher -> writer -> reviewer 的顺序完成本篇论文研读报告。最终交付只保留 reviewer 修订后的完整 Markdown 报告。"
+	return strings.ReplaceAll(constant.GopherReportPrompt, "{focus}", focus)
 }
 
 const (
@@ -369,7 +431,11 @@ func fallbackFigureInstruction(docs []*retrieval.Doc) string {
 		if b.Len() == 0 {
 			b.WriteString("\n\n可用图表占位如下,只有正文需要时才插入:\n")
 		}
-		fmt.Fprintf(&b, "- figure://%s : %s\n", ref.ImgName, retrieval.FormatReference(ref))
+		if ref.CitationTag != "" {
+			fmt.Fprintf(&b, "- figure://%s : %s, citation_tag: %s\n", ref.ImgName, retrieval.FormatReference(ref), ref.CitationTag)
+		} else {
+			fmt.Fprintf(&b, "- figure://%s : %s\n", ref.ImgName, retrieval.FormatReference(ref))
+		}
 	}
 	return b.String()
 }
