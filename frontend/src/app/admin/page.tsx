@@ -44,6 +44,7 @@ import { UsersPanel } from "./users-panel";
 import { LogsPanel } from "./logs-panel";
 import { ArchitectureGraph } from "./architecture-graph";
 import { AuditPanel } from "./audit-panel";
+import { ExportBar } from "./export-bar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -602,6 +603,7 @@ export default function AdminPage() {
             <UsersPanel token={token} />
             <LogsPanel token={token} />
             <AuditPanel token={token} />
+            <ExportBar token={token} />
             <OverviewGrid overview={overview} onAction={onOverviewAction} />
             <ModelConfigShortcut />
             <section ref={paperSectionRef} className="rounded-lg border border-border bg-card">
