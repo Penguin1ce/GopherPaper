@@ -122,3 +122,15 @@ func SetAdminStatus(c *gin.Context) {
 	}
 	response.OKMsg(c, "管理员状态已更新", nil)
 }
+
+// ── 论文批量操作 ─────────────────────────────────────────────
+
+func BatchDeletePapers(c *gin.Context) {
+	var req dto.AdminBatchDeleteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	res := adminservice.BatchDeletePapers(c.Request.Context(), req.IDs)
+	response.OK(c, res)
+}
