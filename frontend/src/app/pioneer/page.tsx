@@ -401,7 +401,6 @@ export default function PioneerPage() {
     incomingReferenceDraftRef.current = true;
     setActiveID("");
     setMessages([]);
-    setStreamPlan([]);
     setError("");
     setInput(draft);
   }, []);
