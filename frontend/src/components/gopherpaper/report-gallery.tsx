@@ -34,6 +34,7 @@ import type { PaperCompareReport } from "@/lib/gopherpaper/types";
 import { paperTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty } from "./app-ui";
+import { AgentIntro } from "./agent-intro";
 import { ReportPanel } from "./report-panel";
 import { WorkspaceFrame, WorkspacePanel } from "./workspace-frame";
 
@@ -238,12 +239,7 @@ export function ReportGallery() {
             >
               <ArrowLeft className="size-4" />
             </Link>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium">小囊鼠</div>
-              <div className="truncate text-xs text-muted-foreground">
-                研读报告 · 多论文对比
-              </div>
-            </div>
+            <AgentIntro kind="reports" />
           </div>
         </div>
 
