@@ -1,6 +1,22 @@
 .FreetextHighlight,
 .DrawingHighlight {
   z-index: 36;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.reader-annotation-dragging,
+.reader-annotation-dragging .textLayer,
+.reader-annotation-dragging .PdfHighlighter,
+.reader-annotation-dragging .FreetextHighlight,
+.reader-annotation-dragging .DrawingHighlight {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.FreetextHighlight__input {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .FreetextHighlight--editing,
@@ -25,6 +41,9 @@
 .FreetextHighlight__rnd {
   min-height: 32px !important;
   box-sizing: border-box;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
   filter: none !important;
   box-shadow: none !important;
 }
@@ -50,20 +69,39 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 1px;
+  min-height: 1px;
 }
 
 .DrawingHighlight__content {
   overflow: visible;
   border-radius: 0;
   background: transparent;
+  width: 100%;
+  height: 100%;
 }
 
 .DrawingHighlight__image {
+  display: block;
+  width: 100%;
+  height: 100%;
   background: transparent;
+  object-fit: fill;
+}
+
+.DrawingHighlight__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
 }
 
 .FreetextHighlight__toolbar,
 .DrawingHighlight__toolbar {
+  display: none !important;
   top: auto;
   bottom: calc(100% + 6px);
   left: 0;
@@ -74,6 +112,14 @@
   background: rgba(15, 23, 42, 0.94);
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.24);
   transform: translateY(2px);
+}
+
+.FreetextHighlight__toolbar {
+  bottom: calc(100% + 4px);
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.2);
 }
 
 .FreetextHighlight__container:hover .FreetextHighlight__toolbar,
@@ -95,6 +141,19 @@
   border-radius: 5px;
 }
 
+.FreetextHighlight__edit-button,
+.FreetextHighlight__delete-button {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+}
+
+.FreetextHighlight__edit-button svg,
+.FreetextHighlight__delete-button svg {
+  width: 12px;
+  height: 12px;
+}
+
 .FreetextHighlight__drag-handle,
 .DrawingHighlight__drag-handle {
   display: none;
@@ -106,7 +165,47 @@
   min-height: 0;
   overflow: hidden;
   padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
   text-shadow: none !important;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.FreetextHighlight--editing .FreetextHighlight__content {
+  border: 1px solid color-mix(in srgb, currentColor 42%, transparent);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+}
+
+.FreetextHighlight--selected:not(.FreetextHighlight--editing) .FreetextHighlight__content,
+.FreetextHighlight--scrolledTo:not(.FreetextHighlight--editing) .FreetextHighlight__content {
+  border-color: color-mix(in srgb, currentColor 36%, transparent);
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.DrawingHighlight--scrolledTo .DrawingHighlight__container {
+  outline: 2px solid rgba(14, 165, 233, 0.5);
+  outline-offset: 3px;
+}
+
+[data-reader-annotation-selected="true"] .TextHighlight:not(.TextHighlight--scrolledTo) .TextHighlight__part {
+  box-shadow:
+    0 0 0 2px rgba(14, 165, 233, 0.28),
+    0 0 0 4px rgba(14, 165, 233, 0.08),
+    inset 0 -1px 0 rgba(14, 165, 233, 0.34) !important;
+}
+
+.TextHighlight--scrolledTo .TextHighlight__part {
+  box-shadow:
+    0 0 0 2px rgba(14, 165, 233, 0.36),
+    0 0 0 5px rgba(14, 165, 233, 0.1),
+    0 1px 4px rgba(15, 23, 42, 0.1) !important;
 }
 
 .FreetextHighlight--editing .FreetextHighlight__text,
@@ -167,22 +266,40 @@
   outline: 0 !important;
 }
 
+.FreetextHighlight__resize-handle-left::after,
 .FreetextHighlight__resize-handle-right::after {
   content: "";
   position: absolute;
-  left: 5px;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.24);
+  background: color-mix(in srgb, currentColor 58%, white);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.85),
+    0 2px 6px rgba(15, 23, 42, 0.16);
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
 }
 
-.FreetextHighlight__rnd:hover .FreetextHighlight__resize-handle-right::after,
+.FreetextHighlight__resize-handle-left::after {
+  right: 4px;
+}
+
+.FreetextHighlight__resize-handle-right::after {
+  left: 4px;
+}
+
+.FreetextHighlight--editing .FreetextHighlight__resize-handle-left::after,
 .FreetextHighlight--editing .FreetextHighlight__resize-handle-right::after {
   opacity: 1;
+}
+
+.FreetextHighlight--editing .FreetextHighlight__resize-handle-left:hover::after,
+.FreetextHighlight--editing .FreetextHighlight__resize-handle-right:hover::after {
+  transform: scaleY(1.08);
 }
 
 .FreetextHighlight__style-panel,
@@ -197,7 +314,7 @@
 }
 
 .DrawingCanvas {
-  z-index: 64;
+  z-index: 44;
 }
 
 .DrawingCanvas__controls {
@@ -208,7 +325,7 @@
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.94);
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.26);
-  z-index: 72;
+  z-index: 46;
 }
 
 .DrawingCanvas__controls button {

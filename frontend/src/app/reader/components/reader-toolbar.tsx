@@ -21,7 +21,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import type { FormEvent, ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import type { PdfScaleValue } from "react-pdf-highlighter-plus";
 
 import { Button } from "@/components/ui/button";
@@ -120,13 +120,14 @@ function AnnotationStyleMenu({
   onDrawingClear: () => void;
   onDrawingCancel: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const selected = COLOR_META[prefs.color];
   const isDrawing = prefs.activeTool === "drawing";
   const isFreetext = prefs.activeTool === "freetext";
   const sizeLabel = isDrawing ? prefs.drawingSize : prefs.textSize;
   const colorLabel = isDrawing ? "画笔颜色" : isFreetext ? "文字颜色" : "高亮颜色";
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={(nextOpen) => setOpen(nextOpen)}>
       <DropdownMenuTrigger
         render={
           <Button
@@ -156,7 +157,10 @@ function AnnotationStyleMenu({
               <button
                 key={key}
                 type="button"
-                onClick={() => onColorChange(key)}
+                onClick={() => {
+                  onColorChange(key);
+                  setOpen(false);
+                }}
                 className="flex h-9 w-full items-center gap-3 rounded-md px-2 text-sm transition hover:bg-accent"
               >
                 <Check className={cn("size-4", active ? "opacity-100" : "opacity-0")} />
@@ -275,7 +279,7 @@ export function ReaderToolbar({
   };
 
   return (
-    <header className="grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b bg-background/95 px-3 shadow-sm backdrop-blur">
+    <header className="relative z-[80] grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b bg-background/95 px-3 shadow-sm backdrop-blur">
       <div className="flex min-w-0 items-center gap-2">
         <ToolbarButton label="返回工作台" onClick={onClose}>
           <ArrowLeft className="size-4" />
