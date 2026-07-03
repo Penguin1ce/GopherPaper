@@ -408,6 +408,37 @@ export function batchDeletePapers(token: string, ids: string[]) {
   });
 }
 
+// ── 存储管理 ─────────────────────────────────────────────────
+
+export type StorageStatusUsage = { status: string; count: number; bytes: number };
+export type StorageBucket = { label: string; count: number; bytes: number };
+export type StorageTrendPoint = { month: string; count: number; bytes: number };
+export type StorageTopPaper = {
+  id: string;
+  title: string;
+  file_name: string;
+  owner_id: string;
+  status: string;
+  size: number;
+  page_count: number;
+  created_at: string;
+};
+export type StorageOverview = {
+  total_papers: number;
+  total_bytes: number;
+  total_pages: number;
+  avg_bytes: number;
+  missing_size: number;
+  by_status: StorageStatusUsage[];
+  buckets: StorageBucket[];
+  trend: StorageTrendPoint[];
+  top_papers: StorageTopPaper[];
+};
+
+export function fetchStorageOverview(token: string, top = 10) {
+  return dashboardRequest<StorageOverview>(`/admin/storage?top=${top}`, token);
+}
+
 // 小工具:格式化 -----------------------------------------------
 
 export function formatBytes(value: number): string {

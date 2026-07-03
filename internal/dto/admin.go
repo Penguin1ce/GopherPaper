@@ -258,10 +258,10 @@ type AdminUserActivityPoint struct {
 
 // AdminUserDetail 是单个用户的画像:基础信息 + 论文状态分布 + 活动趋势 + 最近论文。
 type AdminUserDetail struct {
-	User            AdminUserItem          `json:"user"`
-	PaperStatusDist []AdminUserStatusCount `json:"paper_status_distribution"`
+	User            AdminUserItem            `json:"user"`
+	PaperStatusDist []AdminUserStatusCount   `json:"paper_status_distribution"`
 	Activity        []AdminUserActivityPoint `json:"activity"`
-	RecentPapers    []AdminPaperItem       `json:"recent_papers"`
+	RecentPapers    []AdminPaperItem         `json:"recent_papers"`
 }
 
 // AdminClassStat 是按班级聚合的用户与论文统计。
@@ -529,4 +529,52 @@ type AdminBatchResult struct {
 	Succeeded int      `json:"succeeded"`
 	Failed    int      `json:"failed"`
 	FailedIDs []string `json:"failed_ids,omitempty"`
+}
+
+// ── 存储管理 ─────────────────────────────────────────────────
+
+// AdminStorageStatusUsage 是某个论文状态下的文件数与体积占用。
+type AdminStorageStatusUsage struct {
+	Status string `json:"status"`
+	Count  int64  `json:"count"`
+	Bytes  int64  `json:"bytes"`
+}
+
+// AdminStorageBucket 是按单文件体积分档的论文数量与体积分布。
+type AdminStorageBucket struct {
+	Label string `json:"label"`
+	Count int64  `json:"count"`
+	Bytes int64  `json:"bytes"`
+}
+
+// AdminStorageTrendPoint 是按月份聚合的上传体积与数量。
+type AdminStorageTrendPoint struct {
+	Month string `json:"month"`
+	Count int64  `json:"count"`
+	Bytes int64  `json:"bytes"`
+}
+
+// AdminStorageTopPaper 是占用体积最大的论文条目。
+type AdminStorageTopPaper struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	FileName  string    `json:"file_name"`
+	OwnerID   string    `json:"owner_id"`
+	Status    string    `json:"status"`
+	Size      int64     `json:"size"`
+	PageCount int       `json:"page_count"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// AdminStorageOverview 是存储管理页的聚合数据。
+type AdminStorageOverview struct {
+	TotalPapers int64                     `json:"total_papers"`
+	TotalBytes  int64                     `json:"total_bytes"`
+	TotalPages  int64                     `json:"total_pages"`
+	AvgBytes    int64                     `json:"avg_bytes"`
+	MissingSize int64                     `json:"missing_size"` // Size<=0 的论文数(未记录体积)
+	ByStatus    []AdminStorageStatusUsage `json:"by_status"`
+	Buckets     []AdminStorageBucket      `json:"buckets"`
+	Trend       []AdminStorageTrendPoint  `json:"trend"`
+	TopPapers   []AdminStorageTopPaper    `json:"top_papers"`
 }
