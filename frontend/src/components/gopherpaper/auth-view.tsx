@@ -193,6 +193,11 @@ export function AuthView() {
   const onRegister = (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
+    const regCode = reg.code.trim();
+    if (!/^\d{6}$/.test(regCode)) {
+      toast("请输入 6 位数字验证码", "error");
+      return;
+    }
     setBusy(true);
     guard(() =>
       registerAndLogin({
@@ -201,7 +206,7 @@ export function AuthView() {
         email: reg.email.trim(),
         class_id: reg.class_id.trim(),
         password: reg.password,
-        code: reg.code.trim(),
+        code: regCode,
       }),
     ).finally(() => setBusy(false));
   };
@@ -232,12 +237,17 @@ export function AuthView() {
       toast("两次输入的新密码不一致", "error");
       return;
     }
+    const resetCode = resetForm.code.trim();
+    if (!/^\d{6}$/.test(resetCode)) {
+      toast("请输入 6 位数字验证码", "error");
+      return;
+    }
     setBusy(true);
     guard(async () => {
       await resetPassword({
         student_id: resetForm.student_id.trim(),
         email: resetForm.email.trim(),
-        code: resetForm.code.trim(),
+        code: resetCode,
         password: resetForm.password,
       });
       setLoginForm({ account: resetForm.student_id.trim(), password: "" });
@@ -996,9 +1006,13 @@ function ResetPasswordForm({
             id="reset_code"
             value={resetForm.code}
             inputMode="numeric"
+            pattern="\d{6}"
+            minLength={6}
             maxLength={6}
             required
-            onChange={(e) => setResetForm({ ...resetForm, code: e.target.value })}
+            onChange={(e) =>
+              setResetForm({ ...resetForm, code: e.target.value.replace(/\D/g, "").slice(0, 6) })
+            }
           />
           <Button
             type="button"
@@ -1114,9 +1128,13 @@ function RegisterForm({ busy, codeBusy, reg, setReg, onRegister, onSendCode }: A
             id="code"
             value={reg.code}
             inputMode="numeric"
+            pattern="\d{6}"
+            minLength={6}
             maxLength={6}
             required
-            onChange={(e) => setReg({ ...reg, code: e.target.value })}
+            onChange={(e) =>
+              setReg({ ...reg, code: e.target.value.replace(/\D/g, "").slice(0, 6) })
+            }
           />
         </div>
       </div>
