@@ -48,6 +48,9 @@ import { ExportBar } from "./export-bar";
 import { SettingsPanel } from "./settings-panel";
 import { AnnouncementsPanel } from "./announcements-panel";
 import { FeedbackPanel } from "./feedback-panel";
+import { TagsPanel } from "./tags-panel";
+import { SessionsPanel } from "./sessions-panel";
+import { AdminsPanel } from "./admins-panel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -607,6 +610,9 @@ export default function AdminPage() {
             <LogsPanel token={token} />
             <AnnouncementsPanel token={token} />
             <FeedbackPanel token={token} />
+            <SessionsPanel token={token} />
+            <TagsPanel token={token} />
+            <AdminsPanel token={token} />
             <AuditPanel token={token} />
             <SettingsPanel token={token} />
             <ExportBar token={token} />

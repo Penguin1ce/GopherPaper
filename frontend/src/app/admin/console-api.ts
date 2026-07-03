@@ -293,6 +293,83 @@ export function updateFeedback(token: string, id: number, body: { status: string
   });
 }
 
+// ── 标签管理 ─────────────────────────────────────────────────
+
+export type TagItem = { id: number; owner_id: string; name: string; paper_count: number };
+export type TagListResponse = { items: TagItem[]; total: number };
+
+export function fetchTags(token: string) {
+  return dashboardRequest<TagListResponse>("/admin/tags", token);
+}
+export function renameTag(token: string, id: number, name: string) {
+  return dashboardRequest<null>(`/admin/tags/${id}`, token, {
+    method: "PUT",
+    body: JSON.stringify({ name }),
+  });
+}
+export function deleteTag(token: string, id: number) {
+  return dashboardRequest<null>(`/admin/tags/${id}`, token, { method: "DELETE" });
+}
+export function mergeTags(token: string, source: number, target: number) {
+  return dashboardRequest<null>(`/admin/tags/merge?source=${source}&target=${target}`, token, {
+    method: "POST",
+  });
+}
+
+// ── 会话管理 ─────────────────────────────────────────────────
+
+export type SessionItem = {
+  id: string;
+  student_id: string;
+  paper_id?: string;
+  agent_type?: string;
+  title: string;
+  created_at: string;
+};
+export type SessionListResponse = {
+  items: SessionItem[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+export function fetchSessions(
+  token: string,
+  params: { page?: number; page_size?: number; agent_type?: string } = {},
+) {
+  const q = new URLSearchParams();
+  q.set("page", String(params.page ?? 1));
+  q.set("page_size", String(params.page_size ?? 15));
+  if (params.agent_type?.trim()) q.set("agent_type", params.agent_type.trim());
+  return dashboardRequest<SessionListResponse>(`/admin/sessions?${q}`, token);
+}
+export function deleteSession(token: string, id: string) {
+  return dashboardRequest<null>(`/admin/sessions/${id}`, token, { method: "DELETE" });
+}
+
+// ── 管理员账号 ───────────────────────────────────────────────
+
+export type AdminAccount = {
+  id: number;
+  username: string;
+  email: string;
+  name: string;
+  status: string;
+  last_login_at?: string;
+  created_at: string;
+};
+export type AdminAccountListResponse = { items: AdminAccount[] };
+
+export function fetchAdmins(token: string) {
+  return dashboardRequest<AdminAccountListResponse>("/admin/admins", token);
+}
+export function setAdminStatus(token: string, id: number, status: string) {
+  return dashboardRequest<null>(`/admin/admins/${id}/status`, token, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  });
+}
+
 // 小工具:格式化 -----------------------------------------------
 
 export function formatBytes(value: number): string {
