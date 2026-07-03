@@ -559,6 +559,12 @@ export default function AdminPage() {
                 数据分析
               </Link>
               <Link
+                href="/admin/reports"
+                className="hidden rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
+              >
+                运营报表
+              </Link>
+              <Link
                 href="/admin/model-configs"
                 className="hidden rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
               >
