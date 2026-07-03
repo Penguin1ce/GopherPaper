@@ -343,3 +343,25 @@ type AdminAdvancedAnalytics struct {
 	TopActors          []AdminTopActor      `json:"top_actors"`
 	Pipeline           []AdminPipelineStage `json:"pipeline"`
 }
+
+// ── 后台操作审计 ─────────────────────────────────────────────
+
+// AdminAuditItem 是一条管理员操作审计记录。
+type AdminAuditItem struct {
+	ID        uint64    `json:"id"`
+	AdminID   uint      `json:"admin_id"`
+	AdminName string    `json:"admin_name"`
+	Method    string    `json:"method"`
+	Path      string    `json:"path"`
+	Status    int       `json:"status"`
+	IP        string    `json:"ip"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// AdminAuditListResponse 是分页的审计记录列表。
+type AdminAuditListResponse struct {
+	Items    []AdminAuditItem `json:"items"`
+	Total    int64            `json:"total"`
+	Page     int              `json:"page"`
+	PageSize int              `json:"page_size"`
+}

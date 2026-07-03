@@ -216,6 +216,19 @@ func AdvancedAnalytics(c *gin.Context) {
 	response.OK(c, res)
 }
 
+// ListAudit 分页返回管理员操作审计记录。
+func ListAudit(c *gin.Context) {
+	page := parseInt(c.Query("page"), 1)
+	pageSize := parseInt(c.Query("page_size"), 20)
+	res, err := adminservice.ListAudit(c.Request.Context(), page, pageSize)
+	if err != nil {
+		zlog.Error("admin list audit failed", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.OK(c, res)
+}
+
 func ListPapers(c *gin.Context) {
 	page := parseInt(c.Query("page"), 1)
 	pageSize := parseInt(c.Query("page_size"), 10)

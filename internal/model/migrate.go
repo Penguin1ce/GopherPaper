@@ -6,7 +6,7 @@ import "gorm.io/gorm"
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&User{}, &UserPreference{}, &Session{}, &Topic{},
-		&Admin{}, &ServiceCallLog{}, &SystemModelConfig{},
+		&Admin{}, &ServiceCallLog{}, &SystemModelConfig{}, &AdminAuditLog{},
 		&Paper{}, &PaperMeta{}, &PaperSection{}, &PaperReport{}, &PaperFlowCache{}, &PaperCompareReport{}, &PaperAnnotation{}, &MindMap{}, &Tag{}, &PaperTag{},
 		&PaperSemanticRelation{},
 	)

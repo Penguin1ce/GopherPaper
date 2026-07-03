@@ -148,6 +148,33 @@ export function fetchAdvancedAnalytics(token: string) {
   return dashboardRequest<AdvancedAnalytics>("/admin/analytics/advanced", token);
 }
 
+// ── 操作审计 ─────────────────────────────────────────────────
+
+export type AuditItem = {
+  id: number;
+  admin_id: number;
+  admin_name: string;
+  method: string;
+  path: string;
+  status: number;
+  ip: string;
+  created_at: string;
+};
+
+export type AuditListResponse = {
+  items: AuditItem[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+export function fetchAudit(token: string, params: { page?: number; page_size?: number } = {}) {
+  const q = new URLSearchParams();
+  q.set("page", String(params.page ?? 1));
+  q.set("page_size", String(params.page_size ?? 20));
+  return dashboardRequest<AuditListResponse>(`/admin/audit?${q}`, token);
+}
+
 // 小工具:格式化 -----------------------------------------------
 
 export function formatBytes(value: number): string {
