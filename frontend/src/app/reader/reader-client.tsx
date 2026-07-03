@@ -1660,6 +1660,7 @@ export function ReaderClient() {
   const locatedScrollTimerRef = useRef<number | null>(null);
   const locatedScrollCleanupRef = useRef<(() => void) | null>(null);
   const annotationFocusScrollIgnoreUntilRef = useRef(0);
+  const annotationFocusActiveRef = useRef(false);
   const positionPatchSeqRef = useRef(new Map<number, number>());
   const freetextCreateInFlightRef = useRef(false);
   const recentFreetextCreateRef = useRef<RecentFreetextCreate | null>(null);
@@ -1722,6 +1723,10 @@ export function ReaderClient() {
   useEffect(() => {
     pdfUtilsRef.current = pdfUtils;
   }, [pdfUtils]);
+
+  useEffect(() => {
+    annotationFocusActiveRef.current = selectedAnnotationId != null || locatedAnnotationId != null;
+  }, [locatedAnnotationId, selectedAnnotationId]);
 
   const clearActiveDrawing = useCallback(() => {
     document.querySelector<HTMLButtonElement>(".DrawingCanvas__clearButton")?.click();
@@ -1984,6 +1989,12 @@ export function ReaderClient() {
   }, [zoomPdfAtWheel]);
 
   const centerCurrentPdfPage = useCallback(() => {
+    if (
+      annotationFocusActiveRef.current ||
+      Date.now() < annotationFocusScrollIgnoreUntilRef.current
+    ) {
+      return;
+    }
     const viewer = pdfViewerWithScale(pdfUtilsRef.current);
     const scrollElement = viewer?.container || pdfWheelRef.current;
     if (!scrollElement || currentPage <= 0) return;

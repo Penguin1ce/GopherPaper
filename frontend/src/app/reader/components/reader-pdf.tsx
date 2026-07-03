@@ -117,6 +117,56 @@ function toPdfError(error: unknown): Error {
   return new Error(String(error || "PDF 加载失败"));
 }
 
+const horizontalLocateFrames = new WeakMap<HTMLElement, number>();
+
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function smoothHorizontalLocate(container: HTMLElement, fromLeft: number, toLeft: number) {
+  const currentFrame = horizontalLocateFrames.get(container);
+  if (currentFrame != null) {
+    window.cancelAnimationFrame(currentFrame);
+    horizontalLocateFrames.delete(container);
+  }
+
+  const delta = toLeft - fromLeft;
+  if (prefersReducedMotion() || Math.abs(delta) < 4) {
+    container.scrollLeft = toLeft;
+    return;
+  }
+
+  container.scrollTo({ left: fromLeft, top: container.scrollTop, behavior: "auto" });
+  horizontalLocateFrames.set(
+    container,
+    window.requestAnimationFrame(() => {
+      horizontalLocateFrames.delete(container);
+      container.scrollTo({ left: toLeft, top: container.scrollTop, behavior: "smooth" });
+    }),
+  );
+}
+
+function smoothSamePageLocate(container: HTMLElement, rect: LTWHP) {
+  const page = container.querySelector<HTMLElement>(`.page[data-page-number="${rect.pageNumber}"]`);
+  if (!page) return false;
+
+  const pageRect = page.getBoundingClientRect();
+  if (pageRect.width <= 0 || pageRect.height <= 0) return false;
+
+  const containerRect = container.getBoundingClientRect();
+  const pageLeft = container.scrollLeft + pageRect.left - containerRect.left;
+  const pageTop = container.scrollTop + pageRect.top - containerRect.top;
+  const left = Math.max(0, pageLeft + rect.left + rect.width / 2 - container.clientWidth / 2);
+  const top = Math.max(0, pageTop + rect.top - LOCATE_TOP_GAP);
+
+  container.scrollTo({
+    left,
+    top,
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
+  });
+  return true;
+}
+
 export function scrollHighlightToTop(
   utils: PdfHighlighterUtils,
   highlight: ReaderHighlight,
@@ -132,6 +182,12 @@ export function scrollHighlightToTop(
   const rect = viewportPosition.boundingRect;
   const targetLeft = Math.max(0, rect.left + rect.width / 2 - (container?.clientWidth ?? 0) / 2);
   const targetTop = Math.max(0, rect.top - LOCATE_TOP_GAP);
+  const previousLeft = container?.scrollLeft ?? 0;
+  const currentPageNumber = (viewer as { currentPageNumber?: unknown }).currentPageNumber;
+
+  if (container && currentPageNumber === pageNumber && smoothSamePageLocate(container, rect)) {
+    return container;
+  }
 
   viewer.scrollPageIntoView({
     pageNumber,
@@ -142,6 +198,9 @@ export function scrollHighlightToTop(
       0,
     ],
   });
+  if (container) {
+    smoothHorizontalLocate(container, previousLeft, container.scrollLeft);
+  }
   return container;
 }
 
@@ -1232,8 +1291,8 @@ export function ReaderPdf({
             theme={{
               mode: "light",
               containerBackgroundColor: "oklch(0.96 0.003 230)",
-              scrollbarThumbColor: "oklch(0.72 0.01 230)",
-              scrollbarTrackColor: "oklch(0.92 0.004 230)",
+              scrollbarThumbColor: "oklch(0.66 0.004 230 / 0.45)",
+              scrollbarTrackColor: "oklch(0.94 0.003 230 / 0.72)",
             }}
             style={{ height: "100%" }}
           >
