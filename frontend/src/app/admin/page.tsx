@@ -45,6 +45,9 @@ import { LogsPanel } from "./logs-panel";
 import { ArchitectureGraph } from "./architecture-graph";
 import { AuditPanel } from "./audit-panel";
 import { ExportBar } from "./export-bar";
+import { SettingsPanel } from "./settings-panel";
+import { AnnouncementsPanel } from "./announcements-panel";
+import { FeedbackPanel } from "./feedback-panel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -602,7 +605,10 @@ export default function AdminPage() {
             <ArchitectureGraph />
             <UsersPanel token={token} />
             <LogsPanel token={token} />
+            <AnnouncementsPanel token={token} />
+            <FeedbackPanel token={token} />
             <AuditPanel token={token} />
+            <SettingsPanel token={token} />
             <ExportBar token={token} />
             <OverviewGrid overview={overview} onAction={onOverviewAction} />
             <ModelConfigShortcut />

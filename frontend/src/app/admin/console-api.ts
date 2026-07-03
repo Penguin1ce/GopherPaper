@@ -194,6 +194,105 @@ export function fetchAudit(token: string, params: { page?: number; page_size?: n
   return dashboardRequest<AuditListResponse>(`/admin/audit?${q}`, token);
 }
 
+// ── 系统设置 ─────────────────────────────────────────────────
+
+export type SettingItem = { key: string; value: string; group: string; label: string; type: string };
+export type SettingsResponse = { items: SettingItem[] };
+
+export function fetchSettings(token: string) {
+  return dashboardRequest<SettingsResponse>("/admin/settings", token);
+}
+
+export function updateSettings(token: string, items: { key: string; value: string }[]) {
+  return dashboardRequest<null>("/admin/settings", token, {
+    method: "PUT",
+    body: JSON.stringify({ items }),
+  });
+}
+
+// ── 站内公告 ─────────────────────────────────────────────────
+
+export type AnnouncementItem = {
+  id: number;
+  title: string;
+  content: string;
+  level: string;
+  published: boolean;
+  author_name: string;
+  created_at: string;
+  updated_at: string;
+};
+export type AnnouncementListResponse = {
+  items: AnnouncementItem[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+export type AnnouncementBody = { title: string; content: string; level: string; published: boolean };
+
+export function fetchAnnouncements(token: string, params: { page?: number; page_size?: number } = {}) {
+  const q = new URLSearchParams();
+  q.set("page", String(params.page ?? 1));
+  q.set("page_size", String(params.page_size ?? 10));
+  return dashboardRequest<AnnouncementListResponse>(`/admin/announcements?${q}`, token);
+}
+
+export function createAnnouncement(token: string, body: AnnouncementBody) {
+  return dashboardRequest<AnnouncementItem>("/admin/announcements", token, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateAnnouncement(token: string, id: number, body: AnnouncementBody) {
+  return dashboardRequest<AnnouncementItem>(`/admin/announcements/${id}`, token, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteAnnouncement(token: string, id: number) {
+  return dashboardRequest<null>(`/admin/announcements/${id}`, token, { method: "DELETE" });
+}
+
+// ── 用户反馈 ─────────────────────────────────────────────────
+
+export type FeedbackItem = {
+  id: number;
+  student_id: string;
+  category: string;
+  content: string;
+  status: string;
+  reply: string;
+  handler_name: string;
+  created_at: string;
+  updated_at: string;
+};
+export type FeedbackListResponse = {
+  items: FeedbackItem[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+export function fetchFeedbacks(
+  token: string,
+  params: { page?: number; page_size?: number; status?: string } = {},
+) {
+  const q = new URLSearchParams();
+  q.set("page", String(params.page ?? 1));
+  q.set("page_size", String(params.page_size ?? 10));
+  if (params.status?.trim()) q.set("status", params.status.trim());
+  return dashboardRequest<FeedbackListResponse>(`/admin/feedbacks?${q}`, token);
+}
+
+export function updateFeedback(token: string, id: number, body: { status: string; reply: string }) {
+  return dashboardRequest<null>(`/admin/feedbacks/${id}`, token, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
 // 小工具:格式化 -----------------------------------------------
 
 export function formatBytes(value: number): string {

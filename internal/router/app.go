@@ -145,6 +145,14 @@ func Init(mode string) *gin.Engine {
 			adminAuthed.GET("/export/papers", adminhandler.ExportPapersCSV)
 			adminAuthed.GET("/export/users", adminhandler.ExportUsersCSV)
 			adminAuthed.GET("/export/logs", adminhandler.ExportLogsCSV)
+			adminAuthed.GET("/settings", adminhandler.ListSettings)
+			adminAuthed.PUT("/settings", adminhandler.UpdateSettings)
+			adminAuthed.GET("/announcements", adminhandler.ListAnnouncements)
+			adminAuthed.POST("/announcements", adminhandler.CreateAnnouncement)
+			adminAuthed.PUT("/announcements/:id", adminhandler.UpdateAnnouncement)
+			adminAuthed.DELETE("/announcements/:id", adminhandler.DeleteAnnouncement)
+			adminAuthed.GET("/feedbacks", adminhandler.ListFeedbacks)
+			adminAuthed.PUT("/feedbacks/:id", adminhandler.UpdateFeedback)
 		}
 	}
 	return r
