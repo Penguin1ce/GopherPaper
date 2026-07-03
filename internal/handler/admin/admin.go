@@ -205,6 +205,17 @@ func LogStats(c *gin.Context) {
 	response.OK(c, res)
 }
 
+// AdvancedAnalytics 返回高级分析页所需的多维统计。
+func AdvancedAnalytics(c *gin.Context) {
+	res, err := adminservice.AdvancedAnalytics(c.Request.Context())
+	if err != nil {
+		zlog.Error("admin advanced analytics failed", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.OK(c, res)
+}
+
 func ListPapers(c *gin.Context) {
 	page := parseInt(c.Query("page"), 1)
 	pageSize := parseInt(c.Query("page_size"), 10)

@@ -130,6 +130,24 @@ export function fetchLogStats(token: string) {
   return dashboardRequest<LogStats>("/admin/logs/stats", token);
 }
 
+// ── 高级分析 ─────────────────────────────────────────────────
+
+export type LatencyBucket = { label: string; count: number };
+export type HourPoint = { hour: number; count: number; success: number };
+export type TopActor = { actor_id: string; calls: number };
+export type PipelineStage = { stage: string; count: number };
+
+export type AdvancedAnalytics = {
+  latency_histogram: LatencyBucket[];
+  hourly_distribution: HourPoint[];
+  top_actors: TopActor[];
+  pipeline: PipelineStage[];
+};
+
+export function fetchAdvancedAnalytics(token: string) {
+  return dashboardRequest<AdvancedAnalytics>("/admin/analytics/advanced", token);
+}
+
 // 小工具:格式化 -----------------------------------------------
 
 export function formatBytes(value: number): string {
