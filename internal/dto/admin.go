@@ -216,3 +216,95 @@ type AdminSeedResult struct {
 	Calls    int `json:"calls"`
 	Sessions int `json:"sessions"`
 }
+
+// ── 后台用户管理 ─────────────────────────────────────────────
+
+// AdminUserItem 是用户列表里的一行,附带该用户的关键运营计数。
+type AdminUserItem struct {
+	ID           uint       `json:"id"`
+	StudentID    string     `json:"student_id"`
+	Name         string     `json:"name"`
+	Email        string     `json:"email"`
+	ClassID      string     `json:"class_id"`
+	AvatarURL    string     `json:"avatar_url,omitempty"`
+	PaperCount   int64      `json:"paper_count"`
+	SessionCount int64      `json:"session_count"`
+	CallCount    int64      `json:"call_count"`
+	CreatedAt    time.Time  `json:"created_at"`
+	LastActiveAt *time.Time `json:"last_active_at,omitempty"`
+}
+
+// AdminUserListResponse 是分页的用户列表。
+type AdminUserListResponse struct {
+	Items    []AdminUserItem `json:"items"`
+	Total    int64           `json:"total"`
+	Page     int             `json:"page"`
+	PageSize int             `json:"page_size"`
+}
+
+// AdminUserStatusCount 是某用户论文按状态的计数切片。
+type AdminUserStatusCount struct {
+	Status string `json:"status"`
+	Count  int64  `json:"count"`
+}
+
+// AdminUserActivityPoint 是某用户某一天的活动计数。
+type AdminUserActivityPoint struct {
+	Date     string `json:"date"`
+	Papers   int64  `json:"papers"`
+	Sessions int64  `json:"sessions"`
+	Calls    int64  `json:"calls"`
+}
+
+// AdminUserDetail 是单个用户的画像:基础信息 + 论文状态分布 + 活动趋势 + 最近论文。
+type AdminUserDetail struct {
+	User            AdminUserItem          `json:"user"`
+	PaperStatusDist []AdminUserStatusCount `json:"paper_status_distribution"`
+	Activity        []AdminUserActivityPoint `json:"activity"`
+	RecentPapers    []AdminPaperItem       `json:"recent_papers"`
+}
+
+// AdminClassStat 是按班级聚合的用户与论文统计。
+type AdminClassStat struct {
+	ClassID    string `json:"class_id"`
+	UserCount  int64  `json:"user_count"`
+	PaperCount int64  `json:"paper_count"`
+}
+
+// AdminClassStatsResponse 是班级维度的聚合列表。
+type AdminClassStatsResponse struct {
+	Items []AdminClassStat `json:"items"`
+}
+
+// ── 后台服务调用日志浏览器 ───────────────────────────────────
+
+// AdminLogItem 是一条服务调用日志。
+type AdminLogItem struct {
+	ID           uint64    `json:"id"`
+	ServiceType  string    `json:"service_type"`
+	ActorID      string    `json:"actor_id,omitempty"`
+	PaperID      string    `json:"paper_id,omitempty"`
+	SessionID    string    `json:"session_id,omitempty"`
+	Success      bool      `json:"success"`
+	DurationMS   int64     `json:"duration_ms"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// AdminLogListResponse 是分页的服务调用日志列表。
+type AdminLogListResponse struct {
+	Items    []AdminLogItem `json:"items"`
+	Total    int64          `json:"total"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"page_size"`
+}
+
+// AdminLogStats 是日志筛选面板需要的辅助统计与可选项。
+type AdminLogStats struct {
+	ServiceTypes []string `json:"service_types"`
+	Total        int64    `json:"total"`
+	Success      int64    `json:"success"`
+	Failed       int64    `json:"failed"`
+	AvgMS        float64  `json:"avg_ms"`
+	MaxMS        int64    `json:"max_ms"`
+}
