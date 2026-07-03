@@ -74,3 +74,15 @@ func TouchSession(ctx context.Context, id string) error {
 		Where("id = ?", id).
 		Update("updated_at", time.Now()).Error
 }
+
+// UpdateSessionTitle 更新会话展示标题。
+func UpdateSessionTitle(ctx context.Context, id, title string) error {
+	err := dao.DB.WithContext(ctx).
+		Model(&model.Session{}).
+		Where("id = ?", id).
+		Update("title", title).Error
+	if err != nil {
+		return fmt.Errorf("dao/chat: 更新会话标题失败: %w", err)
+	}
+	return nil
+}

@@ -24,6 +24,7 @@ import (
 	pioneerflow "GopherPaper/internal/ai/pioneer"
 	ragagentflow "GopherPaper/internal/ai/ragagent"
 	"GopherPaper/internal/ai/retrieval"
+	sessiontitleflow "GopherPaper/internal/ai/sessiontitle"
 	translateflow "GopherPaper/internal/ai/translate"
 	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/config"
@@ -53,6 +54,16 @@ func Chat(ctx context.Context, hist []model.Message, query string) (*core.Reply,
 		return nil, fmt.Errorf("ai: 编排器未初始化")
 	}
 	return chatflow.Chat(ctx, toHistory(hist), query)
+}
+
+// RewriteSessionTitle 用 intent 小模型把会话首问改写为短展示标题。
+func RewriteSessionTitle(ctx context.Context, firstQuestion string) (string, error) {
+	return sessiontitleflow.Rewrite(ctx, firstQuestion)
+}
+
+// FallbackSessionTitle 在小模型不可用时从首问中截取一个可用展示标题。
+func FallbackSessionTitle(firstQuestion string) string {
+	return sessiontitleflow.Fallback(firstQuestion)
 }
 
 // EvictUser 释放该用户常驻的 agent runner 与模型缓存,登出时调用。

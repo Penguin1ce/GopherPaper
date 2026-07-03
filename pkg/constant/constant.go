@@ -276,10 +276,15 @@ const (
 	// SessionTitleMaxRunes 是会话标题入库前的字符上限，须与 model.Session.Title 的 gorm size 对齐，
 	// 超长按字符截断加省略号，防论文标题拼「问答」后撑爆 title 列(Error 1406)。
 	SessionTitleMaxRunes = 255
+	// SessionDisplayTitleMaxRunes 是小模型改写出的侧边栏展示标题上限。
+	SessionDisplayTitleMaxRunes = 32
 	// PioneerMaxHistoryRuns 是小云雀工作记忆喂模型的最大消息条数。含工具调用/返回,故比纯文本窗口大,
 	// 既保留近几轮工具轨迹供复用,又防 ReAct 轨迹无限堆积撑爆上下文。
 	PioneerMaxHistoryRuns = 40
 )
+
+// SessionTitleRewriteTimeout 是首问改写会话标题的耗时上限。标题是展示增强,超时即回退文本片段。
+const SessionTitleRewriteTimeout = 8 * time.Second
 
 // 会话主题自动归类参数。新会话向量与已有主题质心比余弦相似度,
 // 超 TopicAssignThreshold 并入最相似主题,否则新建;两主题质心相似度超 TopicMergeThreshold 时合并。
@@ -415,6 +420,18 @@ const IntentPrompt = `你是科研文献问答助手的意图分类器，判断�
 只输出一个 JSON，禁止任何多余文字。格式：
 {{"type":"chitchat|summary|method"}}
 涉及论文内容但无法细分时输出 {{"type":"summary"}}。`
+
+// SessionTitlePrompt 指导小模型把会话首问改写为适合侧边栏展示的短标题。
+const SessionTitlePrompt = `你是科研文献阅读产品的会话标题改写器。根据用户发出的第一句问题,生成一个适合侧边栏展示的短标题。
+要求:
+- 概括用户真正想解决的论文阅读任务,不要回答问题;
+- 优先保留关键术语、模型名、指标名、数据集名或章节名;
+- 去掉“这篇论文”“本文”“帮我”“请问”“一下”等泛化说法;
+- 不要出现“问答”“会话”“标题”等字样;
+- 中文 4-18 个字为宜,英文术语可保留,最长不超过 32 个字符;
+- 只输出标题本身,不要引号、标点、编号或解释。
+
+若问题过短但意图明确,给出自然标题,例如“总结一下”改为“论文概要”。`
 
 const (
 	// IntentContextMessages 限制意图分类器看到的最近 user/assistant 消息数,只用于短追问消解。
