@@ -86,14 +86,14 @@ export function SidebarUserCard({ onCollapse }: { onCollapse?: () => void }) {
   const displayName = user?.name || user?.student_id || "GopherPaper 用户";
 
   return (
-    <div className="shrink-0 border-t border-border/60 bg-background px-4 py-3">
-      <div className="flex min-h-12 items-center gap-2">
+    <div className="shrink-0 border-t border-border/60 bg-background px-3 py-2">
+      <div className="flex min-h-9 items-center gap-1.5">
         <Link
           href="/profile"
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 py-1 outline-none ring-ring/50 transition-colors hover:bg-muted/45 focus-visible:ring-3"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 outline-none ring-ring/50 transition-colors hover:bg-muted/45 focus-visible:ring-3"
           title="个人中心"
         >
-          <Avatar key={user?.avatar_url || fallback} className="size-10 rounded-full">
+          <Avatar key={user?.avatar_url || fallback} className="size-7 rounded-full">
             {user?.avatar_url && (
               <AvatarImage src={user.avatar_url} alt="用户头像" className="rounded-full" />
             )}
@@ -101,13 +101,8 @@ export function SidebarUserCard({ onCollapse }: { onCollapse?: () => void }) {
               {fallback}
             </AvatarFallback>
           </Avatar>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold leading-5">
-              {displayName}
-            </span>
-            <span className="block truncate text-xs leading-4 text-muted-foreground">
-              {user?.email || "已登录"}
-            </span>
+          <span className="block min-w-0 flex-1 truncate text-sm font-medium leading-5">
+            {displayName}
           </span>
         </Link>
         <Button
