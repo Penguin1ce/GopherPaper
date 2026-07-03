@@ -115,7 +115,11 @@ export function ProcessTrace({
   live?: boolean;
   phaseLabels?: Record<string, string>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(Boolean(live));
+  useEffect(() => {
+    if (live) setOpen(true);
+  }, [live]);
+
   if (!steps || steps.length === 0) return null;
   const lastIdx = steps.length - 1;
   const active = steps[lastIdx];

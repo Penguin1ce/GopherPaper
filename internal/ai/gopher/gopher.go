@@ -142,16 +142,19 @@ func runnerForUser(userID string) (runner.Runner, error) {
 				llmagent.New("gopher-researcher", researcherOpts...),
 				constant.ReportPhaseResearching,
 				"找资料:小囊鼠正在检索论文片段、图表和出处。",
+				"研究员正在判断需要覆盖的实验、指标和图表证据。",
 			),
 			newReportStageAgent(
 				llmagent.New("gopher-writer", writerOpts...),
 				constant.ReportPhaseWriting,
 				"写报告:正在把证据笔记整理成结构化研读报告。",
+				"撰写员正在梳理报告结构、组织证据链和段落顺序。",
 			),
 			newReportStageAgent(
 				llmagent.New("gopher-reviewer", reviewerOpts...),
 				constant.ReportPhaseReviewing,
 				"评审:正在核对事实依据、补齐出处并压实结论。",
+				"评审员正在检查事实出处、结论力度和遗漏项。",
 			),
 		}))
 		ent.rt = runner.NewRunner(appName, pipeline,
@@ -161,17 +164,21 @@ func runnerForUser(userID string) (runner.Runner, error) {
 }
 
 type reportStageAgent struct {
-	inner agent.Agent
-	phase string
-	text  string
+	inner   agent.Agent
+	phase   string
+	text    string
+	thought string
 }
 
-func newReportStageAgent(inner agent.Agent, phase, text string) agent.Agent {
-	return &reportStageAgent{inner: inner, phase: phase, text: text}
+func newReportStageAgent(inner agent.Agent, phase, text, thought string) agent.Agent {
+	return &reportStageAgent{inner: inner, phase: phase, text: text, thought: thought}
 }
 
 func (a *reportStageAgent) Run(ctx context.Context, invocation *agent.Invocation) (<-chan *event.Event, error) {
 	emitReportPhase(ctx, a.phase, a.text)
+	if strings.TrimSpace(a.thought) != "" {
+		emitReportPhase(ctx, constant.ReportPhaseThinking, a.thought)
+	}
 	ch, err := a.inner.Run(ctx, invocation)
 	if err != nil {
 		return nil, err

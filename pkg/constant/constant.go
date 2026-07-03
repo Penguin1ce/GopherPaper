@@ -264,6 +264,7 @@ const (
 	ReportPhaseResearching = "researching"
 	ReportPhaseWriting     = "writing"
 	ReportPhaseReviewing   = "reviewing"
+	ReportPhaseThinking    = "thinking"
 	ReportPhaseFailed      = "failed"
 )
 

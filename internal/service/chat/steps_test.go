@@ -23,6 +23,9 @@ func TestExecutionRecorderSynthesizesToolSteps(t *testing.T) {
 	if steps[1].Phase != "action" || steps[1].Text != "论文知识库" {
 		t.Fatalf("工具调用步骤不符: %+v", steps[1])
 	}
+	if steps[1].Kind != "tool" || steps[1].Tool != "search_paper" || steps[1].Status != "done" {
+		t.Fatalf("工具调用元数据不符: %+v", steps[1])
+	}
 	if steps[2].Phase != "reasoning" {
 		t.Fatalf("工具返回后应进入 reasoning: %+v", steps[2])
 	}
