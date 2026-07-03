@@ -755,7 +755,7 @@ export function PaperPane({
                   className={cn(
                     "group/paper relative min-h-[4.75rem] w-full cursor-pointer select-none rounded-lg px-3 py-2.5 transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
                     active
-                      ? "bg-accent/75 ring-1 ring-primary/25 before:absolute before:inset-y-2.5 before:left-0 before:w-1 before:rounded-full before:bg-primary dark:bg-accent/35 dark:ring-primary/30"
+                      ? "bg-accent/75 ring-1 ring-primary/25 before:absolute before:inset-y-2.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary dark:bg-accent/35 dark:ring-primary/30"
                       : "hover:bg-muted/55",
                   )}
                   onClick={() => selectPaper(p.id)}
