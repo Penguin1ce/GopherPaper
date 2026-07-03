@@ -41,6 +41,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import * as api from "@/lib/gopherpaper/api";
 import type {
+  AuthUser,
   Message,
   PaperDeleteConfirmPayload,
   PaperFlow,
@@ -52,6 +53,7 @@ import { toolStatusText } from "@/lib/gopherpaper/tool-status";
 import { formatTime, messagePlan, metaPlanSteps, sessionTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty } from "@/components/gopherpaper/app-ui";
+import { AgentIntro } from "@/components/gopherpaper/agent-intro";
 import { Markdown } from "@/components/gopherpaper/markdown";
 import { PaperFlowCard } from "@/components/gopherpaper/paper-flow-card";
 import { ProcessTrace } from "@/components/gopherpaper/process-trace";
@@ -64,14 +66,15 @@ const LUCKIN_HEADER = "X-Luckin-Token";
 const DELETE_CONFIRM_HEADER = "X-GopherPaper-Delete-Confirm";
 const AGENT_TYPE = "pioneer";
 
-function loadToken(): string {
-  if (typeof window === "undefined") return "";
+function loadAuth(): { token: string; user: AuthUser | null } {
+  if (typeof window === "undefined") return { token: "", user: null };
   try {
     const raw = localStorage.getItem(AUTH_KEY);
-    if (!raw) return "";
-    return (JSON.parse(raw) as { token?: string }).token || "";
+    if (!raw) return { token: "", user: null };
+    const saved = JSON.parse(raw) as { token?: string; user?: AuthUser | null };
+    return { token: saved.token || "", user: saved.user ?? null };
   } catch {
-    return "";
+    return { token: "", user: null };
   }
 }
 
@@ -237,6 +240,81 @@ const PROMPT_HINTS = [
   "画一个思路流程图",
 ];
 
+function PioneerComposer({
+  input,
+  sending,
+  toolNote,
+  variant = "bottom",
+  onInputChange,
+  onSubmit,
+}: {
+  input: string;
+  sending: boolean;
+  toolNote: string;
+  variant?: "bottom" | "center";
+  onInputChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const hasDraft = input.trim().length > 0;
+
+  return (
+    <form
+      className={cn(
+        variant === "center" ? "w-full" : "shrink-0 px-6 pb-5 pt-2",
+      )}
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className={cn("mx-auto w-full", variant === "center" ? "max-w-2xl" : "max-w-3xl")}>
+        <ToolStatus note={toolNote} />
+        <div
+          className={cn(
+            "flex gap-2 border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md",
+            variant === "center" ? "items-center" : "items-end",
+            variant === "center" ? "rounded-[1.5rem]" : "rounded-[1.625rem]",
+          )}
+        >
+          <Textarea
+            rows={1}
+            value={input}
+            placeholder={variant === "center" ? "问问小云雀" : ""}
+            disabled={sending}
+            className={cn(
+              "max-h-44 min-h-9 resize-none overflow-y-auto border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0",
+              variant === "center" && "min-h-10 py-2.5 pl-4 text-sm leading-5",
+            )}
+            onChange={(e) => onInputChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                onSubmit();
+              }
+            }}
+          />
+          {(hasDraft || sending) && (
+            <Button
+              type="submit"
+              size="icon"
+              className="size-9 shrink-0 rounded-full"
+              disabled={sending || !hasDraft}
+              title={sending ? "正在发送" : "发送"}
+              aria-label={sending ? "正在发送" : "发送"}
+            >
+              {sending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ArrowUp className="size-4 stroke-[2.6]" />
+              )}
+            </Button>
+          )}
+        </div>
+      </div>
+    </form>
+  );
+}
+
 interface SessionGroup {
   key: string;
   name: string;
@@ -272,6 +350,7 @@ function groupSessionsByTopic(sessions: Session[], topics: Topic[]): SessionGrou
 
 export default function PioneerPage() {
   const [token, setToken] = useState<string | null>(null);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [topicsSupported, setTopicsSupported] = useState(true);
@@ -297,7 +376,9 @@ export default function PioneerPage() {
   }, []);
 
   useEffect(() => {
-    setToken(loadToken());
+    const saved = loadAuth();
+    setToken(saved.token);
+    setAuthUser(saved.user);
     setLuckin(loadLuckin());
   }, []);
 
@@ -630,7 +711,8 @@ export default function PioneerPage() {
       else next.add(key);
       return next;
     });
-  const hasDraft = input.trim().length > 0;
+  const displayName = authUser?.name || authUser?.student_id || "同学";
+  const emptyConversation = messages.length === 0 && !sending;
 
   return (
     <WorkspaceFrame>
@@ -644,10 +726,7 @@ export default function PioneerPage() {
             >
               <ArrowLeft className="size-4" />
             </Link>
-            <div>
-              <div className="text-sm font-medium">小云雀</div>
-              <div className="text-xs text-muted-foreground">查论文 · 点咖啡</div>
-            </div>
+            <AgentIntro kind="pioneer" />
           </div>
           <Button type="button" className="w-full justify-start" onClick={startNewSession}>
             <Plus className="size-4" />
@@ -775,16 +854,37 @@ export default function PioneerPage() {
       <WorkspacePanel className="flex min-w-0 flex-1 flex-col">
         <div className="relative min-h-0 flex-1">
           <ScrollArea className="absolute! inset-0">
-            <div className="mx-auto flex max-h-full w-full max-w-3xl flex-col gap-6 px-6 py-5">
-              {messages.length === 0 && !sending ? (
-                <div className="mx-auto flex min-h-[24rem] w-full max-w-xl flex-col justify-center gap-4">
-                  <Empty
-                    title="嗨，我是小云雀"
-                    text="学术问题、找论文、点杯瑞幸，都可以直接说。"
+            <div
+              className={cn(
+                "mx-auto flex max-h-full w-full flex-col px-6 py-5",
+                emptyConversation ? "max-w-4xl" : "max-w-3xl gap-6",
+              )}
+            >
+              {emptyConversation ? (
+                <div className="mx-auto flex min-h-[calc(100dvh-9rem)] w-full max-w-3xl flex-col justify-center gap-5 pb-16">
+                  <div className="text-center">
+                    <h1 className="text-xl font-medium leading-8 tracking-tight text-foreground sm:text-2xl">
+                      {displayName}，你好
+                    </h1>
+                  </div>
+                  <PioneerComposer
+                    input={input}
+                    sending={sending}
+                    toolNote={toolNote}
+                    variant="center"
+                    onInputChange={setInput}
+                    onSubmit={send}
                   />
                   <div className="flex flex-wrap justify-center gap-2">
                     {PROMPT_HINTS.map((h) => (
-                      <Button key={h} type="button" variant="outline" onClick={() => setInput(h)}>
+                      <Button
+                        key={h}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 rounded-full px-3 text-xs font-normal text-muted-foreground"
+                        onClick={() => setInput(h)}
+                      >
                         {h}
                       </Button>
                     ))}
@@ -816,49 +916,15 @@ export default function PioneerPage() {
             </div>
           </div>
         )}
-        <form
-          className="shrink-0 px-6 pb-5 pt-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send();
-          }}
-        >
-          <div className="mx-auto w-full max-w-3xl">
-            <ToolStatus note={toolNote} />
-            <div className="flex items-end gap-2 rounded-[1.625rem] border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md">
-              <Textarea
-                rows={1}
-                value={input}
-                placeholder=""
-                disabled={sending}
-                className="max-h-44 min-h-9 resize-none overflow-y-auto border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0"
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
-                  }
-                }}
-              />
-              {(hasDraft || sending) && (
-                <Button
-                  type="submit"
-                  size="icon"
-                  className="size-9 shrink-0 rounded-full"
-                  disabled={sending || !hasDraft}
-                  title={sending ? "正在发送" : "发送"}
-                  aria-label={sending ? "正在发送" : "发送"}
-                >
-                  {sending ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <ArrowUp className="size-4 stroke-[2.6]" />
-                  )}
-                </Button>
-              )}
-            </div>
-          </div>
-        </form>
+        {!emptyConversation && (
+          <PioneerComposer
+            input={input}
+            sending={sending}
+            toolNote={toolNote}
+            onInputChange={setInput}
+            onSubmit={send}
+          />
+        )}
       </WorkspacePanel>
       <Dialog
         open={Boolean(deleteConfirm)}
