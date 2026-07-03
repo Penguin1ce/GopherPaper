@@ -119,6 +119,7 @@ func Init(mode string) *gin.Engine {
 
 		adminAuthed := api.Group("/admin")
 		adminAuthed.Use(middleware.AdminJWTAuth())
+		adminAuthed.Use(middleware.AdminAudit())
 		{
 			adminAuthed.GET("/me", adminhandler.Me)
 			adminAuthed.GET("/overview", adminhandler.Overview)
@@ -140,6 +141,7 @@ func Init(mode string) *gin.Engine {
 			adminAuthed.GET("/logs", adminhandler.ListLogs)
 			adminAuthed.GET("/logs/stats", adminhandler.LogStats)
 			adminAuthed.GET("/analytics/advanced", adminhandler.AdvancedAnalytics)
+			adminAuthed.GET("/audit", adminhandler.ListAudit)
 		}
 	}
 	return r
