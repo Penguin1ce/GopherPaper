@@ -1,5 +1,24 @@
 import { dashboardRequest } from "./dashboard-api";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api/v1";
+
+// downloadExport 带鉴权头拉取 CSV 并触发浏览器下载。
+export async function downloadExport(token: string, kind: "papers" | "users" | "logs") {
+  const res = await fetch(`${API_BASE}/admin/export/${kind}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error("导出失败");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${kind}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // ── 用户管理 ─────────────────────────────────────────────────
 
 export type UserItem = {
