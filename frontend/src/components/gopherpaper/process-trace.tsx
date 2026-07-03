@@ -38,6 +38,10 @@ const PHASE_STYLE: Record<string, { dot: string; title: string }> = {
 };
 const PHASE_STYLE_FALLBACK = PHASE_STYLE.reasoning;
 
+function phaseLabel(phase: string, overrides?: Record<string, string>) {
+  return overrides?.[phase] || PHASE_LABEL[phase] || phase;
+}
+
 function compactText(text: string) {
   return text.trim().replace(/\s+/g, " ");
 }
@@ -46,13 +50,15 @@ function ProcessStep({
   step,
   isLast,
   live,
+  phaseLabels,
 }: {
   step: PlanStep;
   isLast: boolean;
   live: boolean;
+  phaseLabels?: Record<string, string>;
 }) {
   const ps = PHASE_STYLE[step.phase] || PHASE_STYLE_FALLBACK;
-  const label = PHASE_LABEL[step.phase] || step.phase;
+  const label = phaseLabel(step.phase, phaseLabels);
   const text = step.text.trim();
   const [open, setOpen] = useState(live);
 
@@ -99,13 +105,21 @@ function ProcessStep({
 }
 
 // ProcessTrace 是论文助教内联的「执行过程」活动条。
-// 默认只露出当前阶段摘要,展开后采用小云雀同款精简时间线。
-export function ProcessTrace({ steps, live }: { steps: PlanStep[]; live?: boolean }) {
+// 默认只露出当前阶段摘要,展开后呈现统一的精简时间线。
+export function ProcessTrace({
+  steps,
+  live,
+  phaseLabels,
+}: {
+  steps: PlanStep[];
+  live?: boolean;
+  phaseLabels?: Record<string, string>;
+}) {
   const [open, setOpen] = useState(false);
   if (!steps || steps.length === 0) return null;
   const lastIdx = steps.length - 1;
   const active = steps[lastIdx];
-  const activeLabel = PHASE_LABEL[active.phase] || active.phase;
+  const activeLabel = phaseLabel(active.phase, phaseLabels);
   const activeText = compactText(active.text);
 
   return (
@@ -156,6 +170,7 @@ export function ProcessTrace({ steps, live }: { steps: PlanStep[]; live?: boolea
               step={s}
               isLast={i === lastIdx}
               live={!!live && i === lastIdx}
+              phaseLabels={phaseLabels}
             />
           ))}
         </ol>
