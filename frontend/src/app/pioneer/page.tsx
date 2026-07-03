@@ -50,13 +50,24 @@ import type {
   Topic,
 } from "@/lib/gopherpaper/types";
 import { toolStatusText } from "@/lib/gopherpaper/tool-status";
-import { formatTime, messagePlan, metaPlanSteps, sessionTitle } from "@/lib/gopherpaper/utils";
+import {
+  ensurePlanningStep,
+  finishToolCallStep,
+  formatTime,
+  messagePlan,
+  metaPlanSteps,
+  processPlanSteps,
+  pushReasoningStep,
+  pushToolCallStep,
+  sessionTitle,
+} from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty } from "@/components/gopherpaper/app-ui";
 import { AgentIntro } from "@/components/gopherpaper/agent-intro";
 import { Markdown } from "@/components/gopherpaper/markdown";
 import { PaperFlowCard } from "@/components/gopherpaper/paper-flow-card";
 import { ProcessTrace } from "@/components/gopherpaper/process-trace";
+import { ToolTrace } from "@/components/gopherpaper/tool-trace";
 import { WorkspaceFrame, WorkspacePanel } from "@/components/gopherpaper/workspace-frame";
 
 const AUTH_KEY = "gopherpaper.auth";
@@ -209,17 +220,19 @@ const Bubble = memo(function Bubble({ message }: { message: Message }) {
   // flow 来源:本轮流式挂在 message.flow;刷新/重开会话则从持久化的 meta.flow 还原。
   const flow = message.flow ?? (message.meta?.flow as PaperFlow | undefined);
   const steps = isAssistant ? messagePlan(message) : [];
+  const processSteps = processPlanSteps(steps);
   return (
     <article className={cn("flex flex-col gap-1.5", isAssistant ? "items-start" : "items-end")}>
       {isAssistant ? (
         <div className="w-full">
-          {steps.length > 0 && (
+          {processSteps.length > 0 && (
             <ProcessTrace
-              steps={steps}
+              steps={processSteps}
               live={!!message.streaming}
               phaseLabels={PIONEER_TRACE_LABELS}
             />
           )}
+          <ToolTrace steps={steps} live={!!message.streaming} />
           <Markdown richLinks>{message.content}</Markdown>
           {flow && <PaperFlowCard flow={flow} />}
         </div>
@@ -236,16 +249,6 @@ const Bubble = memo(function Bubble({ message }: { message: Message }) {
   );
 });
 
-function ToolStatus({ note }: { note: string }) {
-  if (!note) return null;
-  return (
-    <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-sienna/30 bg-sienna/10 px-3 py-1 text-xs font-medium text-sienna">
-      <Loader2 className="size-3 animate-spin" />
-      {note}
-    </div>
-  );
-}
-
 const PROMPT_HINTS = [
   "帮我找几篇关于注意力机制的经典论文",
   "我在重庆大学虎溪校区，帮我点一杯冰美式",
@@ -255,14 +258,12 @@ const PROMPT_HINTS = [
 function PioneerComposer({
   input,
   sending,
-  toolNote,
   variant = "bottom",
   onInputChange,
   onSubmit,
 }: {
   input: string;
   sending: boolean;
-  toolNote: string;
   variant?: "bottom" | "center";
   onInputChange: (value: string) => void;
   onSubmit: () => void;
@@ -280,7 +281,6 @@ function PioneerComposer({
       }}
     >
       <div className={cn("mx-auto w-full", variant === "center" ? "max-w-2xl" : "max-w-3xl")}>
-        <ToolStatus note={toolNote} />
         <div
           className={cn(
             "flex gap-2 border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md",
@@ -607,13 +607,21 @@ export default function PioneerPage() {
           phase = phase.trim();
           if (!phase) return;
           const last = planSteps[planSteps.length - 1];
-          if (last && last.phase === phase) last.text += content;
+          if (last && last.phase === phase && last.kind !== "tool") last.text += content;
           else planSteps.push({ phase, text: content });
           if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
         },
         onTool: (tool, done) => {
           if (mountedRef.current) {
             setToolNote(toolStatusText(tool, done));
+            if (!done) {
+              ensurePlanningStep(planSteps, "拆解任务，选择可用工具");
+              pushToolCallStep(planSteps, tool);
+            } else {
+              finishToolCallStep(planSteps, tool);
+              pushReasoningStep(planSteps, "读取工具结果，整理下一步");
+            }
+            if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
           }
         },
         onConfirmDeletePaper: (payload) => {
@@ -644,7 +652,7 @@ export default function PioneerPage() {
       if (!mountedRef.current) return;
       const finalMeta = data.meta ?? data.message.meta;
       const persistedPlan = metaPlanSteps(finalMeta);
-      const finalPlan = persistedPlan.length > 0 ? persistedPlan : planSteps;
+      const finalPlan = planSteps.length > 0 ? planSteps : persistedPlan;
       setMessages((list) => [
         ...list.filter((m) => m.id !== placeholderID),
         {
@@ -893,7 +901,6 @@ export default function PioneerPage() {
                   <PioneerComposer
                     input={input}
                     sending={sending}
-                    toolNote={toolNote}
                     variant="center"
                     onInputChange={setInput}
                     onSubmit={send}
@@ -943,7 +950,6 @@ export default function PioneerPage() {
           <PioneerComposer
             input={input}
             sending={sending}
-            toolNote={toolNote}
             onInputChange={setInput}
             onSubmit={send}
           />

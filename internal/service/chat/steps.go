@@ -11,8 +11,11 @@ import (
 
 // ExecutionStep 是前端执行过程面板的一条可持久化步骤。
 type ExecutionStep struct {
-	Phase string `json:"phase"`
-	Text  string `json:"text"`
+	Phase  string `json:"phase"`
+	Text   string `json:"text"`
+	Kind   string `json:"kind,omitempty"`
+	Tool   string `json:"tool,omitempty"`
+	Status string `json:"status,omitempty"`
 }
 
 type executionRecorder struct {
@@ -36,24 +39,25 @@ func (r *executionRecorder) Record(ev core.StreamEvent) {
 	}
 	switch ev.Kind {
 	case constant.StreamEventPlan:
-		r.append(ev.Phase, ev.Delta)
+		r.appendPlan(ev.Phase, ev.Delta)
 	case constant.StreamEventToolCall:
 		if !r.hasPlanning() {
-			r.append("planning", "分析问题,制定检索策略")
+			r.appendPlan("planning", "分析问题,制定检索策略")
 		}
 		text := toolStepText(ev.Tool)
 		if text == "" {
 			return
 		}
 		last := r.last()
-		if last != nil && last.Phase == "action" && strings.TrimSpace(last.Text) == text {
+		if last != nil && last.Phase == "action" && last.Kind == "tool" && strings.TrimSpace(last.Text) == text {
 			return
 		}
-		r.append("action", text)
+		r.appendTool("action", text, ev.Tool, "running")
 	case constant.StreamEventToolResult:
+		r.finishTool(ev.Tool)
 		last := r.last()
 		if last == nil || last.Phase != "reasoning" {
-			r.append("reasoning", "综合检索结果,整理回答")
+			r.appendPlan("reasoning", "综合检索结果,整理回答")
 		}
 	}
 }
@@ -73,19 +77,55 @@ func (r *executionRecorder) Steps() []ExecutionStep {
 	return out
 }
 
-func (r *executionRecorder) append(phase, text string) {
-	phase = strings.TrimSpace(phase)
-	if phase == "" && strings.TrimSpace(text) == "" {
+func (r *executionRecorder) appendPlan(phase, text string) {
+	r.append(ExecutionStep{Phase: phase, Text: text, Kind: "plan"})
+}
+
+func (r *executionRecorder) appendTool(phase, text, tool, status string) {
+	r.append(ExecutionStep{
+		Phase:  phase,
+		Text:   text,
+		Kind:   "tool",
+		Tool:   strings.TrimSpace(tool),
+		Status: strings.TrimSpace(status),
+	})
+}
+
+func (r *executionRecorder) append(step ExecutionStep) {
+	phase := strings.TrimSpace(step.Phase)
+	text := strings.TrimSpace(step.Text)
+	if phase == "" && text == "" {
 		return
 	}
 	if len(r.steps) >= constant.MaxExecutionSteps {
 		return
 	}
-	if n := len(r.steps); n > 0 && r.steps[n-1].Phase == phase {
+	step.Phase = phase
+	step.Text = text
+	if n := len(r.steps); n > 0 && r.steps[n-1].Phase == phase && r.steps[n-1].Kind != "tool" && step.Kind != "tool" {
 		r.steps[n-1].Text = appendLimited(r.steps[n-1].Text, text)
 		return
 	}
-	r.steps = append(r.steps, ExecutionStep{Phase: phase, Text: trimRunes(text, constant.MaxExecutionStepTextRunes)})
+	step.Text = trimRunes(text, constant.MaxExecutionStepTextRunes)
+	r.steps = append(r.steps, step)
+}
+
+func (r *executionRecorder) finishTool(tool string) {
+	if r == nil {
+		return
+	}
+	display := toolStepText(tool)
+	tool = strings.TrimSpace(tool)
+	for i := len(r.steps) - 1; i >= 0; i-- {
+		s := &r.steps[i]
+		if s.Kind != "tool" || s.Phase != "action" {
+			continue
+		}
+		if s.Tool == tool || strings.TrimSpace(s.Text) == display || s.Status == "running" {
+			s.Status = "done"
+			return
+		}
+	}
 }
 
 func (r *executionRecorder) hasPlanning() bool {

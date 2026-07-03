@@ -144,12 +144,12 @@ func Profile(ctx context.Context, studentID string) (*model.User, error) {
 
 func Preference(ctx context.Context, studentID string) (*model.UserPreference, error) {
 	var pref model.UserPreference
-	err := dao.DB.WithContext(ctx).Where("student_id = ?", studentID).First(&pref).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return defaultPreference(studentID), nil
+	res := dao.DB.WithContext(ctx).Where("student_id = ?", studentID).Find(&pref)
+	if res.Error != nil {
+		return nil, fmt.Errorf("service: 查询用户 AI 偏好失败: %w", res.Error)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("service: 查询用户 AI 偏好失败: %w", err)
+	if res.RowsAffected == 0 {
+		return defaultPreference(studentID), nil
 	}
 	normalizePreference(&pref)
 	return &pref, nil
@@ -169,15 +169,15 @@ func UpdatePreference(ctx context.Context, studentID string, req dto.UpdateUserP
 	}
 
 	var existing model.UserPreference
-	err := dao.DB.WithContext(ctx).Where("student_id = ?", studentID).First(&existing).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	res := dao.DB.WithContext(ctx).Where("student_id = ?", studentID).Find(&existing)
+	if res.Error != nil {
+		return nil, fmt.Errorf("service: 查询用户 AI 偏好失败: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
 		if err := dao.DB.WithContext(ctx).Create(&pref).Error; err != nil {
 			return nil, fmt.Errorf("service: 创建用户 AI 偏好失败: %w", err)
 		}
 		return &pref, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("service: 查询用户 AI 偏好失败: %w", err)
 	}
 	if err := dao.DB.WithContext(ctx).Model(&existing).Updates(map[string]any{
 		"nickname":           pref.Nickname,

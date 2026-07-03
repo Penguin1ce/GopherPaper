@@ -38,7 +38,16 @@ import type {
   UserPreference,
 } from "./types";
 import { toolStatusText } from "./tool-status";
-import { chatSessions, isSettled, paperTitle, sessionsForPaper } from "./utils";
+import {
+  chatSessions,
+  ensurePlanningStep,
+  finishToolCallStep,
+  isSettled,
+  paperTitle,
+  pushReasoningStep,
+  pushToolCallStep,
+  sessionsForPaper,
+} from "./utils";
 
 const AUTH_KEY = "gopherpaper.auth";
 
@@ -53,13 +62,6 @@ const DEFAULT_PREFERENCE: UserPreference = {
   output_format: "conclusion_first",
   language: "auto",
   custom_instruction: "",
-};
-
-// 工具名 → 执行过程里「检索」步的检索对象文案(左列已是「检索」标签,这里只写对象避免重复);
-// 未列出的工具回退到原始工具名。
-const TOOL_STEP_TEXT: Record<string, string> = {
-  search_paper: "论文知识库",
-  find_figures: "图表与表格",
 };
 
 export interface ToastItem {
@@ -424,6 +426,21 @@ function AppProviderInner({ children }: { children: ReactNode }) {
               },
       },
     }));
+    void api.reportStatus(paperID).then((status) => {
+      const run = status.running?.find((item) => item.type === type);
+      if (!run) return;
+      setReportProgress((prev) => ({
+        ...prev,
+        [paperID]: {
+          ...(prev[paperID] || {}),
+          [type]: {
+            steps: run.steps ?? [],
+            live: Boolean(run.live),
+            failed: Boolean(run.failed),
+          },
+        },
+      }));
+    }).catch(() => {});
   }, []);
 
   const markPaperFlowReady = useCallback((paperID: string, ready = true) => {
@@ -729,9 +746,6 @@ function AppProviderInner({ children }: { children: ReactNode }) {
           queryFn: async () => chatSessions(await api.listSessions()),
         }),
       ]);
-      api.preferences()
-        .then((data) => setPreference({ ...DEFAULT_PREFERENCE, ...data }))
-        .catch(() => {});
       if (!mountedRef.current) return;
       if (paperList.length > 0) {
         const first = paperList[0];
@@ -757,9 +771,6 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     setTokenState(saved.token);
     api.setToken(saved.token);
     api.me().then((profile) => persist(profile, saved.token)).catch(() => {});
-    api.preferences()
-      .then((data) => setPreference({ ...DEFAULT_PREFERENCE, ...data }))
-      .catch(() => {});
     bootstrapSession(saved.token)
       .catch(() => {})
       .finally(() => setAuthReady(true));
@@ -1121,42 +1132,22 @@ function AppProviderInner({ children }: { children: ReactNode }) {
             onTool: (tool, done) => {
               if (!done) {
                 setToolNote(toolStatusText(tool, done));
-                // 首次工具调用前合成规划步(模型未输出时补全)
-                if (
-                  !planSteps.some(
-                    (s) => s.phase === "planning" || s.phase === "replanning",
-                  )
-                ) {
-                  planSteps.push({
-                    phase: "planning",
-                    text: "分析问题，制定检索策略",
-                  });
-                }
-                const text = TOOL_STEP_TEXT[tool] || tool;
-                const last = planSteps[planSteps.length - 1];
-                if (!(last && last.phase === "action" && last.text === text)) {
-                  planSteps.push({ phase: "action", text });
-                }
+                ensurePlanningStep(planSteps);
+                pushToolCallStep(planSteps, tool);
                 if (planRafID === null)
                   planRafID = requestAnimationFrame(flushPlan);
               } else {
                 setToolNote(toolStatusText(tool, done));
-                // 工具结果返回后合成思考步
-                const last = planSteps[planSteps.length - 1];
-                if (!last || last.phase !== "reasoning") {
-                  planSteps.push({
-                    phase: "reasoning",
-                    text: "综合检索结果，整理回答",
-                  });
-                  if (planRafID === null)
-                    planRafID = requestAnimationFrame(flushPlan);
-                }
+                finishToolCallStep(planSteps, tool);
+                pushReasoningStep(planSteps);
+                if (planRafID === null)
+                  planRafID = requestAnimationFrame(flushPlan);
               }
             },
             // 规划/检索/思考阶段文本:累积成 plan 步,实时流进「执行过程」活动条。
             onPlan: (phase, content) => {
               const last = planSteps[planSteps.length - 1];
-              if (last && last.phase === phase) last.text += content;
+              if (last && last.phase === phase && last.kind !== "tool") last.text += content;
               else planSteps.push({ phase, text: content });
               if (planRafID === null)
                 planRafID = requestAnimationFrame(flushPlan);

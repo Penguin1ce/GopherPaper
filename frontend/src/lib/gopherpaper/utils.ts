@@ -1,4 +1,5 @@
 import type { Message, Paper, PaperStatus, PlanStep, Session } from "./types";
+import { toolDisplayInfo } from "./tool-status";
 
 export const READY_STATUSES: PaperStatus[] = ["ready"];
 
@@ -23,7 +24,21 @@ export function metaPlanSteps(meta?: Record<string, unknown>): PlanStep[] {
       const step = item as Record<string, unknown>;
       const phase = typeof step.phase === "string" ? step.phase.trim() : "";
       const text = typeof step.text === "string" ? step.text.trim() : "";
-      return phase && text ? { phase, text } : null;
+      const kind = step.kind === "tool" || step.kind === "plan" ? step.kind : undefined;
+      const tool = typeof step.tool === "string" ? step.tool.trim() : "";
+      const status =
+        step.status === "running" || step.status === "done" || step.status === "failed"
+          ? step.status
+          : undefined;
+      return phase && text
+        ? {
+            phase,
+            text,
+            ...(kind ? { kind } : {}),
+            ...(tool ? { tool } : {}),
+            ...(status ? { status } : {}),
+          }
+        : null;
     })
     .filter((step): step is PlanStep => Boolean(step));
 }
@@ -32,6 +47,88 @@ export function messagePlan(message?: Message | null): PlanStep[] {
   if (!message) return [];
   if (message.plan && message.plan.length > 0) return message.plan;
   return metaPlanSteps(message.meta);
+}
+
+export function isToolPlanStep(step: PlanStep): boolean {
+  if (step.kind === "tool") return true;
+  if (step.phase !== "action") return false;
+  return toolDisplayInfo(step.tool || step.text).matched;
+}
+
+export function processPlanSteps(steps: PlanStep[]): PlanStep[] {
+  return steps.filter((step) => !isToolPlanStep(step));
+}
+
+export function toolPlanSteps(steps: PlanStep[]): PlanStep[] {
+  return steps.filter(isToolPlanStep);
+}
+
+export function ensurePlanningStep(
+  steps: PlanStep[],
+  text = "分析问题，制定检索策略",
+) {
+  if (steps.some((s) => s.phase === "planning" || s.phase === "replanning")) return;
+  steps.push({ phase: "planning", text, kind: "plan" });
+}
+
+function toolStepMatches(step: PlanStep, tool: string) {
+  const info = toolDisplayInfo(tool);
+  const raw = info.raw.trim();
+  return (
+    (raw && step.tool === raw) ||
+    step.text.trim() === raw ||
+    step.text.trim() === info.name
+  );
+}
+
+export function pushToolCallStep(steps: PlanStep[], tool: string) {
+  const info = toolDisplayInfo(tool);
+  const last = steps[steps.length - 1];
+  if (
+    last &&
+    last.phase === "action" &&
+    last.kind === "tool" &&
+    last.status === "running" &&
+    toolStepMatches(last, info.raw)
+  ) {
+    return;
+  }
+  steps.push({
+    phase: "action",
+    text: info.name,
+    kind: "tool",
+    tool: info.raw,
+    status: "running",
+  });
+}
+
+export function finishToolCallStep(steps: PlanStep[], tool: string) {
+  const info = toolDisplayInfo(tool);
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const step = steps[i];
+    if (step.phase !== "action") continue;
+    if (step.kind === "tool" && (toolStepMatches(step, info.raw) || !step.tool)) {
+      steps[i] = { ...step, status: "done" };
+      return;
+    }
+  }
+  steps.push({
+    phase: "action",
+    text: info.name,
+    kind: "tool",
+    tool: info.raw,
+    status: "done",
+  });
+}
+
+export function pushReasoningStep(
+  steps: PlanStep[],
+  text = "综合检索结果，整理回答",
+) {
+  const last = steps[steps.length - 1];
+  if (last && last.phase === "reasoning") return;
+  if (steps.some((s) => s.phase === "reasoning" && s.text.trim() === text)) return;
+  steps.push({ phase: "reasoning", text, kind: "plan" });
 }
 
 function sessionTime(s: Session): number {

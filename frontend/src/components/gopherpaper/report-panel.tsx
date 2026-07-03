@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils";
 import { Empty, SkeletonLines } from "./app-ui";
 import { Markdown } from "./markdown";
 import { PaperFlowCard } from "./paper-flow-card";
-import { ProcessTrace } from "./process-trace";
+import { ReportRelayTrace } from "./report-relay-trace";
 
 // buildFigureMap 从报告 meta.sources 收图块出处,拼成 markdown 解析 figure://文件名 用的 名->docID 表。
 function buildFigureMap(meta?: Record<string, unknown>): Record<string, string> {
@@ -360,7 +360,7 @@ export function ReportPanel() {
     if (!articleRef.current || !active || !report) return;
     const label = REPORTS.find((r) => r.type === active)?.label || "研读报告";
     const title = `${paperTitle(activePaper!)} · ${label}`;
-    printReport(title, articleRef.current.innerHTML);
+    printReport(title, articleRef.current);
   };
 
   if (!activePaper) {
@@ -481,7 +481,7 @@ export function ReportPanel() {
                 <Loader2 className="size-4 animate-spin" />
                 正在生成{activeReportLabel}，约需一分钟…
               </p>
-              <ProcessTrace
+              <ReportRelayTrace
                 steps={
                   run && run.steps.length > 0
                     ? run.steps
@@ -495,7 +495,7 @@ export function ReportPanel() {
             <div className="mx-auto max-w-2xl space-y-3">
               <p className="text-sm text-destructive">报告生成失败，请重试。</p>
               {run.steps.length > 0 && (
-                <ProcessTrace steps={run.steps} live={false} />
+                <ReportRelayTrace steps={run.steps} live={false} failed />
               )}
             </div>
           ) : report ? (

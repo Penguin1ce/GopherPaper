@@ -447,7 +447,7 @@ export function CompareReportContent({
     if (!articleRef.current) return;
     printReport(
       `多论文对比报告 - ${report.title}`,
-      articleRef.current.innerHTML,
+      articleRef.current,
       { mirrorStyles: true, landscape: true },
     );
   };
