@@ -162,6 +162,7 @@ func Init(mode string) *gin.Engine {
 			adminAuthed.GET("/admins", adminhandler.ListAdmins)
 			adminAuthed.PUT("/admins/:id/status", adminhandler.SetAdminStatus)
 			adminAuthed.POST("/papers/batch-delete", adminhandler.BatchDeletePapers)
+			adminAuthed.GET("/storage", adminhandler.StorageOverview)
 		}
 	}
 	return r
