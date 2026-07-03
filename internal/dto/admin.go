@@ -308,3 +308,38 @@ type AdminLogStats struct {
 	AvgMS        float64  `json:"avg_ms"`
 	MaxMS        int64    `json:"max_ms"`
 }
+
+// ── 后台高级分析 ─────────────────────────────────────────────
+
+// AdminLatencyBucket 是延迟直方图的一个区间。
+type AdminLatencyBucket struct {
+	Label string `json:"label"`
+	Count int64  `json:"count"`
+}
+
+// AdminHourPoint 是按一天 24 小时聚合的调用分布点。
+type AdminHourPoint struct {
+	Hour    int   `json:"hour"`
+	Count   int64 `json:"count"`
+	Success int64 `json:"success"`
+}
+
+// AdminTopActor 是调用量最高的用户。
+type AdminTopActor struct {
+	ActorID string `json:"actor_id"`
+	Calls   int64  `json:"calls"`
+}
+
+// AdminPipelineStage 是论文解析流水线某一阶段的滞留数量。
+type AdminPipelineStage struct {
+	Stage string `json:"stage"`
+	Count int64  `json:"count"`
+}
+
+// AdminAdvancedAnalytics 汇总高级分析页所需的多维统计。
+type AdminAdvancedAnalytics struct {
+	LatencyHistogram   []AdminLatencyBucket `json:"latency_histogram"`
+	HourlyDistribution []AdminHourPoint     `json:"hourly_distribution"`
+	TopActors          []AdminTopActor      `json:"top_actors"`
+	Pipeline           []AdminPipelineStage `json:"pipeline"`
+}
