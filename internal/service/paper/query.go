@@ -2,6 +2,9 @@ package paper
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 
 	paperdao "GopherPaper/internal/dao/paper"
 	"GopherPaper/internal/model"
@@ -49,7 +52,36 @@ func PaperFile(ctx context.Context, ownerID, paperID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return p.FileURI, nil
+	for _, path := range paperFileCandidates(p) {
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+	return strings.TrimSpace(p.FileURI), nil
+}
+
+func paperFileCandidates(p *model.Paper) []string {
+	seen := map[string]bool{}
+	candidates := make([]string, 0, 4)
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" || path == "." || seen[path] {
+			return
+		}
+		seen[path] = true
+		candidates = append(candidates, path)
+	}
+	add(p.FileURI)
+	if base := filepath.Base(strings.TrimSpace(p.FileURI)); base != "" && base != "." {
+		add(filepath.Join(storageDir, base))
+	}
+	if p.ID != "" {
+		add(filepath.Join(storageDir, p.ID+".pdf"))
+	}
+	if base := filepath.Base(strings.TrimSpace(p.FileName)); base != "" && base != "." {
+		add(filepath.Join(storageDir, base))
+	}
+	return candidates
 }
 
 // owned 取论文并校验归属,非本人返回 errs.ErrPaperForbidden。

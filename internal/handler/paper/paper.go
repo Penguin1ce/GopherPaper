@@ -382,6 +382,7 @@ func File(c *gin.Context) {
 		return
 	}
 	if _, err := os.Stat(path); err != nil {
+		zlog.Warn("论文原始 PDF 文件不存在", "paper_id", c.Param("id"), "owner", claims.StudentID, "path", path, "err", err)
 		response.Fail(c, http.StatusNotFound, "文件不存在")
 		return
 	}
