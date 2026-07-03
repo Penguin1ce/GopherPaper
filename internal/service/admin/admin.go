@@ -38,8 +38,12 @@ var (
 	ErrWrongPassword                 = errors.New("admin: password is incorrect")
 )
 
-func Init(cfg config.AdminConfig) {
-	registrationCode = strings.TrimSpace(cfg.RegistrationCode)
+func Init(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	registrationCode = strings.TrimSpace(cfg.Admin.RegistrationCode)
+	setRuntimeConfig(cfg)
 }
 
 func SendVerifyCode(ctx context.Context, email string) error {

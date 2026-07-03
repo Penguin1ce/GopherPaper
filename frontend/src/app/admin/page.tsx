@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Trash2,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -580,6 +581,7 @@ export default function AdminPage() {
         {auth ? (
           <section className="flex flex-1 flex-col gap-5 py-5">
             <OverviewGrid overview={overview} onAction={onOverviewAction} />
+            <ModelConfigShortcut />
             <section ref={paperSectionRef} className="rounded-lg border border-border bg-card">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
                 <div>
@@ -1016,6 +1018,33 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span className="text-sm font-medium">{label}</span>
       {children}
     </label>
+  );
+}
+
+function ModelConfigShortcut() {
+  return (
+    <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <SlidersHorizontal className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold">模型配置中心</h1>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+              配置 AI 供应商、中转站、模型名和密钥。完整表单已收纳到独立页面，避免后台首页过重。
+            </p>
+          </div>
+        </div>
+        <Link
+          href="/admin/model-configs"
+          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground outline-none transition hover:bg-primary/80 focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <SlidersHorizontal className="size-4" />
+          进入配置
+        </Link>
+      </div>
+    </section>
   );
 }
 

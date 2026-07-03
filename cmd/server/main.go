@@ -73,6 +73,9 @@ func run(cfgPath string, backfillGraph bool) error {
 	if err := model.AutoMigrate(dao.DB); err != nil {
 		return err
 	}
+	if err := adminservice.ApplyStoredModelConfigs(ctx, cfg); err != nil {
+		return err
+	}
 	zlog.Info("MySQL 已连接，数据表已就绪")
 
 	// 会话历史：trpc MySQL Session 承载多轮上下文与历史，须在 MySQL 之后
@@ -144,7 +147,7 @@ func run(cfgPath string, backfillGraph bool) error {
 
 	// 7. JWT、邮件与 HTTP 服务
 	auth.Init(cfg.JWT)
-	adminservice.Init(cfg.Admin)
+	adminservice.Init(cfg)
 	utils.InitMail(cfg.Mail)
 	engine := router.Init(cfg.Server.Mode)
 	srv := &http.Server{Addr: cfg.Server.Addr, Handler: engine}

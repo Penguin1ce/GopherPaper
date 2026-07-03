@@ -115,3 +115,10 @@ func EvictUser(userID string) {
 		return true
 	})
 }
+
+func EvictAll() {
+	runners.Range(func(k, _ any) bool {
+		runners.Delete(k)
+		return true
+	})
+}

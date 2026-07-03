@@ -77,3 +77,58 @@ type AdminPaperListResponse struct {
 	Page     int              `json:"page"`
 	PageSize int              `json:"page_size"`
 }
+
+type AdminModelConfigItem struct {
+	Role              string     `json:"role"`
+	Label             string     `json:"label"`
+	Description       string     `json:"description"`
+	Kind              string     `json:"kind"`
+	Provider          string     `json:"provider"`
+	BaseURL           string     `json:"base_url"`
+	Model             string     `json:"model"`
+	APIKeyMask        string     `json:"api_key_mask"`
+	HasAPIKey         bool       `json:"has_api_key"`
+	Dim               int        `json:"dim"`
+	MaxTokens         int        `json:"max_tokens"`
+	ReasoningEffort   string     `json:"reasoning_effort"`
+	Thinking          string     `json:"thinking"`
+	Enabled           bool       `json:"enabled"`
+	Timeout           int        `json:"timeout"`
+	Source            string     `json:"source"`
+	Active            bool       `json:"active"`
+	RestartRequired   bool       `json:"restart_required"`
+	LastTestStatus    string     `json:"last_test_status,omitempty"`
+	LastTestError     string     `json:"last_test_error,omitempty"`
+	LastTestAt        *time.Time `json:"last_test_at,omitempty"`
+	LastTestLatencyMS int64      `json:"last_test_latency_ms,omitempty"`
+	UpdatedAt         *time.Time `json:"updated_at,omitempty"`
+	Warnings          []string   `json:"warnings,omitempty"`
+}
+
+type AdminModelConfigsResponse struct {
+	Items []AdminModelConfigItem `json:"items"`
+}
+
+type AdminModelConfigUpdateRequest struct {
+	Provider        string  `json:"provider"`
+	BaseURL         string  `json:"base_url"`
+	Model           string  `json:"model"`
+	APIKey          *string `json:"api_key"`
+	Dim             int     `json:"dim"`
+	MaxTokens       int     `json:"max_tokens"`
+	ReasoningEffort string  `json:"reasoning_effort"`
+	Thinking        string  `json:"thinking"`
+	Enabled         bool    `json:"enabled"`
+	Timeout         int     `json:"timeout"`
+}
+
+type AdminModelConfigTestResponse struct {
+	OK        bool   `json:"ok"`
+	Message   string `json:"message"`
+	LatencyMS int64  `json:"latency_ms"`
+}
+
+type AdminModelConfigApplyResponse struct {
+	AppliedRoles []string `json:"applied_roles"`
+	Warnings     []string `json:"warnings,omitempty"`
+}

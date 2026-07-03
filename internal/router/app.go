@@ -124,6 +124,11 @@ func Init(mode string) *gin.Engine {
 			adminAuthed.GET("/overview", adminhandler.Overview)
 			adminAuthed.GET("/papers", adminhandler.ListPapers)
 			adminAuthed.DELETE("/papers/:id", adminhandler.DeletePaper)
+			adminAuthed.GET("/model-configs", adminhandler.ListModelConfigs)
+			adminAuthed.POST("/model-configs/apply", adminhandler.ApplyModelConfigs)
+			adminAuthed.PUT("/model-configs/:role", adminhandler.UpdateModelConfig)
+			adminAuthed.POST("/model-configs/:role/test", adminhandler.TestModelConfig)
+			adminAuthed.POST("/model-configs/:role/restore", adminhandler.RestoreModelConfig)
 		}
 	}
 	return r

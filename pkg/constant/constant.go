@@ -11,6 +11,20 @@ const (
 	ProviderOpenAI Provider = "openai"
 )
 
+// ModelRole 标识管理员可配置的系统模型槽位。
+type ModelRole string
+
+const (
+	ModelRoleIntent    ModelRole = "intent"
+	ModelRoleChat      ModelRole = "chat"
+	ModelRoleVLM       ModelRole = "vlm"
+	ModelRoleTranslate ModelRole = "translate"
+	ModelRolePioneer   ModelRole = "pioneer"
+	ModelRoleMaodie    ModelRole = "maodie"
+	ModelRoleEmbedding ModelRole = "embedding"
+	ModelRoleRerank    ModelRole = "rerank"
+)
+
 const (
 	DefaultVolcengineBaseURL   = "https://ark.cn-beijing.volces.com/api/v3"
 	DefaultVolcengineMiniModel = "doubao-seed-2-0-mini-260215"
