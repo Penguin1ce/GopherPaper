@@ -6,7 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { PaperPane } from "./paper-pane";
 import { RightPane } from "./right-pane";
-import { Sidebar } from "./sidebar";
+import { Sidebar, SidebarUserCard } from "./sidebar";
 import { WorkspaceFrame, WorkspacePanel } from "./workspace-frame";
 
 export function Workspace() {
@@ -21,9 +21,10 @@ export function Workspace() {
           showSidebar ? "w-96" : "w-0 border-0 shadow-none",
         )}
       >
-        <Sidebar onCollapse={toggle} />
+        <Sidebar />
         <Separator />
         <PaperPane />
+        <SidebarUserCard onCollapse={toggle} />
       </WorkspacePanel>
       <WorkspacePanel className="flex min-w-0 flex-1 flex-col">
         <RightPane onExpandSidebar={showSidebar ? undefined : toggle} />

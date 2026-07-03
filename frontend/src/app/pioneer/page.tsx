@@ -54,8 +54,8 @@ import { cn } from "@/lib/utils";
 import { Empty } from "@/components/gopherpaper/app-ui";
 import { Markdown } from "@/components/gopherpaper/markdown";
 import { PaperFlowCard } from "@/components/gopherpaper/paper-flow-card";
+import { ProcessTrace } from "@/components/gopherpaper/process-trace";
 import { WorkspaceFrame, WorkspacePanel } from "@/components/gopherpaper/workspace-frame";
-import { Shimmer } from "@/components/ai-elements/shimmer";
 
 const AUTH_KEY = "gopherpaper.auth";
 const LUCKIN_KEY = "gopherpaper.luckin";
@@ -185,137 +185,26 @@ function LuckinCard({
   );
 }
 
-const PLAN_PHASE_LABEL: Record<string, string> = {
-  planning: "规划",
-  replanning: "重新规划",
+const PIONEER_TRACE_LABELS: Record<string, string> = {
   action: "执行",
-  reasoning: "思考",
 };
-
-// 按阶段上色, 一眼区分: 规划=墨蓝, 执行=赭石, 思考=中性灰。
-const PLAN_PHASE_STYLE: Record<string, { dot: string; title: string }> = {
-  planning: { dot: "bg-primary", title: "text-primary" },
-  replanning: { dot: "bg-primary", title: "text-primary" },
-  action: { dot: "bg-sienna", title: "text-sienna" },
-  reasoning: { dot: "bg-muted-foreground", title: "text-foreground/70" },
-};
-const PLAN_PHASE_FALLBACK = PLAN_PHASE_STYLE.reasoning;
-
-// 时间线节点: 完成步骤折叠成单行预览, 点击展开; 正在执行的步骤自动展开并 shimmer。
-const PlanItem = memo(function PlanItem({
-  step,
-  isLast,
-  live,
-}: {
-  step: PlanStep;
-  isLast: boolean;
-  live: boolean;
-}) {
-  const ps = PLAN_PHASE_STYLE[step.phase] || PLAN_PHASE_FALLBACK;
-  const label = PLAN_PHASE_LABEL[step.phase] || step.phase;
-  const text = step.text.trim();
-  const [open, setOpen] = useState(live);
-  useEffect(() => {
-    if (live) setOpen(true);
-  }, [live]);
-
-  return (
-    <li className="relative pb-3 pl-5 last:pb-0">
-      {!isLast && (
-        <span className="absolute bottom-0 left-[3px] top-3 w-px bg-border" aria-hidden />
-      )}
-      <span
-        className={cn("absolute left-0 top-[5px] size-1.5 rounded-full ring-3 ring-background", ps.dot)}
-        aria-hidden
-      />
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="group flex w-full items-center gap-1.5 text-left"
-      >
-        <span className={cn("font-serif text-xs font-semibold", ps.title)}>
-          {live ? <Shimmer>{label}</Shimmer> : label}
-        </span>
-        <ChevronDown
-          className={cn(
-            "size-3 shrink-0 text-muted-foreground/50 transition-transform group-hover:text-muted-foreground",
-            open && "rotate-180",
-          )}
-          aria-hidden
-        />
-      </button>
-      {open ? (
-        <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{text}</p>
-      ) : (
-        <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground/60">{text}</p>
-      )}
-    </li>
-  );
-});
-
-const PlanRail = memo(function PlanRail({
-  steps,
-  live,
-  pending,
-}: {
-  steps: PlanStep[];
-  live: boolean;
-  pending: boolean;
-}) {
-  return (
-    <WorkspacePanel as="aside" className="hidden w-80 flex-col xl:flex">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b px-4">
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-medium">执行计划</span>
-          <span className="text-xs text-muted-foreground">Plan · Execute</span>
-        </div>
-        {(live || pending) && (
-          <Badge variant="secondary" className="rounded-full font-normal">
-            进行中
-          </Badge>
-        )}
-      </div>
-      <div className="relative min-h-0 flex-1">
-        <ScrollArea className="absolute! inset-0">
-          <div className="p-4">
-            {steps.length === 0 ? (
-              <div className="rounded-lg border border-dashed bg-muted/30 p-5 text-center">
-                <div className="text-sm font-medium">
-                  {pending ? "小云雀正在思考…" : "先规划，再分步执行"}
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {pending
-                    ? "若本轮需要分步执行，规划会在这里展开。"
-                    : "发起任务后，规划与动作会实时展示。"}
-                </p>
-              </div>
-            ) : (
-              <ol className="relative">
-                {steps.map((s, i) => (
-                  <PlanItem
-                    key={i}
-                    step={s}
-                    isLast={i === steps.length - 1}
-                    live={live && i === steps.length - 1}
-                  />
-                ))}
-              </ol>
-            )}
-          </div>
-        </ScrollArea>
-      </div>
-    </WorkspacePanel>
-  );
-});
 
 const Bubble = memo(function Bubble({ message }: { message: Message }) {
   const isAssistant = message.role === "assistant";
   // flow 来源:本轮流式挂在 message.flow;刷新/重开会话则从持久化的 meta.flow 还原。
   const flow = message.flow ?? (message.meta?.flow as PaperFlow | undefined);
+  const steps = isAssistant ? messagePlan(message) : [];
   return (
     <article className={cn("flex flex-col gap-1.5", isAssistant ? "items-start" : "items-end")}>
       {isAssistant ? (
         <div className="w-full">
+          {steps.length > 0 && (
+            <ProcessTrace
+              steps={steps}
+              live={!!message.streaming}
+              phaseLabels={PIONEER_TRACE_LABELS}
+            />
+          )}
           <Markdown richLinks>{message.content}</Markdown>
           {flow && <PaperFlowCard flow={flow} />}
         </div>
@@ -393,7 +282,6 @@ export default function PioneerPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sending, setSending] = useState(false);
   const [toolNote, setToolNote] = useState("");
-  const [streamPlan, setStreamPlan] = useState<PlanStep[]>([]);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [luckin, setLuckin] = useState<LuckinCred | null>(null);
@@ -470,7 +358,6 @@ export default function PioneerPage() {
   const startNewSession = () => {
     setActiveID("");
     setMessages([]);
-    setStreamPlan([]);
     setError("");
     setInput("");
   };
@@ -588,7 +475,7 @@ export default function PioneerPage() {
     const flushPlan = () => {
       planRafID = null;
       if (!mountedRef.current) return;
-      setStreamPlan(planSteps.map((s) => ({ ...s })));
+      patch((m) => ({ ...m, plan: planSteps.map((s) => ({ ...s })) }));
     };
     const cancelFlush = () => {
       if (rafID !== null) cancelAnimationFrame(rafID);
@@ -613,6 +500,8 @@ export default function PioneerPage() {
         },
         onPlan: (phase, content) => {
           if (!mountedRef.current) return;
+          phase = phase.trim();
+          if (!phase) return;
           const last = planSteps[planSteps.length - 1];
           if (last && last.phase === phase) last.text += content;
           else planSteps.push({ phase, text: content });
@@ -649,9 +538,9 @@ export default function PioneerPage() {
       });
       cancelFlush();
       if (!mountedRef.current) return;
-      setStreamPlan([]);
       const finalMeta = data.meta ?? data.message.meta;
-      const finalPlan = planSteps.length > 0 ? planSteps : metaPlanSteps(finalMeta);
+      const persistedPlan = metaPlanSteps(finalMeta);
+      const finalPlan = persistedPlan.length > 0 ? persistedPlan : planSteps;
       setMessages((list) => [
         ...list.filter((m) => m.id !== placeholderID),
         {
@@ -667,7 +556,6 @@ export default function PioneerPage() {
     } catch (e) {
       cancelFlush();
       if (!mountedRef.current) return;
-      setStreamPlan([]);
       setMessages((list) => list.filter((m) => m.id !== placeholderID));
       fail(e);
     } finally {
@@ -742,10 +630,6 @@ export default function PioneerPage() {
       else next.add(key);
       return next;
     });
-  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-  const railSteps = sending ? streamPlan : messagePlan(lastAssistant);
-  const railLive = sending && streamPlan.length > 0;
-  const railPending = sending && streamPlan.length === 0;
   const hasDraft = input.trim().length > 0;
 
   return (
@@ -915,7 +799,7 @@ export default function PioneerPage() {
                     <article className="flex items-start">
                       <div className="inline-flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground">
                         <Loader2 className="size-4 animate-spin" />
-                        {streamPlan.length > 0 ? "小云雀正在按计划执行…" : "小云雀正在处理工具与上下文…"}
+                        小云雀正在处理工具与上下文…
                       </div>
                     </article>
                   )}
@@ -1050,7 +934,6 @@ export default function PioneerPage() {
           </DialogContent>
         )}
       </Dialog>
-      <PlanRail steps={railSteps} live={railLive} pending={railPending} />
     </WorkspaceFrame>
   );
 }

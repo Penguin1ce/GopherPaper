@@ -42,7 +42,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/gopherpaper/store";
 import type { Paper, Session } from "@/lib/gopherpaper/types";
@@ -342,19 +341,27 @@ function KeywordFilter({
   return (
     <Popover>
       <PopoverTrigger
+        aria-label={
+          activeKw.length > 0
+            ? `已筛选 ${activeKw.length} 个关键词`
+            : `关键词筛选：${keywords.length} 个关键词`
+        }
+        title={
+          activeKw.length > 0
+            ? `已筛选 ${activeKw.length} 个关键词`
+            : `关键词筛选：${keywords.length} 个关键词`
+        }
         className={cn(
-          "inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+          "inline-flex h-7 min-w-10 shrink-0 items-center justify-center gap-1 rounded-md border px-1.5 text-xs font-medium transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
           activeKw.length > 0
             ? "border-sienna/40 bg-sienna/10 text-sienna hover:bg-sienna/15"
             : "border-border bg-card text-muted-foreground hover:bg-accent/60 hover:text-foreground",
         )}
       >
         <ListFilter className="size-3.5" />
-        {activeKw.length > 0
-          ? `筛选 ${activeKw.length}`
-          : keywords.length > 0
-            ? `关键词 ${keywords.length}`
-            : "关键词"}
+        <span className="font-mono text-[11px] leading-none">
+          {activeKw.length > 0 ? activeKw.length : keywords.length}
+        </span>
       </PopoverTrigger>
       <PopoverContent className="w-80 space-y-3 p-3" align="start">
         <div className="flex items-start justify-between gap-3">
@@ -629,48 +636,28 @@ export function PaperPane({
 
   return (
     <aside className="flex min-h-0 flex-1 flex-col bg-background">
-      <div className="space-y-3 px-4 pb-3 pt-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            {onExpandSidebar && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={onExpandSidebar}
-                title="展开侧栏"
-                className="hidden shrink-0 lg:inline-flex"
-              >
-                <PanelLeftOpen className="size-4" />
-              </Button>
-            )}
-            <div className="flex items-baseline gap-2">
-              <h2 className="text-[15px] font-bold tracking-tight">论文库</h2>
-              {papers.length > 0 && (
-                <span className="font-mono text-xs text-muted-foreground">
-                  {papers.length}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
+      <div className="space-y-2 px-3 pb-1 pt-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          {onExpandSidebar && (
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
-              onClick={() => guard(() => refreshPapers())}
-              title="刷新"
+              onClick={onExpandSidebar}
+              title="展开侧栏"
+              className="hidden shrink-0 lg:inline-flex"
             >
-              <RefreshCw className="size-4" />
+              <PanelLeftOpen className="size-4" />
             </Button>
-            <Button type="button" size="sm" onClick={() => setUploadOpen(true)}>
-              <FileUp className="size-3.5" />
-              上传
-            </Button>
+          )}
+          <div className="flex shrink-0 items-baseline gap-1.5 pr-1">
+            <h2 className="text-sm font-bold tracking-tight">论文库</h2>
+            {papers.length > 0 && (
+              <span className="font-mono text-[11px] text-muted-foreground">
+                {papers.length}
+              </span>
+            )}
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
           <form
             className="relative min-w-0 flex-1"
             onSubmit={(e) => {
@@ -678,11 +665,11 @@ export function PaperPane({
               guard(() => refreshPapers(query));
             }}
           >
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-foreground/55" />
             <Input
               value={query}
-              className="rounded-full bg-card px-8"
-              placeholder="搜索标题、作者、关键词 · 回车"
+              className="h-7 rounded-md border-border/70 bg-card pl-7 pr-7 text-sm shadow-none hover:border-border focus-visible:border-primary/60 focus-visible:ring-1 focus-visible:ring-primary/20"
+              placeholder=""
               onChange={(e) => setQuery(e.target.value)}
             />
             {query && (
@@ -705,15 +692,32 @@ export function PaperPane({
             onToggle={toggleKw}
             onClear={() => setActiveKw([])}
           />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => guard(() => refreshPapers())}
+            title="刷新"
+            aria-label="刷新论文库"
+          >
+            <RefreshCw className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            onClick={() => setUploadOpen(true)}
+            title="上传论文"
+            aria-label="上传论文"
+          >
+            <FileUp className="size-3.5" />
+          </Button>
         </div>
 
         {showStrip && <ActiveStatusStrip paper={activePaper} />}
       </div>
 
-      <Separator />
-
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-0.5 px-2 pb-3 pt-1">
+        <div className="space-y-0.5 px-2 pb-3 pt-0">
           {papers.length === 0 ? (
             <Empty
               title="还没有论文"
@@ -751,7 +755,7 @@ export function PaperPane({
                   className={cn(
                     "group/paper relative min-h-[4.75rem] w-full cursor-pointer select-none rounded-lg px-3 py-2.5 transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
                     active
-                      ? "bg-violet-50/75 ring-1 ring-violet-200/65 before:absolute before:inset-y-2.5 before:left-0 before:w-1 before:rounded-full before:bg-violet-500 dark:bg-violet-400/10 dark:ring-violet-300/25 dark:before:bg-violet-300"
+                      ? "bg-accent/75 ring-1 ring-primary/25 before:absolute before:inset-y-2.5 before:left-0 before:w-1 before:rounded-full before:bg-primary dark:bg-accent/35 dark:ring-primary/30"
                       : "hover:bg-muted/55",
                   )}
                   onClick={() => selectPaper(p.id)}

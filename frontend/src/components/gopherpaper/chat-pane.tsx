@@ -288,7 +288,7 @@ export function ChatPane() {
                 <article className="flex items-start">
                   <div className="inline-flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground">
                     <Loader2 className="size-4 animate-spin" />
-                    助教正在检索并作答…
+                    小文鸮正在检索并作答…
                   </div>
                 </article>
               )}
