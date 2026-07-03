@@ -62,6 +62,7 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string, reader
 		metricErr = err
 		return nil, nil, err
 	}
+	shouldRewriteTitle := shouldRewriteSessionTitle(sess, hist)
 	historyMS := time.Since(step).Milliseconds()
 
 	step = time.Now()
@@ -103,6 +104,13 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string, reader
 	_ = chatdao.TouchSession(ctx, sessionID) // 刷新列表排序，失败不影响应答
 	persistMS := time.Since(step).Milliseconds()
 
+	titleMS := int64(0)
+	if shouldRewriteTitle {
+		titleStep := time.Now()
+		rewriteAndSaveSessionTitle(ctx, studentID, sessionID, query)
+		titleMS = time.Since(titleStep).Milliseconds()
+	}
+
 	// 小云雀会话异步按对话内容归类,不阻塞应答。首轮必触发;前几轮内容变厚时再触发让 Classify 重排
 	// (hist 为本轮前历史,前 TopicRefineMaxTurns 轮内放行,之后锁定省去无谓 goroutine)。
 	// Classify 内按会话串行并再校验轮数,防并发与超窗重排。
@@ -126,6 +134,7 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string, reader
 		"history_ms", historyMS,
 		"ai_ms", aiMS,
 		"persist_ms", persistMS,
+		"title_ms", titleMS,
 		"total_ms", time.Since(start).Milliseconds(),
 	)
 	metricSuccess = true
