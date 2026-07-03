@@ -39,9 +39,9 @@ function sessionTime(s: Session): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
-// 主应用只展示论文助教会话,小云雀会话归独立页 /pioneer 管。
+// 主应用只展示论文助教会话,小云雀与精读页小耄耋归各自入口管理。
 export function chatSessions(sessions: Session[]): Session[] {
-  return sessions.filter((s) => s.agent_type !== "pioneer");
+  return sessions.filter((s) => s.agent_type !== "pioneer" && s.agent_type !== "maodie");
 }
 
 // 某篇论文的会话,按最近活动倒序(最新在前)。paperID 为空时原样返回全部。
@@ -100,6 +100,7 @@ const INTENT_LABELS: Record<string, string> = {
   summary: "概括解释",
   method: "方法解读",
   pioneer: "小云雀",
+  maodie: "小耄耋",
 };
 
 export function intentLabel(intent?: string): string {

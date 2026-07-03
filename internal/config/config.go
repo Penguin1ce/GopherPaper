@@ -64,6 +64,9 @@ type ModelsConfig struct {
 	// Pioneer 是小云雀 agent 的模型。小云雀是多轮工具循环,对单轮延迟敏感,
 	// 建议配快速 mini 型;整块留空时回退 Chat 模型。
 	Pioneer ModelConfig `toml:"pioneer"`
+	// Maodie 是精读页小耄耋的轻量局部问答模型;整块留空时回退 Chat 模型。
+	// 有召回图片时仍走 Chat,避免误配非视觉 mini 后带图请求失败。
+	Maodie ModelConfig `toml:"maodie"`
 }
 
 // ToolsConfig 是 ai agent 的工具来源,按 agent 分组挂到对应 agent 上供 mcp 调用与 skill 加载。

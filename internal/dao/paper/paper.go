@@ -101,13 +101,16 @@ func attachKeywords(ctx context.Context, papers []model.Paper) error {
 	return nil
 }
 
-// Search 在某用户论文里按标题/文件名模糊检索，做历史文献检索。
+// Search 在某用户论文里按标题、文件名、作者或关键词模糊检索，做历史文献检索。
 func Search(ctx context.Context, ownerID, keyword string) ([]model.Paper, error) {
 	var papers []model.Paper
 	like := "%" + keyword + "%"
 	err := dao.DB.WithContext(ctx).
-		Where("owner_id = ? and (title like ? or file_name like ?)", ownerID, like, like).
-		Order("created_at desc").
+		Model(&model.Paper{}).
+		Select("papers.*").
+		Joins("left join paper_metas on paper_metas.paper_id = papers.id").
+		Where("papers.owner_id = ? and (papers.title like ? or papers.file_name like ? or paper_metas.authors like ? or paper_metas.keywords like ?)", ownerID, like, like, like, like).
+		Order("papers.created_at desc").
 		Find(&papers).Error
 	if err != nil {
 		return nil, fmt.Errorf("dao/paper: 检索论文失败: %w", err)
@@ -180,6 +183,9 @@ func Delete(ctx context.Context, id string) error {
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperReport{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperFlowCache{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperAnnotation{}).Error; err != nil {
 			return err
 		}
@@ -248,6 +254,14 @@ func ListReportTypes(ctx context.Context, paperID string) ([]constant.ReportType
 	return types, nil
 }
 
+// DeleteReports 删除某篇论文已生成的研读报告缓存记录。
+func DeleteReports(ctx context.Context, paperID string) error {
+	if err := dao.DB.WithContext(ctx).Where("paper_id = ?", paperID).Delete(&model.PaperReport{}).Error; err != nil {
+		return fmt.Errorf("dao/paper: 删除研读报告失败: %w", err)
+	}
+	return nil
+}
+
 // SaveReport 写入或覆盖某篇论文某类研读报告缓存，按 (paper_id, report_type) 幂等。
 func SaveReport(ctx context.Context, r *model.PaperReport) error {
 	err := dao.DB.WithContext(ctx).Clauses(clause.OnConflict{
@@ -260,7 +274,91 @@ func SaveReport(ctx context.Context, r *model.PaperReport) error {
 	return nil
 }
 
+// GetPaperFlow 取某篇论文的小云雀同款思路图缓存。
+func GetPaperFlow(ctx context.Context, ownerID, paperID string) (*model.PaperFlowCache, error) {
+	var r model.PaperFlowCache
+	err := dao.DB.WithContext(ctx).
+		Where("owner_id = ? and paper_id = ?", ownerID, paperID).
+		First(&r).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errs.ErrPaperFlowNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询论文思路图失败: %w", err)
+	}
+	return &r, nil
+}
+
+// HasPaperFlow 判断某篇论文是否已有思路图缓存,不读取大 JSON。
+func HasPaperFlow(ctx context.Context, ownerID, paperID string) (bool, error) {
+	var id uint64
+	err := dao.DB.WithContext(ctx).
+		Model(&model.PaperFlowCache{}).
+		Select("id").
+		Where("owner_id = ? and paper_id = ?", ownerID, paperID).
+		Limit(1).
+		Scan(&id).Error
+	if err != nil {
+		return false, fmt.Errorf("dao/paper: 查询论文思路图状态失败: %w", err)
+	}
+	return id > 0, nil
+}
+
+// SavePaperFlow 写入或覆盖某篇论文的小云雀同款思路图缓存。
+func SavePaperFlow(ctx context.Context, r *model.PaperFlowCache) error {
+	err := dao.DB.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "owner_id"}, {Name: "paper_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"flow_json", "updated_at"}),
+	}).Create(r).Error
+	if err != nil {
+		return fmt.Errorf("dao/paper: 写入论文思路图失败: %w", err)
+	}
+	return nil
+}
+
 // SaveSections 覆盖论文章节，先删后插保证幂等。
+// SaveCompareReport 写入一份多论文对比报告历史记录。
+func SaveCompareReport(ctx context.Context, r *model.PaperCompareReport) error {
+	if err := dao.DB.WithContext(ctx).Create(r).Error; err != nil {
+		return fmt.Errorf("dao/paper: 写入多论文对比报告失败: %w", err)
+	}
+	return nil
+}
+
+// ListCompareReports 按更新时间倒序列出用户的多论文对比报告。
+func ListCompareReports(ctx context.Context, ownerID string) ([]model.PaperCompareReport, error) {
+	var reports []model.PaperCompareReport
+	err := dao.DB.WithContext(ctx).
+		Where("owner_id = ?", ownerID).
+		Order("updated_at desc, id desc").
+		Find(&reports).Error
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询多论文对比报告失败: %w", err)
+	}
+	return reports, nil
+}
+
+// GetCompareReport 按 ID 获取多论文对比报告。
+func GetCompareReport(ctx context.Context, id uint64) (*model.PaperCompareReport, error) {
+	var report model.PaperCompareReport
+	err := dao.DB.WithContext(ctx).Where("id = ?", id).First(&report).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errs.ErrReportNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("dao/paper: 查询多论文对比报告失败: %w", err)
+	}
+	return &report, nil
+}
+
+// DeleteCompareReport 删除一份多论文对比报告。
+func DeleteCompareReport(ctx context.Context, id uint64) error {
+	if err := dao.DB.WithContext(ctx).Where("id = ?", id).Delete(&model.PaperCompareReport{}).Error; err != nil {
+		return fmt.Errorf("dao/paper: 删除多论文对比报告失败: %w", err)
+	}
+	return nil
+}
+
 func SaveSections(ctx context.Context, paperID string, sections []model.PaperSection) error {
 	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("paper_id = ?", paperID).Delete(&model.PaperSection{}).Error; err != nil {

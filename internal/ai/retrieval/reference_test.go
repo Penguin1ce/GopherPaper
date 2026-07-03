@@ -2,6 +2,7 @@ package retrieval
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"GopherPaper/pkg/constant"
@@ -36,6 +37,9 @@ func TestReferenceFromDocument(t *testing.T) {
 	if ref.PageNo != 3 || ref.ChunkIndex != 2 {
 		t.Fatalf("页码/片段号提取错误: %+v", ref)
 	}
+	if ref.CitationTag != "[[原文:ch01.pdf 第 3 页]]" {
+		t.Fatalf("citation_tag 提取错误: %+v", ref)
+	}
 	if ref.Score != 0.87 {
 		t.Fatalf("Score 提取错误: %+v", ref)
 	}
@@ -57,6 +61,17 @@ func TestReferenceJSONContract(t *testing.T) {
 	}
 	if body["knowledge_scope"] != string(constant.KnowledgeScopePublic) {
 		t.Fatalf("knowledge_scope 字段错误: %s", string(b))
+	}
+	ref.CitationTag = "[[原文:第 3 页]]"
+	b, err = json.Marshal(ref)
+	if err != nil {
+		t.Fatalf("Reference 带 citation_tag 序列化失败: %v", err)
+	}
+	if err := json.Unmarshal(b, &body); err != nil {
+		t.Fatalf("Reference 带 citation_tag 反序列化失败: %v", err)
+	}
+	if body["citation_tag"] != "[[原文:第 3 页]]" {
+		t.Fatalf("citation_tag 字段错误: %s", string(b))
 	}
 	if _, ok := body["scope"]; ok {
 		t.Fatalf("不应输出旧字段 scope: %s", string(b))
@@ -84,9 +99,41 @@ func TestFormatReference_FallbackToID(t *testing.T) {
 	}
 }
 
+func TestFormatCitationTag(t *testing.T) {
+	cases := []struct {
+		name string
+		ref  Reference
+		want string
+	}{
+		{name: "file and page", ref: Reference{SourceFile: "/tmp/ch01.pdf", PageNo: 3}, want: "[[原文:ch01.pdf 第 3 页]]"},
+		{name: "page only", ref: Reference{PageNo: 5}, want: "[[原文:第 5 页]]"},
+		{name: "no page", ref: Reference{SourceFile: "ch01.pdf"}, want: ""},
+	}
+	for _, tt := range cases {
+		if got := FormatCitationTag(tt.ref); got != tt.want {
+			t.Fatalf("%s: citation_tag = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
 // TestFormatDocs_Empty 无召回时给模型一个明确的占位。
 func TestFormatDocs_Empty(t *testing.T) {
 	if got := FormatDocs(nil); got != "无相关资料" {
 		t.Fatalf("空召回占位错误: %q", got)
+	}
+}
+
+func TestFormatDocs_IncludesCitationTag(t *testing.T) {
+	doc := &Doc{
+		ID:      "chunk-1",
+		Content: "A method detail.",
+		MetaData: map[string]any{
+			constant.MilvusFieldSourceFile: "paper.pdf",
+			constant.MilvusFieldPageNo:     int64(9),
+		},
+	}
+	got := FormatDocs([]*Doc{doc})
+	if !strings.Contains(got, "citation_tag: [[原文:paper.pdf 第 9 页]]") {
+		t.Fatalf("FormatDocs 应透出 citation_tag, got:\n%s", got)
 	}
 }

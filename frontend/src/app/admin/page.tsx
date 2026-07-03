@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowLeft,
   BarChart3,
   CheckCircle2,
   Database,
@@ -13,7 +14,7 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import {
   useCallback,
@@ -27,6 +28,16 @@ import {
   type SetStateAction,
 } from "react";
 
+import {
+  AdminApiError,
+  ADMIN_AUTH_KEY,
+  adminRequest,
+  readSavedAuth,
+  type AdminAuth,
+  type AdminProfile,
+} from "@/components/gopherpaper/admin-auth";
+import { GlassSurface } from "@/components/reactbits/glass-surface";
+import { Threads } from "@/components/reactbits/threads";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -39,8 +50,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api/v1";
-const AUTH_KEY = "gopherpaper.admin.auth";
 const ADMIN_AUTH_EASE = [0.16, 1, 0.3, 1] as const;
 
 type AuthMode = "login" | "register";
@@ -52,24 +61,6 @@ type AdminRegisterForm = {
   password: string;
   code: string;
   registration_code: string;
-};
-
-type Envelope<T> = {
-  code: number;
-  message: string;
-  data?: T;
-};
-
-type AdminProfile = {
-  id: number;
-  username: string;
-  email: string;
-  name: string;
-};
-
-type AdminAuth = {
-  token: string;
-  admin: AdminProfile;
 };
 
 type AdminOverview = {
@@ -158,58 +149,79 @@ function calcRate(value: number | null | undefined, total: number | null | undef
   return Math.max(0, Math.min(1, value / total));
 }
 
-class AdminApiError extends Error {
-  status: number;
+function AdminAuthBackdrop() {
+  const reduce = useReducedMotion();
+  const [mounted, setMounted] = useState(false);
 
-  constructor(message: string, status: number) {
-    super(message);
-    this.status = status;
-  }
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      {mounted && !reduce && (
+        <div className="absolute inset-0 opacity-[0.18] mix-blend-multiply dark:opacity-[0.24] dark:mix-blend-screen">
+          <Threads
+            color={[0.08, 0.55, 0.6]}
+            amplitude={1.08}
+            distance={0.22}
+            enableMouseInteraction
+          />
+        </div>
+      )}
+      <div className="absolute -top-[28%] left-1/2 h-[42rem] w-[58rem] -translate-x-1/2 rounded-full bg-primary/[0.085] blur-3xl" />
+      <div className="absolute -right-[14%] top-[6%] h-[34rem] w-[34rem] rounded-full bg-foreground/[0.045] blur-3xl" />
+      <div
+        className="absolute inset-0 opacity-[0.5]"
+        style={{
+          backgroundImage:
+            "linear-gradient(to right, color-mix(in oklch, var(--border) 60%, transparent) 1px, transparent 1px)",
+          backgroundSize: "min(7.5rem, 12vw) 100%",
+          maskImage: "radial-gradient(120% 80% at 50% 0%, #000 30%, transparent 78%)",
+        }}
+      />
+      <div
+        className="absolute inset-0 opacity-[0.18] mix-blend-soft-light"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--foreground) 28%, transparent) 1px, transparent 0)",
+          backgroundSize: "18px 18px",
+        }}
+      />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sienna/40 to-transparent" />
+    </div>
+  );
 }
 
-async function adminRequest<T>(
-  path: string,
-  token: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers as Record<string, string> | undefined),
-    },
-  });
-  const text = await res.text();
-  let body: Envelope<T> = { code: 0, message: "" };
-  if (text) {
-    try {
-      body = JSON.parse(text) as Envelope<T>;
-    } catch {
-      const contentType = res.headers.get("content-type") || "";
-      body = {
-        code: res.ok ? 0 : res.status,
-        message: contentType.includes("text/html")
-          ? `请求地址不存在或前端代理未生效：${API_BASE}${path}`
-          : text,
-      };
-    }
-  }
-  if (!res.ok || body.code !== 0) {
-    throw new AdminApiError(body.message || `请求失败 ${res.status}`, res.status);
-  }
-  return body.data as T;
-}
-
-function readSavedAuth(): AdminAuth | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(AUTH_KEY);
-    return raw ? (JSON.parse(raw) as AdminAuth) : null;
-  } catch {
-    window.localStorage.removeItem(AUTH_KEY);
-    return null;
-  }
+function AdminBrand({ authed }: { authed: boolean }) {
+  return (
+    <Link
+      href="/"
+      className="group flex items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+    >
+      <span
+        className={
+          authed
+            ? "flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary"
+            : "flex size-9 items-center justify-center overflow-hidden rounded-lg bg-primary/10 shadow-sm transition-transform group-hover:scale-105 group-active:scale-95"
+        }
+      >
+        {authed ? (
+          <ShieldCheck className="size-5" />
+        ) : (
+          <img src="/mascot-gopher.png" alt="GopherPaper" className="size-full object-cover" />
+        )}
+      </span>
+      <span>
+        <span className="block text-sm font-semibold tracking-tight">
+          {authed ? "GopherPaper Admin" : "GopherPaper"}
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          {authed ? "论文库运营控制台" : "管理员后台"}
+        </span>
+      </span>
+    </Link>
+  );
 }
 
 export default function AdminPage() {
@@ -251,8 +263,8 @@ export default function AdminPage() {
 
   const persistAuth = useCallback((next: AdminAuth | null) => {
     setAuth(next);
-    if (next) window.localStorage.setItem(AUTH_KEY, JSON.stringify(next));
-    else window.localStorage.removeItem(AUTH_KEY);
+    if (next) window.localStorage.setItem(ADMIN_AUTH_KEY, JSON.stringify(next));
+    else window.localStorage.removeItem(ADMIN_AUTH_KEY);
   }, []);
 
   const clearMessage = useCallback(() => {
@@ -499,18 +511,29 @@ export default function AdminPage() {
   );
 
   return (
-    <main className="min-h-dvh bg-background text-foreground">
-      <div className="mx-auto flex min-h-dvh w-full max-w-[92rem] flex-col px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
-          <Link href="/" className="flex items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <ShieldCheck className="size-5" />
-            </span>
-            <span>
-              <span className="block text-sm font-semibold tracking-tight">GopherPaper Admin</span>
-              <span className="block text-xs text-muted-foreground">论文库运营控制台</span>
-            </span>
-          </Link>
+    <main
+      className={
+        auth
+          ? "min-h-dvh bg-background text-foreground"
+          : "relative isolate min-h-dvh overflow-hidden bg-background text-foreground"
+      }
+    >
+      {!auth && <AdminAuthBackdrop />}
+      <div
+        className={
+          auth
+            ? "mx-auto flex min-h-dvh w-full max-w-[92rem] flex-col px-4 py-5 sm:px-6 lg:px-8"
+            : "mx-auto flex min-h-dvh w-full max-w-[78rem] flex-col px-5 sm:px-8"
+        }
+      >
+        <header
+          className={
+            auth
+              ? "flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4"
+              : "flex items-center justify-between py-6"
+          }
+        >
+          <AdminBrand authed={Boolean(auth)} />
           {auth ? (
             <div className="flex items-center gap-2">
               <span className="hidden text-sm text-muted-foreground sm:inline">
@@ -526,9 +549,15 @@ export default function AdminPage() {
               </Button>
             </div>
           ) : (
-            <Link className="text-sm font-medium text-primary hover:underline" href="/">
-              返回工作台
-            </Link>
+            <GlassSurface className="rounded-full" contentClassName="p-1">
+              <Link
+                className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground"
+                href="/"
+              >
+                <ArrowLeft className="size-4" />
+                返回工作台
+              </Link>
+            </GlassSurface>
           )}
         </header>
 
@@ -537,6 +566,8 @@ export default function AdminPage() {
             type="button"
             onClick={clearMessage}
             className={`mt-4 rounded-lg border px-3 py-2 text-left text-sm ${
+              auth ? "" : "mx-auto w-full max-w-md"
+            } ${
               message.type === "ok"
                 ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                 : "border-red-200 bg-red-50 text-red-800"
@@ -753,25 +784,26 @@ function AuthPanel(props: AdminAuthPanelProps) {
         initial={{ opacity: 0, y: 18, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.5, ease: ADMIN_AUTH_EASE }}
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card p-6 shadow-[0_24px_70px_-30px_oklch(0.255_0.012_56/0.4)] sm:p-8"
+        className="w-full max-w-md"
       >
+        <GlassSurface className="rounded-2xl" contentClassName="p-7 sm:p-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-[1.7rem]">
-            {isLogin ? "管理员登录" : "管理员注册"}
+          <h1 className="font-serif text-[1.7rem] font-semibold tracking-tight">
+            {isLogin ? "进入管理员后台" : "创建管理员账号"}
           </h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {isLogin
-              ? "使用管理员邮箱登录，进入论文库运营控制台。"
-              : "创建后台管理员账号，需要注册码与邮箱验证码。"}
+              ? "使用管理员邮箱登录，继续管理论文库。"
+              : "使用注册码与邮箱验证码创建后台账号。"}
           </p>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 gap-1 rounded-xl border border-border bg-muted/50 p-1">
+        <div className="mb-6 grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/50 p-1">
           {(["login", "register"] as const).map((nextMode) => (
             <button
               key={nextMode}
               type="button"
-              className={`h-9 rounded-lg text-sm font-medium transition-all duration-200 ${
+              className={`h-9 rounded-md text-sm font-medium transition-colors ${
                 mode === nextMode
                   ? "bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -832,6 +864,7 @@ function AuthPanel(props: AdminAuthPanelProps) {
             </>
           )}
         </p>
+        </GlassSurface>
       </motion.div>
     </section>
   );

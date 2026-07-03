@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"GopherPaper/internal/ai/topic"
@@ -18,10 +19,15 @@ import (
 var backfilling sync.Map // studentID -> struct{}
 
 // CreateSession 为用户新建一段会话，paperID 可空表示跨库问答。
-// agentType 空为默认论文助教，pioneer 为小云雀会话。
+// agentType 空为默认论文助教，pioneer 为小云雀会话，maodie 为精读页小耄耋。
 func CreateSession(ctx context.Context, studentID, paperID, title, agentType string) (*model.Session, error) {
-	if agentType != "" && agentType != constant.AgentPioneer {
+	paperID = strings.TrimSpace(paperID)
+	agentType = strings.TrimSpace(agentType)
+	if agentType != "" && agentType != constant.AgentPioneer && agentType != constant.AgentMaodie {
 		return nil, errs.ErrAgentTypeInvalid
+	}
+	if agentType == constant.AgentMaodie && paperID == "" {
+		return nil, errs.ErrPaperRequired
 	}
 	s := &model.Session{StudentID: studentID, PaperID: paperID, AgentType: agentType, Title: truncateTitle(title)}
 	if err := chatdao.CreateSession(ctx, s); err != nil {

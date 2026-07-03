@@ -7,9 +7,13 @@ import (
 
 type paperCtxKey struct{}
 
+type paperTitleCtxKey struct{}
+
 type streamCtxKey struct{}
 
 type flowSinkKey struct{}
+
+type preferenceCtxKey struct{}
 
 // FlowSink 收集本轮工具生成的论文思路图,供入口(PioneerChat)取出塞进 reply.Meta 持久化。
 // 工具在 runner 协程内写,入口在 runner 结束后读,跨协程故加锁。
@@ -43,6 +47,17 @@ func FlowSinkFrom(ctx context.Context) *FlowSink {
 		return s
 	}
 	return nil
+}
+
+func WithUserPreference(ctx context.Context, instruction string) context.Context {
+	return context.WithValue(ctx, preferenceCtxKey{}, instruction)
+}
+
+func UserPreferenceFrom(ctx context.Context) string {
+	if v, ok := ctx.Value(preferenceCtxKey{}).(string); ok {
+		return v
+	}
+	return ""
 }
 
 // StreamEvent 是生成过程的一次流式通知:工具调用、工具返回、文本增量或规划阶段文本。
@@ -81,6 +96,20 @@ func WithPaperID(ctx context.Context, paperID string) context.Context {
 // PaperIDFrom 取出 context 中的论文 ID，缺失返回空串表示跨库问答。
 func PaperIDFrom(ctx context.Context) string {
 	if v, ok := ctx.Value(paperCtxKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// WithPaperTitle 把当前绑定论文的标题注入 context，供问答链路写进 system prompt，
+// 让模型知道「这篇论文」指的是谁，不至于在检索前反问论文标识。
+func WithPaperTitle(ctx context.Context, title string) context.Context {
+	return context.WithValue(ctx, paperTitleCtxKey{}, title)
+}
+
+// PaperTitleFrom 取出 context 中的论文标题，缺失返回空串。
+func PaperTitleFrom(ctx context.Context) string {
+	if v, ok := ctx.Value(paperTitleCtxKey{}).(string); ok {
 		return v
 	}
 	return ""

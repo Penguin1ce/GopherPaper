@@ -3,23 +3,26 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"trpc.group/trpc-go/trpc-agent-go/event"
+	"trpc.group/trpc-go/trpc-agent-go/graph"
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
 
 	"GopherPaper/internal/config"
 	"GopherPaper/pkg/constant"
 )
 
-// CollectEvents 聚合 runner 事件流为完整答案,跳过工具结果与 runner 收尾事件,避免混入或重复计数。
+// CollectEvents 聚合 runner 事件流为完整答案,跳过工具结果,并仅在普通事件没有文本时从 runner completion 兜底取最终内容。
 // ctx 带 StreamHandler 时把工具调用与文本增量实时外发;流式下增量在 Delta、完整文本仍落
 // 收尾的非 partial 事件,故聚合结果与外发互不重复。
 func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) {
 	emit := StreamFrom(ctx)
 	tools := NewToolDisplayTracker()
 	var sb strings.Builder
+	var completion string
 	for ev := range ch {
 		if ev.Error != nil {
 			return "", fmt.Errorf("agent: %s", ev.Error.Message)
@@ -39,6 +42,7 @@ func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) 
 			continue
 		}
 		if ev.IsRunnerCompletion() {
+			completion = eventContent(ev)
 			continue
 		}
 		for _, c := range ev.Choices {
@@ -61,9 +65,33 @@ func CollectEvents(ctx context.Context, ch <-chan *event.Event) (string, error) 
 	}
 	out := strings.TrimSpace(sb.String())
 	if out == "" {
+		out = strings.TrimSpace(completion)
+	}
+	if out == "" {
 		return "", fmt.Errorf("agent: 模型返回空内容")
 	}
 	return out, nil
+}
+
+func eventContent(ev *event.Event) string {
+	if ev == nil || ev.Response == nil {
+		return ""
+	}
+	var sb strings.Builder
+	for _, c := range ev.Choices {
+		sb.WriteString(c.Message.Content)
+		sb.WriteString(c.Delta.Content)
+	}
+	if out := strings.TrimSpace(sb.String()); out != "" {
+		return out
+	}
+	if raw := ev.StateDelta[graph.StateKeyLastResponse]; len(raw) > 0 {
+		var s string
+		if err := json.Unmarshal(raw, &s); err == nil {
+			return s
+		}
+	}
+	return ""
 }
 
 // GenConfig 把 ModelConfig 的生成参数映射到 trpc 的 GenerationConfig。

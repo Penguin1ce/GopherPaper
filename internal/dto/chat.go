@@ -1,10 +1,13 @@
 // Package dto 定义 HTTP 层的请求与响应结构。
 package dto
 
-import "GopherPaper/internal/model"
+import (
+	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/model"
+)
 
 // CreateSessionRequest 创建会话，paper_id 与 title 可选。
-// agent_type 可选，空为默认论文助教，pioneer 为小云雀。
+// agent_type 可选，空为默认论文助教，pioneer 为小云雀，maodie 为精读页小耄耋。
 type CreateSessionRequest struct {
 	PaperID   string `json:"paper_id"`
 	Title     string `json:"title"`
@@ -13,7 +16,8 @@ type CreateSessionRequest struct {
 
 // SendMessageRequest 会话内发一轮消息。
 type SendMessageRequest struct {
-	Query string `json:"query" binding:"required"`
+	Query         string              `json:"query" binding:"required"`
+	ReaderContext *core.ReaderContext `json:"reader_context,omitempty"`
 }
 
 // SendMessageResponse 返回助教消息与本轮引用出处,SSE 下作为 done 事件载荷。
@@ -62,7 +66,7 @@ type ChatResponse struct {
 
 // ReportRequest 是研读报告请求体，由前端按钮带报告类型触发。
 type ReportRequest struct {
-	Type string `json:"type" binding:"required"` // quickread/method/result/innovation/future
+	Type string `json:"type" binding:"required"` // quickread/method/result/innovation/related
 }
 
 // TranslateRequest 是精读页逐段翻译请求体，前端把选中的英文原文送来。

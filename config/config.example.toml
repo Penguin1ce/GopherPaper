@@ -47,6 +47,15 @@ model = "doubao-seed-2-0-pro-260215"
 max_tokens = 8192
 thinking = "disabled"                                 # 关思考，多轮工具循环每轮都省一段推理延迟
 
+# ── 小耄耋精读页局部问答模型:无图时走 mini,留空回退 models.chat ──
+[models.maodie]
+provider = "openai"
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+api_key = "your-ark-api-key"
+model = "doubao-seed-2-0-mini-260215"
+max_tokens = 4096
+thinking = "disabled"
+
 # ── 翻译小模型：精读页逐段翻译，裸调不挂工具不走 RAG ──────────
 [models.translate]
 provider = "openai"                                   # 火山方舟 OpenAI 兼容端点

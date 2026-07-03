@@ -16,6 +16,7 @@ import type {
   AnnotationRect,
   Paper,
   PaperAnnotation,
+  PaperCompareReport,
   PaperDeleteConfirmPayload,
   PaperDetail,
   PaperFlow,
@@ -24,6 +25,7 @@ import type {
   PaperProgressResponse,
   PasswordResetCodePayload,
   RegisterPayload,
+  ReaderContext,
   RelatedPaper,
   ReportsStatus,
   ReportType,
@@ -33,6 +35,8 @@ import type {
   Topic,
   UpdateEmailPayload,
   UpdateProfilePayload,
+  UpdateUserPreferencePayload,
+  UserPreference,
   UserProfile,
 } from "./types";
 
@@ -269,6 +273,17 @@ export function updateEmail(payload: UpdateEmailPayload) {
   });
 }
 
+export function preferences() {
+  return request<UserPreference>("/user/preferences");
+}
+
+export function updatePreferences(payload: UpdateUserPreferencePayload) {
+  return request<UserPreference>("/user/preferences", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function uploadAvatar(file: File): Promise<AvatarResponse> {
   const formData = new FormData();
   formData.append("file", file);
@@ -294,6 +309,23 @@ export function listPapers() {
 
 export function searchPapers(q: string) {
   return request<Paper[]>(`/papers/search?q=${encodeURIComponent(q)}`);
+}
+
+export function comparePapers(paperIDs: string[]) {
+  return request<PaperCompareReport>("/papers/compare", {
+    method: "POST",
+    body: JSON.stringify({ paper_ids: paperIDs }),
+  });
+}
+
+export function listCompareReports() {
+  return request<PaperCompareReport[]>("/papers/compare/reports");
+}
+
+export function deleteCompareReport(id: number) {
+  return request<null>(`/papers/compare/reports/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
 
 export function paperStatus(id: string) {
@@ -327,6 +359,12 @@ export function deletePaper(id: string) {
   });
 }
 
+export function reparsePaper(id: string) {
+  return request<Paper>(`/papers/${encodeURIComponent(id)}/reparse`, {
+    method: "POST",
+  });
+}
+
 export function generateReport(id: string, type: ReportType) {
   return request<ChatResponse>(`/papers/${encodeURIComponent(id)}/report`, {
     method: "POST",
@@ -334,12 +372,91 @@ export function generateReport(id: string, type: ReportType) {
   });
 }
 
+// getPaperFlow 只读取已生成的思路图缓存,不会触发生成。
+export function getPaperFlow(id: string) {
+  return request<ChatResponse>(`/papers/${encodeURIComponent(id)}/flow`);
+}
+
+// generatePaperFlow 为某篇论文生成小云雀同款研究思路图,返回 meta.flow。
+// 后端持久化缓存,论文未就绪时返回 409。
+export async function generatePaperFlow(
+  id: string,
+  stream?: Pick<SendStreamHandlers, "onPaperFlow" | "onPaperFlowNode">,
+) {
+  if (!stream) {
+    return request<ChatResponse>(`/papers/${encodeURIComponent(id)}/flow`, {
+      method: "POST",
+    });
+  }
+  const res = await fetch(`${API_BASE}/papers/${encodeURIComponent(id)}/flow`, {
+    method: "POST",
+    headers: authHeaders({ Accept: "text/event-stream" }),
+  });
+  const ctype = res.headers.get("content-type") || "";
+  if (!res.ok || !ctype.includes("text/event-stream") || !res.body) {
+    return readEnvelope<ChatResponse>(res);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let result: ChatResponse | null = null;
+  let errMsg = "";
+  let finished = false;
+  const handleFrame = (frame: string) => {
+    const parsed = parseSSEFrame(frame);
+    if (!parsed) return;
+    const payload = parsed.payload as Record<string, unknown>;
+    switch (parsed.event) {
+      case "paper_flow":
+        stream.onPaperFlow?.(parsed.payload as PaperFlow);
+        break;
+      case "paper_flow_node":
+        stream.onPaperFlowNode?.(parsed.payload as PaperFlowNodeDetail);
+        break;
+      case "done":
+        result = parsed.payload as ChatResponse;
+        finished = true;
+        break;
+      case "error":
+        errMsg = String(payload.message ?? "处理失败");
+        finished = true;
+        break;
+    }
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      buf += decoder.decode();
+      if (buf.trim()) handleFrame(buf);
+      break;
+    }
+    buf += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      handleFrame(buf.slice(0, idx));
+      buf = buf.slice(idx + 2);
+    }
+    if (finished) {
+      await reader.cancel().catch(() => {});
+      break;
+    }
+  }
+  if (errMsg) throw new ApiError(errMsg, res.status);
+  if (!result) throw new ApiError("连接中断,请重试", res.status);
+  return result;
+}
+
 // reportStatus 拉取某篇论文已生成与生成中的研读报告状态,只读,不触发生成。
 export async function reportStatus(id: string): Promise<ReportsStatus> {
   const res = await request<Partial<ReportsStatus>>(
     `/papers/${encodeURIComponent(id)}/reports`,
   );
-  return { ready: res.ready ?? [], running: res.running ?? [] };
+  return {
+    ready: res.ready ?? [],
+    running: res.running ?? [],
+    flow_ready: Boolean(res.flow_ready),
+  };
 }
 
 // listReports 拉取某篇论文已生成的研读报告类型,只读,不触发生成。
@@ -487,7 +604,11 @@ export async function sendMessage(
   query: string,
   extraHeaders?: Record<string, string>,
   stream?: SendStreamHandlers,
+  readerContext?: ReaderContext,
+  signal?: AbortSignal,
 ): Promise<SendMessageResponse> {
+  const body: { query: string; reader_context?: ReaderContext } = { query };
+  if (readerContext) body.reader_context = readerContext;
   const res = await fetch(
     `${API_BASE}/sessions/${encodeURIComponent(sessionID)}/messages`,
     {
@@ -497,7 +618,8 @@ export async function sendMessage(
         Accept: "text/event-stream",
         ...extraHeaders,
       }),
-      body: JSON.stringify({ query }),
+      body: JSON.stringify(body),
+      signal,
     },
   );
   const ctype = res.headers.get("content-type") || "";
@@ -510,6 +632,7 @@ export async function sendMessage(
   let buf = "";
   let result: SendMessageResponse | null = null;
   let errMsg = "";
+  let finished = false;
   const handleFrame = (frame: string) => {
     const parsed = parseSSEFrame(frame);
     if (!parsed) return;
@@ -546,20 +669,30 @@ export async function sendMessage(
         break;
       case "done":
         result = parsed.payload as SendMessageResponse;
+        finished = true;
         break;
       case "error":
         errMsg = String(payload.message ?? "处理失败");
+        finished = true;
         break;
     }
   };
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      buf += decoder.decode();
+      if (buf.trim()) handleFrame(buf);
+      break;
+    }
     buf += decoder.decode(value, { stream: true });
     let idx: number;
     while ((idx = buf.indexOf("\n\n")) >= 0) {
       handleFrame(buf.slice(0, idx));
       buf = buf.slice(idx + 2);
+    }
+    if (finished) {
+      await reader.cancel().catch(() => {});
+      break;
     }
   }
   if (errMsg) throw new ApiError(errMsg, res.status);

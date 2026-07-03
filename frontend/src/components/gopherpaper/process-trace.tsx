@@ -25,30 +25,114 @@ const PHASE_LABEL: Record<string, string> = {
   failed: "失败",
 };
 
-// ProcessTrace 是论文助教内联的「执行过程」活动条(Claude 网页版式):
-// 流式中默认展开、按阶段逐行流出、末行 shimmer 呼吸;答完收成单行可点开回看。
-// live 跟随消息 streaming 状态:进行中自动展开,答完自动收起(仍可手动展开)。
-export function ProcessTrace({ steps, live }: { steps: PlanStep[]; live?: boolean }) {
-  const [open, setOpen] = useState(!!live);
-  // live 变化时同步开合:进行中展开,答完收起;两次 live 变化之间用户的手动开合保留。
+const PHASE_STYLE: Record<string, { dot: string; title: string }> = {
+  preparing: { dot: "bg-primary", title: "text-primary" },
+  researching: { dot: "bg-primary", title: "text-primary" },
+  writing: { dot: "bg-primary", title: "text-primary" },
+  reviewing: { dot: "bg-muted-foreground", title: "text-foreground/70" },
+  planning: { dot: "bg-primary", title: "text-primary" },
+  replanning: { dot: "bg-primary", title: "text-primary" },
+  action: { dot: "bg-sienna", title: "text-sienna" },
+  reasoning: { dot: "bg-muted-foreground", title: "text-foreground/70" },
+  failed: { dot: "bg-destructive", title: "text-destructive" },
+};
+const PHASE_STYLE_FALLBACK = PHASE_STYLE.reasoning;
+
+function phaseLabel(phase: string, overrides?: Record<string, string>) {
+  return overrides?.[phase] || PHASE_LABEL[phase] || phase;
+}
+
+function compactText(text: string) {
+  return text.trim().replace(/\s+/g, " ");
+}
+
+function ProcessStep({
+  step,
+  isLast,
+  live,
+  phaseLabels,
+}: {
+  step: PlanStep;
+  isLast: boolean;
+  live: boolean;
+  phaseLabels?: Record<string, string>;
+}) {
+  const ps = PHASE_STYLE[step.phase] || PHASE_STYLE_FALLBACK;
+  const label = phaseLabel(step.phase, phaseLabels);
+  const text = step.text.trim();
+  const [open, setOpen] = useState(live);
+
   useEffect(() => {
-    setOpen(!!live);
+    if (live) setOpen(true);
   }, [live]);
 
+  return (
+    <li className="relative pb-3 pl-5 last:pb-0">
+      {!isLast && (
+        <span className="absolute bottom-0 left-[3px] top-3 w-px bg-border" aria-hidden />
+      )}
+      <span
+        className={cn("absolute left-0 top-[5px] size-1.5 rounded-full ring-3 ring-background", ps.dot)}
+        aria-hidden
+      />
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="group flex w-full items-center gap-1.5 text-left"
+      >
+        <span className={cn("text-xs font-semibold", ps.title)}>
+          {live ? <Shimmer as="span">{label}</Shimmer> : label}
+        </span>
+        <ChevronDown
+          className={cn(
+            "size-3 shrink-0 text-muted-foreground/50 transition-transform group-hover:text-muted-foreground",
+            open && "rotate-180",
+          )}
+          aria-hidden
+        />
+      </button>
+      {open ? (
+        <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
+          {live ? <Shimmer as="span">{text || "处理中..."}</Shimmer> : text}
+        </p>
+      ) : (
+        <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground/60">
+          {compactText(text)}
+        </p>
+      )}
+    </li>
+  );
+}
+
+// ProcessTrace 是论文助教内联的「执行过程」活动条。
+// 默认只露出当前阶段摘要,展开后呈现统一的精简时间线。
+export function ProcessTrace({
+  steps,
+  live,
+  phaseLabels,
+}: {
+  steps: PlanStep[];
+  live?: boolean;
+  phaseLabels?: Record<string, string>;
+}) {
+  const [open, setOpen] = useState(false);
   if (!steps || steps.length === 0) return null;
   const lastIdx = steps.length - 1;
+  const active = steps[lastIdx];
+  const activeLabel = phaseLabel(active.phase, phaseLabels);
+  const activeText = compactText(active.text);
 
   return (
     <Collapsible
       open={open}
       onOpenChange={setOpen}
-      className="mb-3 overflow-hidden rounded-xl border bg-muted/30"
+      className="mb-3 overflow-hidden rounded-lg border bg-muted/20"
     >
       <CollapsibleTrigger
         render={
           <button
             type="button"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/50"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 transition-colors hover:bg-muted/45"
           />
         }
       >
@@ -57,11 +141,20 @@ export function ProcessTrace({ steps, live }: { steps: PlanStep[]; live?: boolea
         ) : (
           <Check className="size-3.5 shrink-0 text-primary" aria-hidden />
         )}
-        <span className="flex-1">
-          {live ? (
-            <Shimmer as="span">执行过程</Shimmer>
-          ) : (
-            `执行过程 · ${steps.length} 步`
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 font-medium">
+              {live ? <Shimmer as="span">执行过程</Shimmer> : "执行过程"}
+            </span>
+            <span className="shrink-0 text-muted-foreground">· {steps.length} 步</span>
+            <span className="min-w-0 truncate font-medium text-foreground/70">
+              {activeLabel}
+            </span>
+          </span>
+          {activeText && (
+            <span className="mt-0.5 block truncate text-[11px] font-normal text-muted-foreground">
+              {activeText}
+            </span>
           )}
         </span>
         <ChevronDown
@@ -70,18 +163,17 @@ export function ProcessTrace({ steps, live }: { steps: PlanStep[]; live?: boolea
         />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="space-y-2 border-t px-3 py-2.5">
+        <ol className="relative border-t px-3 py-2.5">
           {steps.map((s, i) => (
-            <div key={i} className="flex gap-2.5 text-sm leading-6">
-              <span className="mt-px w-12 shrink-0 font-medium text-primary">
-                {PHASE_LABEL[s.phase] || s.phase}
-              </span>
-              <span className="min-w-0 flex-1 whitespace-pre-wrap text-foreground/75">
-                {live && i === lastIdx ? <Shimmer as="span">{s.text.trim()}</Shimmer> : s.text.trim()}
-              </span>
-            </div>
+            <ProcessStep
+              key={i}
+              step={s}
+              isLast={i === lastIdx}
+              live={!!live && i === lastIdx}
+              phaseLabels={phaseLabels}
+            />
           ))}
-        </div>
+        </ol>
       </CollapsibleContent>
     </Collapsible>
   );

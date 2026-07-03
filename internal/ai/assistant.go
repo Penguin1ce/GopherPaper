@@ -20,9 +20,11 @@ import (
 	extractflow "GopherPaper/internal/ai/extract"
 	figureflow "GopherPaper/internal/ai/figure"
 	gopherflow "GopherPaper/internal/ai/gopher"
+	maodieflow "GopherPaper/internal/ai/maodie"
 	pioneerflow "GopherPaper/internal/ai/pioneer"
 	ragagentflow "GopherPaper/internal/ai/ragagent"
 	"GopherPaper/internal/ai/retrieval"
+	sessiontitleflow "GopherPaper/internal/ai/sessiontitle"
 	translateflow "GopherPaper/internal/ai/translate"
 	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/config"
@@ -54,6 +56,16 @@ func Chat(ctx context.Context, hist []model.Message, query string) (*core.Reply,
 	return chatflow.Chat(ctx, toHistory(hist), query)
 }
 
+// RewriteSessionTitle 用 intent 小模型把会话首问改写为短展示标题。
+func RewriteSessionTitle(ctx context.Context, firstQuestion string) (string, error) {
+	return sessiontitleflow.Rewrite(ctx, firstQuestion)
+}
+
+// FallbackSessionTitle 在小模型不可用时从首问中截取一个可用展示标题。
+func FallbackSessionTitle(firstQuestion string) string {
+	return sessiontitleflow.Fallback(firstQuestion)
+}
+
 // EvictUser 释放该用户常驻的 agent runner 与模型缓存,登出时调用。
 // 各缓存按 userID 懒建,清除后下次访问自动重建;不影响 Redis 工作记忆与 MySQL 历史。
 func EvictUser(userID string) {
@@ -83,6 +95,14 @@ func PioneerChat(ctx context.Context, sessionID, query string) (*core.Reply, err
 		reply.Meta = map[string]any{"flow": flow}
 	}
 	return reply, nil
+}
+
+// MaodieChat 是精读页小耄耋入口:围绕当前页/选段做局部问答,不走全量 agentic RAG。
+func MaodieChat(ctx context.Context, hist []model.Message, query string, rc core.ReaderContext) (*core.Reply, error) {
+	if !ready {
+		return nil, fmt.Errorf("ai: 编排器未初始化")
+	}
+	return maodieflow.Chat(ctx, toHistory(hist), query, rc)
 }
 
 // toHistory 把存储层的历史消息转成 trpc 对话消息,喂给 RAG 链路做多轮上下文。
@@ -123,4 +143,15 @@ func GenerateReport(ctx context.Context, paperID string, t constant.ReportType) 
 		PaperID:    paperID,
 		ReportType: t,
 	})
+}
+
+// GenerateRelatedResearch 沿当前论文参考文献链路收集相关研究链接。
+func GenerateRelatedResearch(ctx context.Context, paperTitle string, refs []string) (*core.Reply, error) {
+	return pioneerflow.RelatedResearch(ctx, paperTitle, refs)
+}
+
+// GeneratePaperFlow 围绕某篇论文生成小云雀同款节点思路图,由前端按钮触发。
+// ctx 须注入论文 owner 供检索隔离与模型选取。
+func GeneratePaperFlow(ctx context.Context, paperID string) (*core.Reply, error) {
+	return gopherflow.GenerateFlow(ctx, paperID)
 }

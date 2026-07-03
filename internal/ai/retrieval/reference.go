@@ -19,17 +19,19 @@ type Doc struct {
 // Reference 是一条召回片段的出处，回传前端渲染引用。
 // BlockType 为 image 时是图块,ImgName 为图片文件名,前端据 DocID+ImgName 拼取图接口渲染缩略图。
 type Reference struct {
-	ID         string                  `json:"id"`
-	Scope      constant.KnowledgeScope `json:"knowledge_scope"`
-	StudentID  string                  `json:"student_id,omitempty"`
-	DocID      string                  `json:"doc_id,omitempty"`
-	SourceFile string                  `json:"source_file,omitempty"`
-	SourceURI  string                  `json:"source_uri,omitempty"`
-	PageNo     int64                   `json:"page_no,omitempty"`
-	ChunkIndex int64                   `json:"chunk_index,omitempty"`
-	BlockType  string                  `json:"block_type,omitempty"`
-	ImgName    string                  `json:"img_name,omitempty"`
-	Score      float64                 `json:"score,omitempty"`
+	ID          string                  `json:"id"`
+	Scope       constant.KnowledgeScope `json:"knowledge_scope"`
+	StudentID   string                  `json:"student_id,omitempty"`
+	DocID       string                  `json:"doc_id,omitempty"`
+	SourceFile  string                  `json:"source_file,omitempty"`
+	SourceURI   string                  `json:"source_uri,omitempty"`
+	PageNo      int64                   `json:"page_no,omitempty"`
+	ChunkIndex  int64                   `json:"chunk_index,omitempty"`
+	BlockType   string                  `json:"block_type,omitempty"`
+	ImgName     string                  `json:"img_name,omitempty"`
+	CitationTag string                  `json:"citation_tag,omitempty"`
+	Fallback    string                  `json:"fallback_scope,omitempty"`
+	Score       float64                 `json:"score,omitempty"`
 }
 
 func References(docs []*Doc) []Reference {
@@ -54,11 +56,13 @@ func ReferenceFromDocument(doc *Doc) Reference {
 		PageNo:     metaInt64(doc, constant.MilvusFieldPageNo),
 		ChunkIndex: metaInt64(doc, constant.MilvusFieldChunkIndex),
 		BlockType:  MetaString(doc, constant.MilvusFieldBlockType),
+		Fallback:   MetaString(doc, constant.MetaKeyFallbackScope),
 		Score:      doc.Score,
 	}
 	if uri := MetaString(doc, constant.MilvusFieldImgURI); uri != "" {
 		ref.ImgName = filepath.Base(uri)
 	}
+	ref.CitationTag = FormatCitationTag(ref)
 	return ref
 }
 
@@ -71,7 +75,11 @@ func FormatDocs(docs []*Doc) string {
 	var b strings.Builder
 	for i, d := range docs {
 		ref := ReferenceFromDocument(d)
-		fmt.Fprintf(&b, "[%d] 出处: %s\n%s\n", i+1, FormatReference(ref), d.Content)
+		fmt.Fprintf(&b, "[%d] 出处: %s\n", i+1, FormatReference(ref))
+		if ref.CitationTag != "" {
+			fmt.Fprintf(&b, "citation_tag: %s\n", ref.CitationTag)
+		}
+		fmt.Fprintf(&b, "%s\n", d.Content)
 	}
 	return b.String()
 }
@@ -94,10 +102,36 @@ func FormatReference(ref Reference) string {
 	if ref.Scope != "" {
 		parts = append(parts, string(ref.Scope))
 	}
+	if ref.Fallback == "paper" {
+		parts = append(parts, "全文补充")
+	}
 	if len(parts) == 0 {
 		return ref.ID
 	}
 	return strings.Join(parts, "，")
+}
+
+// FormatCitationTag 生成模型可直接复制到正文里的内联出处标签。
+// 只有带页码的证据才能形成规范 tag;无页码时返回空串,避免模型编造页码。
+func FormatCitationTag(ref Reference) string {
+	if ref.PageNo <= 0 {
+		return ""
+	}
+	file := citationFile(ref.SourceFile)
+	if file != "" {
+		return fmt.Sprintf("[[原文:%s 第 %d 页]]", file, ref.PageNo)
+	}
+	return fmt.Sprintf("[[原文:第 %d 页]]", ref.PageNo)
+}
+
+func citationFile(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	name = filepath.Base(name)
+	replacer := strings.NewReplacer("[", "", "]", "", "\n", " ", "\r", " ")
+	return strings.TrimSpace(replacer.Replace(name))
 }
 
 func MetaString(doc *Doc, key string) string {

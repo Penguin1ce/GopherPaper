@@ -10,6 +10,13 @@ type Reply struct {
 	Meta    map[string]any      `json:"meta,omitempty"` // 链路特有的结构化数据
 }
 
+// ReaderContext 是精读页局部问答随消息携带的阅读上下文。
+type ReaderContext struct {
+	Scope        string `json:"scope,omitempty"`         // selection/page 等前端作用域
+	PageNo       int    `json:"page_no,omitempty"`       // 当前 PDF 页码
+	SelectedText string `json:"selected_text,omitempty"` // 用户选中的原文片段
+}
+
 // ParsedDoc 是 PDF 解析后的结构化中间产物，由 parser 产出，供抽取与分块共用。
 // 不与具体解析器耦合，MinerU 的细节在 parser 包内消化。
 type ParsedDoc struct {
@@ -95,6 +102,21 @@ type PaperStructured struct {
 	Innovations       []string `json:"innovations"`
 	Limitations       []string `json:"limitations"`
 	FutureWork        []string `json:"future_work"`
+}
+
+// PaperCompareInput 是多论文对比生成的结构化输入。
+type PaperCompareInput struct {
+	ID                string   `json:"id"`
+	Title             string   `json:"title"`
+	FileName          string   `json:"file_name"`
+	Authors           []string `json:"authors"`
+	PublishYear       int      `json:"publish_year"`
+	Venue             string   `json:"venue"`
+	Keywords          []string `json:"keywords"`
+	ResearchQuestions []string `json:"research_questions"`
+	Methods           string   `json:"methods"`
+	Experiments       string   `json:"experiments"`
+	Results           string   `json:"results"`
 }
 
 // ReportInput 是研读报告输入：围绕某篇论文按类型生成。论文 owner 从 ctx 的 tenant 取。

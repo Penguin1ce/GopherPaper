@@ -602,6 +602,305 @@
                 }
             }
         },
+        "/papers/{id}/annotations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回某篇论文当前用户保存的全部高亮与批注。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "papers"
+                ],
+                "summary": "列出精读批注",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "论文 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/model.PaperAnnotation"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保存一段 PDF 原文的高亮坐标与可选笔记。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "papers"
+                ],
+                "summary": "新建精读批注",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "论文 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "批注内容",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AnnotationCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.PaperAnnotation"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/papers/{id}/annotations/{annotation_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除某条高亮或批注。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "papers"
+                ],
+                "summary": "删除精读批注",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "论文 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "批注 ID",
+                        "name": "annotation_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "更新某条精读批注的笔记或颜色。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "papers"
+                ],
+                "summary": "更新精读批注",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "论文 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "批注 ID",
+                        "name": "annotation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "批注更新内容",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AnnotationUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.PaperAnnotation"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/papers/{id}/figures/{name}": {
             "get": {
                 "description": "返回某篇论文解析出的图片文件。该接口供浏览器图片标签使用，鉴权使用 query token。",
@@ -735,6 +1034,228 @@
                 }
             }
         },
+        "/papers/{id}/flow": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "复用小云雀同款思路图链路生成研究脉络,返回可持久化的节点图 JSON。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "papers"
+                ],
+                "summary": "生成论文思路图",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "论文 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/dto.ChatResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "论文尚未解析就绪",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/papers/{id}/progress": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保存某篇论文的最近阅读页，并按总页数计算阅读百分比。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "papers"
+                ],
+                "summary": "保存阅读进度",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "论文 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "阅读进度",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.PaperProgressRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/dto.PaperProgressResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/papers/{id}/reparse": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "清理旧报告缓存并重新投递论文解析任务。正在解析中的论文不可重复投递。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "papers"
+                ],
+                "summary": "重新解析论文",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "论文 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.Paper"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/papers/{id}/report": {
             "post": {
                 "security": [
@@ -742,7 +1263,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "按报告类型生成或读取缓存的研读报告。报告类型包括 quickread、method、result、innovation、future。",
+                "description": "按报告类型生成或读取缓存的研读报告。报告类型包括 quickread、method、result、innovation、related。",
                 "consumes": [
                     "application/json"
                 ],
@@ -860,6 +1381,73 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/definitions/dto.ReadyReportsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/papers/{id}/sections/rebuild": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从本地归档的 MinerU content_list.json 重建章节目录，不重跑完整解析流水线。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "papers"
+                ],
+                "summary": "重建论文目录",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "论文 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/model.PaperSection"
+                                            }
                                         }
                                     }
                                 }
@@ -1084,7 +1672,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建一段多轮会话，可绑定论文，也可指定 agent_type=pioneer 使用小云雀。",
+                "description": "创建一段多轮会话，可绑定论文，也可指定 agent_type=pioneer 使用小云雀、agent_type=maodie 使用小耄耋。",
                 "consumes": [
                     "application/json"
                 ],
@@ -1339,9 +1927,121 @@
                 }
             }
         },
+        "/topics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前登录用户的小云雀会话主题，供侧边栏按主题分组渲染。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "列出会话主题",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/model.Topic"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除当前用户的全部小云雀主题并把会话退回未归类,返回删除的主题数。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "清空会话主题",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/topics/backfill": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "把当前用户尚未归类的小云雀会话异步归类,返回待处理会话数。供上线前的存量会话补归类。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "回填会话主题",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/user/login": {
             "post": {
-                "description": "按学号和密码登录，返回 JWT 与用户基本信息。",
+                "description": "按学号或绑定邮箱和密码登录，返回 JWT 与用户基本信息。",
                 "consumes": [
                     "application/json"
                 ],
@@ -1537,27 +2237,30 @@
         "constant.IntentType": {
             "type": "string",
             "enum": [
-                "fact",
+                "chitchat",
                 "summary",
                 "method",
-                "pioneer"
+                "pioneer",
+                "maodie"
             ],
             "x-enum-comments": {
-                "IntentFact": "定位事实/数据/结论",
+                "IntentChitchat": "与论文无关的闲聊/寒暄,不走 RAG,直接对话作答",
                 "IntentMethod": "方法/流程/实验设计解读",
-                "IntentSummary": "概括/解释/综述"
+                "IntentSummary": "概括/解释/综述,以及论文中的事实/数据/结论定位"
             },
             "x-enum-descriptions": [
-                "定位事实/数据/结论",
-                "概括/解释/综述",
+                "与论文无关的闲聊/寒暄,不走 RAG,直接对话作答",
+                "概括/解释/综述,以及论文中的事实/数据/结论定位",
                 "方法/流程/实验设计解读",
+                "",
                 ""
             ],
             "x-enum-varnames": [
-                "IntentFact",
+                "IntentChitchat",
                 "IntentSummary",
                 "IntentMethod",
-                "IntentPioneer"
+                "IntentPioneer",
+                "IntentMaodie"
             ]
         },
         "constant.PaperStatus": {
@@ -1602,13 +2305,13 @@
                 "method",
                 "result",
                 "innovation",
-                "future"
+                "related"
             ],
             "x-enum-comments": {
-                "ReportFuture": "后续研究建议",
                 "ReportInnovation": "创新点与不足分析",
                 "ReportMethod": "研究方法总结",
                 "ReportQuickRead": "论文速读",
+                "ReportRelated": "相关研究/参考文献链接",
                 "ReportResult": "实验结果总结"
             },
             "x-enum-descriptions": [
@@ -1616,15 +2319,91 @@
                 "研究方法总结",
                 "实验结果总结",
                 "创新点与不足分析",
-                "后续研究建议"
+                "相关研究/参考文献链接"
             ],
             "x-enum-varnames": [
                 "ReportQuickRead",
                 "ReportMethod",
                 "ReportResult",
                 "ReportInnovation",
-                "ReportFuture"
+                "ReportRelated"
             ]
+        },
+        "dto.AnnotationCreateRequest": {
+            "type": "object",
+            "required": [
+                "bounding_rect",
+                "page_no",
+                "rects",
+                "text"
+            ],
+            "properties": {
+                "bounding_rect": {
+                    "$ref": "#/definitions/dto.AnnotationRect"
+                },
+                "color": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "page_no": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "rects": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.AnnotationRect"
+                    }
+                },
+                "text": {
+                    "type": "string"
+                },
+                "translation": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.AnnotationRect": {
+            "type": "object",
+            "properties": {
+                "height": {
+                    "type": "number"
+                },
+                "pageNumber": {
+                    "type": "integer"
+                },
+                "width": {
+                    "type": "number"
+                },
+                "x1": {
+                    "type": "number"
+                },
+                "x2": {
+                    "type": "number"
+                },
+                "y1": {
+                    "type": "number"
+                },
+                "y2": {
+                    "type": "number"
+                }
+            }
+        },
+        "dto.AnnotationUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "translation": {
+                    "type": "string"
+                }
+            }
         },
         "dto.ChatResponse": {
             "type": "object",
@@ -1634,7 +2413,7 @@
                     "type": "string"
                 },
                 "intent": {
-                    "description": "命中的问答子类 fact/summary/method",
+                    "description": "命中的聊天意图 chitchat/summary/method/pioneer",
                     "type": "string"
                 },
                 "meta": {
@@ -1714,10 +2493,12 @@
         "dto.LoginRequest": {
             "type": "object",
             "required": [
-                "password",
-                "student_id"
+                "password"
             ],
             "properties": {
+                "account": {
+                    "type": "string"
+                },
                 "password": {
                     "type": "string"
                 },
@@ -1729,6 +2510,12 @@
         "dto.LoginResponse": {
             "type": "object",
             "properties": {
+                "avatar_url": {
+                    "type": "string"
+                },
+                "class_id": {
+                    "type": "string"
+                },
                 "email": {
                     "type": "string"
                 },
@@ -1771,6 +2558,29 @@
                 }
             }
         },
+        "dto.PaperProgressRequest": {
+            "type": "object",
+            "properties": {
+                "last_page": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.PaperProgressResponse": {
+            "type": "object",
+            "properties": {
+                "last_read_page": {
+                    "type": "integer"
+                },
+                "progress": {
+                    "type": "integer"
+                }
+            }
+        },
         "dto.PaperStatusResponse": {
             "type": "object",
             "properties": {
@@ -1780,8 +2590,17 @@
                 "id": {
                     "type": "string"
                 },
+                "parse_progress": {
+                    "type": "integer"
+                },
+                "parsed_pages": {
+                    "type": "integer"
+                },
                 "status": {
                     "$ref": "#/definitions/constant.PaperStatus"
+                },
+                "total_pages": {
+                    "type": "integer"
                 }
             }
         },
@@ -1873,7 +2692,7 @@
             ],
             "properties": {
                 "type": {
-                    "description": "quickread/method/result/innovation/future",
+                    "description": "quickread/method/result/innovation/related",
                     "type": "string"
                 }
             }
@@ -1922,15 +2741,7 @@
             }
         },
         "dto.SendMessageRequest": {
-            "type": "object",
-            "required": [
-                "query"
-            ],
-            "properties": {
-                "query": {
-                    "type": "string"
-                }
-            }
+            "type": "object"
         },
         "dto.TokenRequest": {
             "type": "object",
@@ -1982,6 +2793,32 @@
                 },
                 "year": {
                     "type": "integer"
+                }
+            }
+        },
+        "model.AnnotationRect": {
+            "type": "object",
+            "properties": {
+                "height": {
+                    "type": "number"
+                },
+                "pageNumber": {
+                    "type": "integer"
+                },
+                "width": {
+                    "type": "number"
+                },
+                "x1": {
+                    "type": "number"
+                },
+                "x2": {
+                    "type": "number"
+                },
+                "y1": {
+                    "type": "number"
+                },
+                "y2": {
+                    "type": "number"
                 }
             }
         },
@@ -2041,10 +2878,22 @@
                         "type": "string"
                     }
                 },
+                "last_read_page": {
+                    "description": "最近阅读到的页码",
+                    "type": "integer"
+                },
                 "owner_id": {
                     "type": "string"
                 },
                 "page_count": {
+                    "type": "integer"
+                },
+                "parse_progress": {
+                    "description": "MinerU parse progress 0-100",
+                    "type": "integer"
+                },
+                "parsed_pages": {
+                    "description": "MinerU parsed pages",
                     "type": "integer"
                 },
                 "progress": {
@@ -2058,6 +2907,54 @@
                     "$ref": "#/definitions/constant.PaperStatus"
                 },
                 "title": {
+                    "type": "string"
+                },
+                "total_pages": {
+                    "description": "MinerU total pages",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.PaperAnnotation": {
+            "type": "object",
+            "properties": {
+                "bounding_rect": {
+                    "$ref": "#/definitions/model.AnnotationRect"
+                },
+                "color": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "string"
+                },
+                "page_no": {
+                    "type": "integer"
+                },
+                "paper_id": {
+                    "type": "string"
+                },
+                "rects": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AnnotationRect"
+                    }
+                },
+                "text": {
+                    "type": "string"
+                },
+                "translation": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -2156,6 +3053,18 @@
                 },
                 "title": {
                     "type": "string"
+                },
+                "x1": {
+                    "type": "number"
+                },
+                "x2": {
+                    "type": "number"
+                },
+                "y1": {
+                    "type": "number"
+                },
+                "y2": {
+                    "type": "number"
                 }
             }
         },
@@ -2163,7 +3072,7 @@
             "type": "object",
             "properties": {
                 "agent_type": {
-                    "description": "AgentType 标记会话由哪个 agent 应答,空为默认论文助教,pioneer 为小云雀。",
+                    "description": "AgentType 标记会话由哪个 agent 应答,空为默认论文助教,pioneer 为小云雀,maodie 为小耄耋。",
                     "type": "string"
                 },
                 "created_at": {
@@ -2179,6 +3088,37 @@
                     "type": "string"
                 },
                 "title": {
+                    "type": "string"
+                },
+                "topic_id": {
+                    "description": "TopicID 关联自动归类的主题,可空表示尚未归类。当前仅 pioneer 会话归类。",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.Topic": {
+            "type": "object",
+            "properties": {
+                "agent_type": {
+                    "description": "AgentType 标记主题所属 agent，当前仅 pioneer，为将来扩展留口。",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "member_count": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "student_id": {
                     "type": "string"
                 },
                 "updated_at": {

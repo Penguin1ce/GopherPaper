@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUp, BookOpenText, ChevronDown, Loader2 } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,11 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { figureUrl } from "@/lib/gopherpaper/api";
+import {
+  referenceReaderHref,
+  referencesUsedBySourceTags,
+  sourceTagReaderHref,
+} from "@/lib/gopherpaper/source-links";
 import { useApp } from "@/lib/gopherpaper/store";
 import type { Message, PaperFlow, Reference } from "@/lib/gopherpaper/types";
 import { formatTime, intentLabel, messagePlan, paperTitle } from "@/lib/gopherpaper/utils";
@@ -45,7 +50,15 @@ function referenceScope(ref: Reference) {
   return ref.knowledge_scope === "public" ? "基础库" : "我的论文";
 }
 
-function Sources({ refs }: { refs: Reference[] }) {
+function Sources({
+  refs,
+  fallbackPaperID,
+  allowedPaperIDs,
+}: {
+  refs: Reference[];
+  fallbackPaperID?: string;
+  allowedPaperIDs?: Set<string>;
+}) {
   const [open, setOpen] = useState(false);
 
   if (refs.length === 0) return null;
@@ -89,6 +102,7 @@ function Sources({ refs }: { refs: Reference[] }) {
             const scope = referenceScope(r);
             const isImage = r.block_type === "image" && !!r.img_name && !!r.doc_id;
             const src = isImage ? figureUrl(r.doc_id!, r.img_name!) : "";
+            const readerHref = referenceReaderHref(r, fallbackPaperID, allowedPaperIDs);
             return (
               <li key={i} className="flex items-start gap-2 rounded-lg px-1 py-1 text-xs">
                 <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-sienna/12 font-mono text-[10px] text-sienna">
@@ -105,9 +119,19 @@ function Sources({ refs }: { refs: Reference[] }) {
                   </span>
                   <span className="mt-1 flex flex-wrap gap-1.5">
                     {typeof r.page_no === "number" && r.page_no > 0 && (
-                      <Badge variant="secondary" className="rounded-full font-normal">
-                        p.{r.page_no}
-                      </Badge>
+                      readerHref ? (
+                        <Badge
+                          variant="secondary"
+                          className="rounded-full font-normal hover:bg-secondary/80"
+                          render={<a href={readerHref} target="_blank" rel="noopener noreferrer" />}
+                        >
+                          p.{r.page_no}
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="rounded-full font-normal">
+                          p.{r.page_no}
+                        </Badge>
+                      )
                     )}
                     <Badge variant="outline" className="rounded-full font-normal">
                       {scope}
@@ -128,11 +152,22 @@ function Sources({ refs }: { refs: Reference[] }) {
   );
 }
 
-const MessageBubble = memo(function MessageBubble({ message }: { message: Message }) {
+const MessageBubble = memo(function MessageBubble({
+  message,
+  fallbackPaperID,
+  allowedPaperIDs,
+}: {
+  message: Message;
+  fallbackPaperID?: string;
+  allowedPaperIDs?: Set<string>;
+}) {
   const isAssistant = message.role === "assistant";
-  const refs = isAssistant ? extractSources(message.meta) : [];
-  const figures = isAssistant ? buildFigureMap(refs) : undefined;
+  const allRefs = isAssistant ? extractSources(message.meta) : [];
+  const refs = isAssistant ? referencesUsedBySourceTags(message.content, allRefs) : [];
+  const figures = isAssistant ? buildFigureMap(allRefs) : undefined;
   const steps = isAssistant ? messagePlan(message) : [];
+  const sourceHref = (label: string) =>
+    sourceTagReaderHref(label, allRefs, fallbackPaperID, allowedPaperIDs);
   return (
     <article className={cn("flex flex-col gap-1.5", isAssistant ? "items-start" : "items-end")}>
       {isAssistant ? (
@@ -141,11 +176,17 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: Messag
           {steps.length > 0 && (
             <ProcessTrace steps={steps} live={!!message.streaming} />
           )}
-          <Markdown figures={figures}>{message.content}</Markdown>
+          <Markdown figures={figures} sourceHref={sourceHref}>{message.content}</Markdown>
           {(message.flow ?? (message.meta?.flow as PaperFlow | undefined)) && (
             <PaperFlowCard flow={(message.flow ?? message.meta?.flow) as PaperFlow} />
           )}
-          {refs.length > 0 && <Sources refs={refs} />}
+          {refs.length > 0 && (
+            <Sources
+              refs={refs}
+              fallbackPaperID={fallbackPaperID}
+              allowedPaperIDs={allowedPaperIDs}
+            />
+          )}
         </div>
       ) : (
         <div className="max-w-[80%] rounded-2xl bg-primary px-4 py-2.5 text-primary-foreground">
@@ -181,11 +222,91 @@ const PROMPT_HINTS = [
   "方法部分的整体流程是怎样的?",
 ];
 
+function PaperChatComposer({
+  input,
+  sending,
+  toolNote,
+  variant = "bottom",
+  onInputChange,
+  onSubmit,
+}: {
+  input: string;
+  sending: boolean;
+  toolNote: string;
+  variant?: "bottom" | "center";
+  onInputChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const hasDraft = input.trim().length > 0;
+
+  return (
+    <form
+      className={cn(
+        variant === "center" ? "w-full" : "shrink-0 px-6 pb-5 pt-2",
+      )}
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className={cn("mx-auto w-full", variant === "center" ? "max-w-2xl" : "max-w-3xl")}>
+        <ToolStatus note={toolNote} />
+        <div
+          className={cn(
+            "flex gap-2 border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md",
+            variant === "center" ? "items-center" : "items-end",
+            variant === "center" ? "rounded-[1.5rem]" : "rounded-[1.625rem]",
+          )}
+        >
+          <Textarea
+            rows={1}
+            value={input}
+            placeholder={variant === "center" ? "问小文鸮" : ""}
+            disabled={sending}
+            className={cn(
+              "max-h-44 min-h-9 resize-none overflow-y-auto border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0",
+              variant === "center" && "min-h-10 py-2.5 pl-4 text-sm leading-5",
+            )}
+            onChange={(e) => onInputChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                onSubmit();
+              }
+            }}
+          />
+          {(hasDraft || sending) && (
+            <Button
+              type="submit"
+              size="icon"
+              className="size-9 shrink-0 rounded-full"
+              disabled={sending || !hasDraft}
+              title={sending ? "正在发送" : "发送"}
+              aria-label={sending ? "正在发送" : "发送"}
+            >
+              {sending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ArrowUp className="size-4 stroke-[2.6]" />
+              )}
+            </Button>
+          )}
+        </div>
+      </div>
+    </form>
+  );
+}
+
 export function ChatPane() {
-  const { messages, activeSession, activePaper, sending, toolNote, sendMessage } = useApp();
+  const { user, messages, activeSession, activePaper, papers, sending, toolNote, sendMessage } = useApp();
   const guard = useGuard();
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fallbackPaperID = activeSession?.paper_id || activePaper?.id || "";
+  const allowedPaperIDs = useMemo(
+    () => (papers.length > 0 ? new Set(papers.map((paper) => paper.id)) : undefined),
+    [papers],
+  );
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" });
@@ -199,25 +320,48 @@ export function ChatPane() {
   };
 
   const hasContent = Boolean(activeSession) || messages.length > 0;
-  const hasDraft = input.trim().length > 0;
+  const emptyConversation = messages.length === 0 && !sending;
+  const displayName = user?.name || user?.student_id || "同学";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto flex max-h-full w-full max-w-3xl flex-col gap-6 px-6 py-5">
-          {!hasContent ? (
-            <div className="mx-auto flex min-h-[24rem] w-full max-w-xl flex-col justify-center gap-4">
-              <Empty
-                title="准备开始论文问答"
-                text={
-                  activePaper
-                    ? `围绕「${paperTitle(activePaper)}」直接提问，系统会自动创建会话。`
-                    : "先在左侧选择一篇论文，或直接输入问题。"
-                }
+        <div
+          className={cn(
+            "mx-auto flex max-h-full w-full flex-col px-6 py-5",
+            emptyConversation ? "max-w-4xl" : "max-w-3xl gap-6",
+          )}
+        >
+          {emptyConversation ? (
+            <div className="mx-auto flex min-h-[calc(100dvh-9rem)] w-full max-w-3xl flex-col justify-center gap-5 pb-16">
+              <div className="space-y-2 text-center">
+                <h1 className="text-xl font-medium leading-8 tracking-tight text-foreground sm:text-2xl">
+                  {displayName}，你好
+                </h1>
+                {activePaper && (
+                  <div className="mx-auto max-w-md truncate text-xs text-muted-foreground/75">
+                    {paperTitle(activePaper)}
+                  </div>
+                )}
+              </div>
+              <PaperChatComposer
+                input={input}
+                sending={sending}
+                toolNote={toolNote}
+                variant="center"
+                onInputChange={setInput}
+                onSubmit={submit}
               />
               <div className="flex flex-wrap justify-center gap-2">
                 {PROMPT_HINTS.map((h) => (
-                  <Button key={h} type="button" variant="outline" onClick={() => setInput(h)}>
+                  <Button
+                    key={h}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-full px-3 text-xs font-normal text-muted-foreground"
+                    onClick={() => setInput(h)}
+                  >
                     {h}
                   </Button>
                 ))}
@@ -225,19 +369,24 @@ export function ChatPane() {
             </div>
           ) : (
             <>
-              {messages.length === 0 && (
+              {!hasContent && (
                 <div className="mx-auto w-full max-w-xl">
                   <Empty title="这个会话还没有消息" text="在下方输入问题，开始第一轮论文问答。" />
                 </div>
               )}
               {messages.map((m) => (
-                <MessageBubble key={String(m.id)} message={m} />
+                <MessageBubble
+                  key={String(m.id)}
+                  message={m}
+                  fallbackPaperID={fallbackPaperID}
+                  allowedPaperIDs={allowedPaperIDs}
+                />
               ))}
               {sending && !messages.some((m) => m.streaming) && (
                 <article className="flex items-start">
                   <div className="inline-flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground">
                     <Loader2 className="size-4 animate-spin" />
-                    助教正在检索并作答…
+                    小文鸮正在检索并作答…
                   </div>
                 </article>
               )}
@@ -246,49 +395,15 @@ export function ChatPane() {
           <div ref={bottomRef} />
         </div>
       </ScrollArea>
-      <form
-        className="shrink-0 px-6 pb-5 pt-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-      >
-        <div className="mx-auto w-full max-w-3xl">
-          <ToolStatus note={toolNote} />
-          <div className="flex items-end gap-2 rounded-[1.625rem] border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md">
-            <Textarea
-              rows={1}
-              value={input}
-              placeholder=""
-              disabled={sending}
-              className="max-h-44 min-h-9 resize-none overflow-y-auto border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0"
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-            />
-            {(hasDraft || sending) && (
-              <Button
-                type="submit"
-                size="icon"
-                className="size-9 shrink-0 rounded-full"
-                disabled={sending || !hasDraft}
-                title={sending ? "正在发送" : "发送"}
-                aria-label={sending ? "正在发送" : "发送"}
-              >
-                {sending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <ArrowUp className="size-4 stroke-[2.6]" />
-                )}
-              </Button>
-            )}
-          </div>
-        </div>
-      </form>
+      {!emptyConversation && (
+        <PaperChatComposer
+          input={input}
+          sending={sending}
+          toolNote={toolNote}
+          onInputChange={setInput}
+          onSubmit={submit}
+        />
+      )}
     </div>
   );
 }

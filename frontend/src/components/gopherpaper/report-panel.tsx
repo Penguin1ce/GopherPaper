@@ -1,29 +1,44 @@
 "use client";
 
 import {
-  ArrowRight,
   BarChart3,
   BookOpenText,
-  Compass,
   Download,
+  Link2,
   type LucideIcon,
   Lightbulb,
   Loader2,
+  Waypoints,
   Workflow,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import * as api from "@/lib/gopherpaper/api";
 import { printReport } from "@/lib/gopherpaper/print";
+import { sourceTagReaderHref } from "@/lib/gopherpaper/source-links";
 import { useApp } from "@/lib/gopherpaper/store";
-import type { ChatResponse, PlanStep, Reference, ReportType } from "@/lib/gopherpaper/types";
-import { metaPlanSteps, paperTitle } from "@/lib/gopherpaper/utils";
+import type {
+  ChatResponse,
+  PaperFlow,
+  PlanStep,
+  Reference,
+  ReportType,
+} from "@/lib/gopherpaper/types";
+import { paperTitle } from "@/lib/gopherpaper/utils";
+import { cn } from "@/lib/utils";
 import { Empty, SkeletonLines } from "./app-ui";
 import { Markdown } from "./markdown";
-import { PaperOverview } from "./paper-overview";
+import { PaperFlowCard } from "./paper-flow-card";
 import { ProcessTrace } from "./process-trace";
 
 // buildFigureMap 从报告 meta.sources 收图块出处,拼成 markdown 解析 figure://文件名 用的 名->docID 表。
@@ -36,30 +51,101 @@ function buildFigureMap(meta?: Record<string, unknown>): Record<string, string> 
   return map;
 }
 
-const REPORTS: { type: ReportType; label: string; desc: string; icon: LucideIcon }[] = [
-  { type: "quickread", label: "论文速读", desc: "全文要点与主线", icon: BookOpenText },
-  { type: "method", label: "研究方法", desc: "方法流程与设计", icon: Workflow },
-  { type: "result", label: "实验结果", desc: "指标、现象与结论", icon: BarChart3 },
-  { type: "innovation", label: "创新与不足", desc: "贡献点与局限", icon: Lightbulb },
-  { type: "future", label: "未来建议", desc: "可延展研究方向", icon: Compass },
+const REPORTS: { type: ReportType; label: string; icon: LucideIcon }[] = [
+  { type: "quickread", label: "论文速读", icon: BookOpenText },
+  { type: "method", label: "研究方法", icon: Workflow },
+  { type: "result", label: "实验结果", icon: BarChart3 },
+  { type: "innovation", label: "创新与不足", icon: Lightbulb },
+  { type: "related", label: "相关研究", icon: Link2 },
 ];
 
 const REPORT_LOADING_STEPS: PlanStep[] = [
   { phase: "preparing", text: "小囊鼠已接收生成任务，正在启动研读流水线。" },
 ];
 
+type ReportMap = Partial<Record<ReportType, ChatResponse>>;
+type ReportFlagMap = Partial<Record<ReportType, boolean>>;
+
+interface ReportActionButtonProps {
+  label: string;
+  icon: LucideIcon;
+  active: boolean;
+  busy: boolean;
+  ready: boolean;
+  disabled?: boolean;
+  title: string;
+  ariaExpanded?: boolean;
+  onClick: () => void;
+}
+
+function ReportActionButton({
+  label,
+  icon: Icon,
+  active,
+  busy,
+  ready,
+  disabled,
+  title,
+  ariaExpanded,
+  onClick,
+}: ReportActionButtonProps) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      role="tab"
+      aria-selected={active}
+      aria-expanded={ariaExpanded}
+      title={title}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sienna/40 disabled:cursor-not-allowed disabled:opacity-60",
+        active
+          ? "bg-sienna/10 text-sienna ring-1 ring-sienna/20"
+          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+      )}
+    >
+      {busy ? (
+        <Loader2 className="size-3.5 animate-spin" />
+      ) : (
+        <Icon className="size-3.5" />
+      )}
+      <span>{label}</span>
+      {ready && (
+        <span
+          className="size-1.5 rounded-full bg-emerald-500"
+          title="就绪"
+        />
+      )}
+    </button>
+  );
+}
+
 export function ReportPanel() {
-  const { activePaper, activePaperID, reportReady, reportProgress, beginReport, toast } =
-    useApp();
+  const {
+    activePaper,
+    activePaperID,
+    reportReady,
+    paperFlowReady,
+    reportProgress,
+    beginReport,
+    markPaperFlowReady,
+    toast,
+  } = useApp();
   const [active, setActive] = useState<ReportType | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [report, setReport] = useState<ChatResponse | null>(null);
-  const [awaiting, setAwaiting] = useState<ReportType | null>(null);
+  const [reports, setReports] = useState<ReportMap>({});
+  const [fetching, setFetching] = useState<ReportFlagMap>({});
+  const [awaiting, setAwaiting] = useState<ReportFlagMap>({});
+  // 论文思路图独立于报告状态机:按需生成,后端持久化,用小云雀同款节点图渲染。
+  const [flow, setFlow] = useState<PaperFlow | null>(null);
+  const [flowOpen, setFlowOpen] = useState(false);
+  const [flowLoading, setFlowLoading] = useState(false);
+  const [flowError, setFlowError] = useState(false);
   const autoLoadedRef = useRef<string | null>(null);
   const articleRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef(true);
   // 当前论文 ID 的 ref 镜像:异步结果回来时据此校验仍是这篇论文才落地,避免切走后覆盖,
-  // 也避免把 active/loading 放进 effect 依赖(那会让 setActive/setLoading 触发 effect 自我清理)。
+  // 同一篇内的多张卡片可以并行生成,但旧论文的异步响应不能写回新论文。
   const activePaperRef = useRef(activePaperID);
   useEffect(() => {
     activePaperRef.current = activePaperID;
@@ -76,96 +162,196 @@ export function ReportPanel() {
   );
   // 当前查看/生成中报告的实时进度(执行计划/进行中/失败),由 report_progress 事件累积。
   const run = active ? reportProgress[activePaperID]?.[active] : undefined;
-  const reportSteps = report ? metaPlanSteps(report.meta) : [];
+  const report = active ? (reports[active] ?? null) : null;
+  const activeFetching = active ? Boolean(fetching[active]) : false;
+  const activeAwaiting = active ? Boolean(awaiting[active] && !run?.failed) : false;
+  const activeGenerating =
+    !report && !run?.failed && (Boolean(run?.live) || activeAwaiting);
+  const activeLoading = activeFetching || (!report && activeGenerating);
+  const reportRefs = (report?.meta?.sources as Reference[] | undefined) ?? [];
+  const activeReportLabel = active
+    ? REPORTS.find((r) => r.type === active)?.label || "研读报告"
+    : "研读报告";
+  const flowReady = Boolean(paperFlowReady[activePaperID] || (flow && !flowLoading));
+
+  const setTypeFlag = useCallback(
+    (setter: Dispatch<SetStateAction<ReportFlagMap>>, type: ReportType, value: boolean) => {
+      setter((prev) => {
+        if (Boolean(prev[type]) === value) return prev;
+        const next = { ...prev };
+        if (value) next[type] = true;
+        else delete next[type];
+        return next;
+      });
+    },
+    [],
+  );
+
+  const fetchReport = useCallback(
+    async (paper: string, type: ReportType) => {
+      setTypeFlag(setFetching, type, true);
+      try {
+        const res = await api.generateReport(paper, type);
+        if (!mountedRef.current || activePaperRef.current !== paper) return;
+        setReports((prev) => ({ ...prev, [type]: res }));
+        setTypeFlag(setAwaiting, type, false);
+      } catch (err) {
+        if (!mountedRef.current || activePaperRef.current !== paper) return;
+        if (err instanceof api.ApiError && err.status === 202) {
+          beginReport(paper, type);
+          setTypeFlag(setAwaiting, type, true);
+          return;
+        }
+        setTypeFlag(setAwaiting, type, false);
+        toast((err as Error)?.message || "生成失败", "error");
+      } finally {
+        if (mountedRef.current && activePaperRef.current === paper) {
+          setTypeFlag(setFetching, type, false);
+        }
+      }
+    },
+    [beginReport, setTypeFlag, toast],
+  );
 
   useEffect(() => {
     setActive(null);
-    setReport(null);
-    setLoading(false);
-    setAwaiting(null);
+    setReports({});
+    setFetching({});
+    setAwaiting({});
+    setFlow(null);
+    setFlowOpen(false);
+    setFlowLoading(false);
+    setFlowError(false);
   }, [activePaperID]);
 
-  // 进入论文时,若已有就绪报告则自动展示第一篇,免用户点击;每篇只自动一次(autoLoadedRef 守门)。
-  // 依赖只放 activePaperID 与 readySet:不放 active/loading,否则本 effect 内的 setActive/setLoading
-  // 会改变依赖触发清理、丢弃在飞请求,导致永远停在「生成中」。新鲜度改由 activePaperRef 校验。
-  useEffect(() => {
-    if (!activePaperID || autoLoadedRef.current === activePaperID) return;
-    const firstReady = REPORTS.find((r) => readySet[r.type]);
-    if (!firstReady) return;
-    const type = firstReady.type;
-    const paper = activePaperID;
-    let cancelled = false;
-    autoLoadedRef.current = paper;
-    setActive(type);
-    setLoading(true);
-    api
-      .generateReport(paper, type)
-      .then((res) => {
-        if (cancelled || activePaperRef.current !== paper) return;
-        setReport(res);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled || activePaperRef.current !== paper) return;
-        if (err instanceof api.ApiError && err.status === 202) {
-          setAwaiting(type);
-          return;
-        }
-        setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activePaperID, readySet]);
-
-  // awaiting:点了未就绪报告拿到 202 后,等 report_ready 让 readySet 更新,再拉一次缓存落地。
-  useEffect(() => {
-    if (!awaiting || !activePaperID || !readySet[awaiting]) return;
-    const paper = activePaperID;
-    const type = awaiting;
-    let cancelled = false;
-    api
-      .generateReport(paper, type)
-      .then((res) => {
-        if (cancelled || activePaperRef.current !== paper) return;
-        setReport(res);
-        setAwaiting(null);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled || activePaperRef.current !== paper) return;
-        toast((err as Error)?.message || "生成失败", "error");
-        setAwaiting(null);
-        setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [awaiting, activePaperID, readySet, toast]);
-
-  const generate = async (type: ReportType) => {
-    if (!activePaperID || loading) return;
-    // 标记本篇已被用户主动操作,避免随后 auto-load 再覆盖。
-    autoLoadedRef.current = activePaperID;
-    setActive(type);
-    setReport(null);
-    setAwaiting(null);
-    setLoading(true);
-    // 未就绪的报告点了即起新一轮长任务,重置执行计划进度;命中缓存则下方直接返回内容、进度为空。
-    if (!readySet[type]) beginReport(activePaperID, type);
-    try {
-      const res = await api.generateReport(activePaperID, type);
-      if (!mountedRef.current) return;
-      setReport(res);
-      setLoading(false);
-    } catch (err) {
-      if (!mountedRef.current) return;
-      if (err instanceof api.ApiError && err.status === 202) {
-        setAwaiting(type);
+  const openReport = useCallback(
+    (type: ReportType) => {
+      if (!activePaperID) return;
+      const paper = activePaperID;
+      const reportRun = reportProgress[paper]?.[type];
+      autoLoadedRef.current = paper;
+      setActive(type);
+      if (reports[type] || fetching[type] || (awaiting[type] && !reportRun?.failed)) {
         return;
       }
-      toast((err as Error)?.message || "生成失败", "error");
-      setLoading(false);
+      // 先问后端:命中缓存直接展示;只有 202 才进入本地生成态,避免已生成报告被误标为生成中。
+      void fetchReport(paper, type);
+    },
+    [activePaperID, awaiting, fetchReport, fetching, reportProgress, reports],
+  );
+
+  // 进入论文时,若已有就绪报告则自动展示第一篇,免用户点击;每篇只自动一次(autoLoadedRef 守门)。
+  useEffect(() => {
+    if (!activePaperID || active || autoLoadedRef.current === activePaperID) return;
+    const firstReady = REPORTS.find((r) => readySet[r.type]);
+    if (!firstReady) return;
+    openReport(firstReady.type);
+  }, [active, activePaperID, openReport, readySet]);
+
+  // awaiting:多张卡可同时处于生成中;各自收到 report_ready 后独立拉取持久化缓存。
+  // 旧 ready 标记可能还在,但后端返回 202 后代表本轮仍在生成;必须等 run 收尾后再拉缓存,
+  // 否则会在 readySet=true + awaiting=true 之间形成紧密 POST 重试循环。
+  useEffect(() => {
+    if (!activePaperID) return;
+    for (const { type } of REPORTS) {
+      const reportRun = reportProgress[activePaperID]?.[type];
+      if (awaiting[type] && reportRun?.failed) {
+        setTypeFlag(setAwaiting, type, false);
+        continue;
+      }
+      if (
+        awaiting[type] &&
+        readySet[type] &&
+        !fetching[type] &&
+        reportRun &&
+        !reportRun.live &&
+        !reportRun.failed
+      ) {
+        void fetchReport(activePaperID, type);
+      }
+    }
+  }, [
+    activePaperID,
+    awaiting,
+    fetchReport,
+    fetching,
+    readySet,
+    reportProgress,
+    setTypeFlag,
+  ]);
+
+  // 生成论文思路图:复用小云雀同款思路图链路。独立动作,不进报告状态机。
+  const generateFlow = async () => {
+    if (!activePaperID) return;
+    if (flowLoading) return;
+    if (flow) {
+      setFlowOpen((open) => !open);
+      return;
+    }
+    const paper = activePaperID;
+    if (paperFlowReady[paper]) {
+      setFlowOpen(true);
+      setFlowError(false);
+      setFlowLoading(true);
+      try {
+        const res = await api.getPaperFlow(paper);
+        if (!mountedRef.current || activePaperRef.current !== paper) return;
+        const cachedFlow = res.meta?.flow as PaperFlow | undefined;
+        if (!cachedFlow) throw new Error("思路图数据为空");
+        setFlow(cachedFlow);
+        markPaperFlowReady(paper);
+      } catch (err) {
+        if (!mountedRef.current || activePaperRef.current !== paper) return;
+        setFlowError(true);
+        setFlowOpen(false);
+        toast((err as Error)?.message || "思路图加载失败", "error");
+      } finally {
+        if (mountedRef.current && activePaperRef.current === paper) setFlowLoading(false);
+      }
+      return;
+    }
+
+    let receivedFlow = false;
+    setFlow(null);
+    setFlowOpen(true);
+    setFlowError(false);
+    setFlowLoading(true);
+    try {
+      const res = await api.generatePaperFlow(paper, {
+        onPaperFlow: (payload) => {
+          if (!mountedRef.current || activePaperRef.current !== paper) return;
+          receivedFlow = true;
+          setFlow(payload);
+        },
+        onPaperFlowNode: (payload) => {
+          if (!mountedRef.current || activePaperRef.current !== paper) return;
+          receivedFlow = true;
+          setFlow((current) => {
+            if (!current || current.paper_id !== payload.paper_id) return current;
+            const figures = payload.figure
+              ? [...(current.figures ?? []).filter((f) => f.id !== payload.figure?.id), payload.figure]
+              : current.figures;
+            return {
+              ...current,
+              nodes: current.nodes.map((n) =>
+                n.id === payload.node_id ? { ...n, detail: payload.detail } : n,
+              ),
+              figures,
+            };
+          });
+        },
+      });
+      if (!mountedRef.current || activePaperRef.current !== paper) return;
+      const nextFlow = res.meta?.flow as PaperFlow | undefined;
+      if (nextFlow) setFlow(nextFlow);
+      else if (!receivedFlow) throw new Error("思路图数据为空");
+      markPaperFlowReady(paper);
+    } catch (err) {
+      if (!mountedRef.current || activePaperRef.current !== paper) return;
+      setFlowError(true);
+      toast((err as Error)?.message || "思路图生成失败", "error");
+    } finally {
+      if (mountedRef.current && activePaperRef.current === paper) setFlowLoading(false);
     }
   };
 
@@ -187,134 +373,168 @@ export function ReportPanel() {
 
   return (
     <ScrollArea className="h-full">
-      <div className="space-y-5 p-4">
-        <div>
-          <h2 className="font-serif text-lg font-semibold tracking-tight">研读报告</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            基于《{paperTitle(activePaper)}》生成结构化报告，点击卡片即可查看。
-          </p>
-        </div>
-        {activePaper.status !== "ready" && (
-          <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
-            论文尚未完全就绪，当前状态：{activePaper.status}
+      <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 py-5 lg:px-7">
+        <header className="shrink-0 border-b pb-4">
+          <div className="flex items-start gap-4">
+            <div className="min-w-0">
+              <h2 className="font-serif text-lg font-semibold tracking-tight">
+                研读报告
+              </h2>
+              <p className="mt-1 truncate text-sm text-muted-foreground">
+                {paperTitle(activePaper)}
+              </p>
+            </div>
           </div>
-        )}
-        <PaperOverview />
-        <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-          {REPORTS.map((r) => {
-            const Icon = r.icon;
-            const isActive = active === r.type;
-            const ready = Boolean(readySet[r.type]);
-            const reportRun = reportProgress[activePaperID]?.[r.type];
-            const isGenerating = Boolean(reportRun?.live && !reportRun.failed);
-            const isBusy = (loading && isActive) || isGenerating;
-            return (
-              <button
-                key={r.type}
-                type="button"
-                disabled={loading}
-                aria-pressed={isActive}
-                title={ready ? "点击查看" : "点击生成"}
-                onClick={() => generate(r.type)}
-                className={`group relative flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sienna/40 disabled:cursor-not-allowed disabled:opacity-60 ${
-                  isActive
-                    ? "border-sienna/50 bg-sienna/[0.05] ring-1 ring-sienna/15"
-                    : "border-border bg-card hover:border-sienna/40 hover:bg-accent/40"
-                }`}
-              >
-                <span
-                  className={`flex size-7 shrink-0 items-center justify-center rounded-md border transition-colors ${
-                    isActive
-                      ? "border-sienna/30 bg-sienna/10 text-sienna"
-                      : "border-border bg-muted/50 text-muted-foreground group-hover:text-sienna"
-                  }`}
-                >
-                  {isBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Icon className="size-3.5" />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5">
-                    <span className="truncate font-serif text-sm font-semibold text-foreground">
-                      {r.label}
-                    </span>
-                    {ready && (
-                      <span
-                        className="size-1.5 shrink-0 rounded-full bg-emerald-500"
-                        title="就绪"
-                      />
-                    )}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">{r.desc}</span>
-                </span>
-                <ArrowRight
-                  className={`size-3.5 shrink-0 transition-all group-hover:translate-x-0.5 ${
-                    isActive ? "text-sienna" : "text-muted-foreground/50 group-hover:text-sienna"
-                  } ${isBusy ? "opacity-0" : ""}`}
+          {activePaper.status !== "ready" && (
+            <p className="mt-3 rounded-md bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
+              论文尚未完全就绪，当前状态：{activePaper.status}
+            </p>
+          )}
+          <div
+            className="mt-4 flex flex-wrap items-center gap-1.5"
+            role="tablist"
+            aria-label="报告类型"
+          >
+            {REPORTS.map((r) => {
+              const isActive = active === r.type;
+              const reportRun = reportProgress[activePaperID]?.[r.type];
+              const ready = Boolean(
+                reports[r.type] ||
+                  (readySet[r.type] && !reportRun?.live && !reportRun?.failed),
+              );
+              const isFetching = Boolean(fetching[r.type]);
+              const isAwaiting = Boolean(awaiting[r.type] && !reportRun?.failed);
+              const isGenerating =
+                !ready &&
+                !reportRun?.failed &&
+                (Boolean(reportRun?.live) || isAwaiting);
+              const isBusy = isFetching || isGenerating;
+              return (
+                <ReportActionButton
+                  key={r.type}
+                  label={r.label}
+                  icon={r.icon}
+                  active={isActive}
+                  busy={isBusy}
+                  ready={ready}
+                  disabled={isFetching}
+                  title={
+                    reportRun?.failed
+                      ? "生成失败，点击重试"
+                      : isGenerating
+                      ? "生成中，点击查看进度"
+                      : ready
+                        ? "点击查看"
+                        : "点击生成"
+                  }
+                  onClick={() => openReport(r.type)}
                 />
-              </button>
-            );
-          })}
-        </div>
+              );
+            })}
+            <ReportActionButton
+              label="思路图"
+              icon={Waypoints}
+              active={flowOpen}
+              busy={flowLoading}
+              ready={flowReady && !flowError}
+              disabled={flowLoading && !flow}
+              ariaExpanded={flowReady ? flowOpen : undefined}
+              title={
+                flowError
+                  ? "生成失败，点击重试"
+                  : flowLoading
+                    ? "生成中"
+                    : flowReady
+                      ? flowOpen
+                        ? "收起思路图"
+                        : "展开思路图"
+                      : "点击生成"
+              }
+              onClick={generateFlow}
+            />
+          </div>
+        </header>
 
-        <div className="rounded-xl border bg-card">
-          <div className="p-6">
-            {loading ? (
-              <div className="space-y-4">
-                {/* 小囊鼠多 agent 长任务,实时显示找资料→写报告→评审,降低长等待的不确定感。 */}
-                <ProcessTrace
-                  steps={run && run.steps.length > 0 ? run.steps : REPORT_LOADING_STEPS}
-                  live={run?.live ?? true}
-                />
-                <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                  小囊鼠正在找资料、写报告并评审结论，约需一分钟…
-                </p>
-                <SkeletonLines lines={6} />
-                <SkeletonLines lines={4} />
+        {(flowLoading || (flow && flowOpen) || flowError) && (
+          <section className="mt-4">
+            {flow && flowOpen ? (
+              <div className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
+                <PaperFlowCard flow={flow} className="mt-0" />
               </div>
-            ) : run?.failed ? (
-              <div className="space-y-3">
-                <p className="text-sm text-destructive">报告生成失败，请重试。</p>
-                {run.steps.length > 0 && <ProcessTrace steps={run.steps} live={false} />}
+            ) : flowLoading ? (
+              <p className="flex items-center gap-2 rounded-lg border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                正在构建论文思路图…
+              </p>
+            ) : flowError ? (
+              <p className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                思路图生成失败，请重试。
+              </p>
+            ) : null}
+          </section>
+        )}
+
+        <section className="min-h-0 flex-1 py-5">
+          {activeLoading ? (
+            <div className="mx-auto max-w-2xl space-y-4">
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                正在生成{activeReportLabel}，约需一分钟…
+              </p>
+              <ProcessTrace
+                steps={
+                  run && run.steps.length > 0
+                    ? run.steps
+                    : REPORT_LOADING_STEPS
+                }
+                live={run?.live ?? true}
+              />
+              <SkeletonLines lines={5} />
+            </div>
+          ) : run?.failed ? (
+            <div className="mx-auto max-w-2xl space-y-3">
+              <p className="text-sm text-destructive">报告生成失败，请重试。</p>
+              {run.steps.length > 0 && (
+                <ProcessTrace steps={run.steps} live={false} />
+              )}
+            </div>
+          ) : report ? (
+            <article className="mx-auto max-w-3xl animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
+              <header className="mb-5 flex items-center justify-between gap-3 border-b pb-3">
+                <h3 className="min-w-0 truncate font-serif text-xl font-semibold">
+                  {activeReportLabel}
+                </h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 gap-1.5"
+                  onClick={downloadPDF}
+                >
+                  <Download className="size-3.5" />
+                  下载 PDF
+                </Button>
+              </header>
+              <div ref={articleRef}>
+                <Markdown
+                  figures={buildFigureMap(report.meta)}
+                  sourceHref={(label) =>
+                    sourceTagReaderHref(label, reportRefs, activePaperID)
+                  }
+                >
+                  {report.content}
+                </Markdown>
               </div>
-            ) : report ? (
-              <article className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
-                <header className="mb-4 flex items-center justify-between gap-2 border-b pb-3">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <h3 className="truncate font-serif text-xl font-semibold">
-                      {REPORTS.find((r) => r.type === active)?.label}
-                    </h3>
-                    {report.intent && (
-                      <Badge variant="secondary" className="rounded-full font-normal">
-                        {report.intent}
-                      </Badge>
-                    )}
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0 gap-1.5"
-                    onClick={downloadPDF}
-                  >
-                    <Download className="size-3.5" />
-                    下载 PDF
-                  </Button>
-                </header>
-                {/* 生成过程的执行计划答后可折叠回看;打印只取下方 articleRef 的正文,不含此条。 */}
-                {(run?.steps.length || reportSteps.length) > 0 && (
-                  <ProcessTrace
-                    steps={run?.steps.length ? run.steps : reportSteps}
-                    live={false}
-                  />
-                )}
-                <div ref={articleRef}>
-                  <Markdown figures={buildFigureMap(report.meta)}>{report.content}</Markdown>
-                </div>
-              </article>
-            ) : (
-              <Empty title="还没有打开报告" text="点击上方任一卡片，查看或生成对应研读报告。" compact />
-            )}
-          </div>
-        </div>
+            </article>
+          ) : (
+            <div className="mx-auto flex min-h-[18rem] max-w-xl items-center justify-center">
+              <Empty
+                title="选择一种报告"
+                text="点击上方标签查看或生成研读报告。"
+                compact
+              />
+            </div>
+          )}
+        </section>
       </div>
     </ScrollArea>
   );

@@ -27,7 +27,7 @@ import (
 // POST /api/v1/sessions
 //
 // @Summary 创建会话
-// @Description 创建一段多轮会话，可绑定论文，也可指定 agent_type=pioneer 使用小云雀。
+// @Description 创建一段多轮会话，可绑定论文，也可指定 agent_type=pioneer 使用小云雀、agent_type=maodie 使用小耄耋。
 // @Tags sessions
 // @Accept json
 // @Produce json
@@ -46,7 +46,7 @@ func CreateSession(c *gin.Context) {
 	studentID := tenant.MustStudentID(c.Request.Context())
 	s, err := chatservice.CreateSession(c.Request.Context(), studentID, req.PaperID, req.Title, req.AgentType)
 	if err != nil {
-		if errors.Is(err, errs.ErrAgentTypeInvalid) {
+		if errors.Is(err, errs.ErrAgentTypeInvalid) || errors.Is(err, errs.ErrPaperRequired) {
 			response.Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -262,7 +262,7 @@ func SendMessage(c *gin.Context) {
 		}
 	})
 
-	msg, meta, err := chatservice.SendMessage(ctx, studentID, c.Param("id"), req.Query)
+	msg, meta, err := chatservice.SendMessage(ctx, studentID, c.Param("id"), req.Query, req.ReaderContext)
 	if err != nil {
 		if !started {
 			writeChatErr(c, err, "处理失败")
@@ -282,6 +282,8 @@ func writeChatErr(c *gin.Context, err error, fallback string) {
 		response.Fail(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, errs.ErrSessionForbidden):
 		response.Fail(c, http.StatusForbidden, err.Error())
+	case errors.Is(err, errs.ErrPaperRequired):
+		response.Fail(c, http.StatusBadRequest, err.Error())
 	default:
 		zlog.Error("会话接口错误", "err", err)
 		response.Fail(c, http.StatusInternalServerError, fallback)

@@ -13,7 +13,7 @@ type Session struct {
 	ID        string `gorm:"size:36;primaryKey" json:"id"`
 	StudentID string `gorm:"size:64;index;not null" json:"student_id"`
 	PaperID   string `gorm:"size:36;index" json:"paper_id,omitempty"`
-	// AgentType 标记会话由哪个 agent 应答,空为默认论文助教,pioneer 为小云雀。
+	// AgentType 标记会话由哪个 agent 应答,空为默认论文助教,pioneer 为小云雀,maodie 为小耄耋。
 	AgentType string `gorm:"size:16;index" json:"agent_type,omitempty"`
 	// TopicID 关联自动归类的主题,可空表示尚未归类。当前仅 pioneer 会话归类。
 	TopicID string `gorm:"size:36;index" json:"topic_id,omitempty"`

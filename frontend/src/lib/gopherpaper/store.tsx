@@ -33,6 +33,8 @@ import type {
   Session,
   UpdateEmailPayload,
   UpdateProfilePayload,
+  UpdateUserPreferencePayload,
+  UserPreference,
 } from "./types";
 import { toolStatusText } from "./tool-status";
 import { chatSessions, isSettled, paperTitle, sessionsForPaper } from "./utils";
@@ -43,6 +45,14 @@ const AUTH_KEY = "gopherpaper.auth";
 const EMPTY_SESSIONS: Session[] = [];
 const EMPTY_MESSAGES: Message[] = [];
 const EMPTY_PAPERS: Paper[] = [];
+
+const DEFAULT_PREFERENCE: UserPreference = {
+  nickname: "",
+  answer_style: "concise",
+  output_format: "conclusion_first",
+  language: "auto",
+  custom_instruction: "",
+};
 
 // 工具名 → 执行过程里「检索」步的检索对象文案(左列已是「检索」标签,这里只写对象避免重复);
 // 未列出的工具回退到原始工具名。
@@ -65,6 +75,7 @@ interface PersistedAuth {
 interface AppContextValue {
   // 状态
   user: AuthUser | null;
+  preference: UserPreference;
   authed: boolean;
   papers: Paper[];
   sessions: Session[];
@@ -79,6 +90,8 @@ interface AppContextValue {
   activeSession: Session | null;
   // 各论文已生成就绪的研读报告类型,供报告面板免轮询直接拉缓存
   reportReady: Record<string, Partial<Record<ReportType, boolean>>>;
+  // 各论文已生成就绪的思路图状态,同报告状态快照一起回填
+  paperFlowReady: Record<string, boolean>;
   // 各论文各类报告一次生成的实时进度(执行计划/进行中/失败),由 report_progress 事件累积
   reportProgress: Record<string, Partial<Record<ReportType, ReportRun>>>;
   // 动作
@@ -93,10 +106,13 @@ interface AppContextValue {
   refreshUser: () => Promise<void>;
   updateProfile: (payload: UpdateProfilePayload) => Promise<void>;
   updateEmail: (payload: UpdateEmailPayload) => Promise<void>;
+  refreshPreferences: () => Promise<void>;
+  updatePreferences: (payload: UpdateUserPreferencePayload) => Promise<void>;
   updateAvatar: (file: File) => Promise<void>;
   clearAvatar: () => Promise<void>;
   refreshPapers: (query?: string) => Promise<void>;
   uploadPaper: (file: File) => Promise<void>;
+  reparsePaper: (id: string) => Promise<void>;
   removePaper: (id: string) => Promise<void>;
   selectPaper: (id: string) => void;
   refreshSessions: () => Promise<void>;
@@ -104,8 +120,9 @@ interface AppContextValue {
   createSession: (title: string, paperID?: string) => Promise<Session>;
   removeSession: (id: string) => Promise<void>;
   sendMessage: (query: string) => Promise<void>;
-  // 报告面板点击生成时调用,重置该报告的进度为「进行中」,后续阶段由 SSE 累积。
+  // 后端确认报告进入生成队列后调用,把该报告的进度置为「进行中」,后续阶段由 SSE 累积。
   beginReport: (paperID: string, type: ReportType) => void;
+  markPaperFlowReady: (paperID: string, ready?: boolean) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -126,6 +143,7 @@ function loadAuth(): PersistedAuth {
 function AppProviderInner({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [preference, setPreference] = useState<UserPreference>(DEFAULT_PREFERENCE);
   const [token, setTokenState] = useState<string>("");
   // papers 由 Query 接管:paperSearch 空→listPapers,非空→searchPapers,搜索词进 query key。
   const [paperSearch, setPaperSearch] = useState("");
@@ -187,6 +205,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   const [reportReady, setReportReady] = useState<
     Record<string, Partial<Record<ReportType, boolean>>>
   >({});
+  const [paperFlowReady, setPaperFlowReady] = useState<Record<string, boolean>>({});
   const [reportProgress, setReportProgress] = useState<
     Record<string, Partial<Record<ReportType, ReportRun>>>
   >({});
@@ -276,7 +295,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       setActivePaperID("");
       setActiveSessionID("");
       setReportReady({});
+      setPaperFlowReady({});
       setReportProgress({});
+      setPreference(DEFAULT_PREFERENCE);
     },
     [disconnectWs, persist, queryClient],
   );
@@ -337,6 +358,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       setPapers((list) =>
         list.map((p) => (p.id === paperID ? { ...p, ...patch } : p)),
       );
+      if ((status === "indexed" && !sameStatus) || status === "ready") {
+        void queryClient.invalidateQueries({ queryKey: ["papers"] });
+      }
     },
     [toast, setPapers, queryClient],
   );
@@ -370,24 +394,31 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     [setPapers],
   );
 
-  // beginReport 在用户点生成时重置该报告的进度为「进行中、空步」,随后由 SSE 阶段事件累积。
+  // beginReport 在后端返回 202 后置该报告为「进行中、空步」,随后由 SSE 阶段事件累积。
   const beginReport = useCallback((paperID: string, type: ReportType) => {
     setReportProgress((prev) => ({
       ...prev,
       [paperID]: {
         ...prev[paperID],
-        [type]: {
-          steps: [
-            {
-              phase: "preparing",
-              text: "小囊鼠已接收生成任务，正在启动研读流水线。",
-            },
-          ],
-          live: true,
-          failed: false,
-        },
+        [type]:
+          prev[paperID]?.[type]?.live && !prev[paperID]?.[type]?.failed
+            ? prev[paperID]![type]
+            : {
+                steps: [
+                  {
+                    phase: "preparing",
+                    text: "小囊鼠已接收生成任务，正在启动研读流水线。",
+                  },
+                ],
+                live: true,
+                failed: false,
+              },
       },
     }));
+  }, []);
+
+  const markPaperFlowReady = useCallback((paperID: string, ready = true) => {
+    setPaperFlowReady((prev) => ({ ...prev, [paperID]: ready }));
   }, []);
 
   // 报告生成阶段进度:failed 标记失败并停 live;其余阶段按 phase 续接/新建执行计划步。
@@ -445,7 +476,16 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     (paperID: string, status: ReportsStatus) => {
       const ready = status.ready ?? [];
       const readySet = new Set<ReportType>(ready);
-      for (const t of ready) applyReportReady(paperID, t);
+      setReportReady((prev) => ({
+        ...prev,
+        [paperID]: Object.fromEntries(ready.map((t) => [t, true])) as Partial<
+          Record<ReportType, boolean>
+        >,
+      }));
+      setPaperFlowReady((prev) => ({
+        ...prev,
+        [paperID]: Boolean(status.flow_ready),
+      }));
       const running = status.running ?? [];
       if (running.length === 0) return;
       setReportProgress((prev) => {
@@ -461,7 +501,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         return { ...prev, [paperID]: paperMap };
       });
     },
-    [applyReportReady],
+    [],
   );
 
   // 进入某篇论文时回填已落库报告的就绪态,让报告面板免点击自动展示历史报告。
@@ -619,6 +659,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
           queryFn: async () => chatSessions(await api.listSessions()),
         }),
       ]);
+      api.preferences()
+        .then((data) => setPreference({ ...DEFAULT_PREFERENCE, ...data }))
+        .catch(() => {});
       if (!mountedRef.current) return;
       if (paperList.length > 0) {
         const first = paperList[0];
@@ -641,6 +684,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     setTokenState(saved.token);
     api.setToken(saved.token);
     api.me().then((profile) => persist(profile, saved.token)).catch(() => {});
+    api.preferences()
+      .then((data) => setPreference({ ...DEFAULT_PREFERENCE, ...data }))
+      .catch(() => {});
     bootstrapSession(saved.token).catch(() => logout(false));
   }, [bootstrapSession, logout, persist]);
 
@@ -700,6 +746,11 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     persist(profile, token);
   }, [persist, token]);
 
+  const refreshPreferences = useCallback(async () => {
+    const data = await api.preferences();
+    setPreference({ ...DEFAULT_PREFERENCE, ...data });
+  }, []);
+
   const updateProfile = useCallback(
     async (payload: UpdateProfilePayload) => {
       const profile = await api.updateProfile(payload);
@@ -713,6 +764,15 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     async (payload: UpdateEmailPayload) => {
       await api.updateEmail(payload);
       toast("邮箱已更新，请重新登录");
+    },
+    [toast],
+  );
+
+  const updatePreferences = useCallback(
+    async (payload: UpdateUserPreferencePayload) => {
+      const data = await api.updatePreferences(payload);
+      setPreference({ ...DEFAULT_PREFERENCE, ...data });
+      toast("AI 回答偏好已更新");
     },
     [toast],
   );
@@ -752,6 +812,32 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     [queryClient],
   );
 
+  const reparsePaper = useCallback(
+    async (id: string) => {
+      const paper = await api.reparsePaper(id);
+      if (paper?.id) {
+        const patch: Partial<Paper> = {
+          ...paper,
+          status: paper.status ?? "uploaded",
+          fail_reason: "",
+          status_detail: paper.fail_reason || "重新解析任务已提交",
+          parse_progress: 0,
+          parsed_pages: 0,
+          total_pages: 0,
+        };
+        papersRef.current = papersRef.current.map((p) =>
+          p.id === id ? { ...p, ...patch } : p,
+        );
+        setPapers((list) =>
+          list.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+        );
+      }
+      await queryClient.invalidateQueries({ queryKey: ["paper-status-poll"] });
+      toast("已提交重新解析任务");
+    },
+    [queryClient, setPapers, toast],
+  );
+
   const removePaper = useCallback(
     async (id: string) => {
       const paperIndex = papers.findIndex((p) => p.id === id);
@@ -766,6 +852,11 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       setPapers((list) => list.filter((p) => p.id !== id));
       setSessions(remainingSessions);
       setReportReady((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setPaperFlowReady((prev) => {
         const next = { ...prev };
         delete next[id];
         return next;
@@ -859,10 +950,13 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         let sessionID = activeSessionID;
         if (!sessionID) {
           const paper = papers.find((p) => p.id === activePaperID) || null;
+          const paperID = paper?.id || activePaperID || undefined;
           const title = paper
             ? `${paperTitle(paper)} 问答`
-            : query.slice(0, 24) || "新会话";
-          const session = await createSession(title, paper?.id);
+            : paperID
+              ? "论文问答"
+              : query.slice(0, 24) || "新会话";
+          const session = await createSession(title, paperID);
           sessionID = session.id;
         }
         // 取消该会话在飞的 listMessages,避免乐观写入被随后到达的 fetch 结果覆盖(官方乐观更新模式)。
@@ -1068,6 +1162,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   const value: AppContextValue = useMemo(
     () => ({
       user,
+      preference,
       authed: Boolean(token),
       papers,
       sessions,
@@ -1080,6 +1175,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       activePaper,
       activeSession,
       reportReady,
+      paperFlowReady,
       reportProgress,
       toast,
       dismissToast,
@@ -1092,10 +1188,13 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       refreshUser,
       updateProfile,
       updateEmail,
+      refreshPreferences,
+      updatePreferences,
       updateAvatar,
       clearAvatar,
       refreshPapers,
       uploadPaper,
+      reparsePaper,
       removePaper,
       selectPaper,
       refreshSessions,
@@ -1104,9 +1203,11 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       removeSession,
       sendMessage,
       beginReport,
+      markPaperFlowReady,
     }),
     [
       user,
+      preference,
       token,
       papers,
       sessions,
@@ -1119,6 +1220,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       activePaper,
       activeSession,
       reportReady,
+      paperFlowReady,
       reportProgress,
       toast,
       dismissToast,
@@ -1131,10 +1233,13 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       refreshUser,
       updateProfile,
       updateEmail,
+      refreshPreferences,
+      updatePreferences,
       updateAvatar,
       clearAvatar,
       refreshPapers,
       uploadPaper,
+      reparsePaper,
       removePaper,
       selectPaper,
       refreshSessions,
@@ -1143,6 +1248,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       removeSession,
       sendMessage,
       beginReport,
+      markPaperFlowReady,
     ],
   );
 

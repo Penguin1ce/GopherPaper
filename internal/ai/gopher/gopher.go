@@ -7,6 +7,8 @@ package gopher
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/agent/chainagent"
 	"trpc.group/trpc-go/trpc-agent-go/agent/llmagent"
 	"trpc.group/trpc-go/trpc-agent-go/event"
+	"trpc.group/trpc-go/trpc-agent-go/graph"
 	trpcmodel "trpc.group/trpc-go/trpc-agent-go/model"
 	"trpc.group/trpc-go/trpc-agent-go/planner/react"
 	"trpc.group/trpc-go/trpc-agent-go/runner"
@@ -29,6 +32,7 @@ import (
 	"GopherPaper/internal/ai/toolkit"
 	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/tenant"
+	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
 )
 
@@ -66,6 +70,9 @@ func Generate(ctx context.Context, in *core.ReportInput) (*core.Reply, error) {
 	}
 	content, err := planstream.CollectEvents(ctx, ch)
 	if err != nil {
+		if errors.Is(err, planstream.ErrMaxToolIterations) {
+			return fallbackReport(ctx, in, focus, err)
+		}
 		return nil, err
 	}
 	content = sanitizeReport(content)
@@ -165,7 +172,14 @@ func newReportStageAgent(inner agent.Agent, phase, text string) agent.Agent {
 
 func (a *reportStageAgent) Run(ctx context.Context, invocation *agent.Invocation) (<-chan *event.Event, error) {
 	emitReportPhase(ctx, a.phase, a.text)
-	return a.inner.Run(ctx, invocation)
+	ch, err := a.inner.Run(ctx, invocation)
+	if err != nil {
+		return nil, err
+	}
+	if a.phase == constant.ReportPhaseResearching {
+		return logResearcherFinalContent(ctx, ch), nil
+	}
+	return ch, nil
 }
 
 func (a *reportStageAgent) Tools() []tool.Tool {
@@ -190,7 +204,59 @@ func emitReportPhase(ctx context.Context, phase, text string) {
 	}
 }
 
-// EvictUser 清除该用户缓存的小囊鼠 runner,登出时调用。下次访问 runnerForUser 重建。
+func logResearcherFinalContent(ctx context.Context, in <-chan *event.Event) <-chan *event.Event {
+	out := make(chan *event.Event)
+	go func() {
+		defer close(out)
+		var finalContent string
+		for ev := range in {
+			if content := researcherEventContent(ev); content != "" {
+				finalContent = content
+			}
+			out <- ev
+		}
+		finalContent = strings.TrimSpace(finalContent)
+		if finalContent == "" {
+			zlog.Info("小囊鼠 researcher 最终内容为空", "paper_id", core.PaperIDFrom(ctx))
+			return
+		}
+		zlog.Info("小囊鼠 researcher 最终内容",
+			"paper_id", core.PaperIDFrom(ctx),
+			"chars", len([]rune(finalContent)),
+			"content", finalContent,
+		)
+	}()
+	return out
+}
+
+func researcherEventContent(ev *event.Event) string {
+	if ev == nil || ev.Response == nil || ev.Object == trpcmodel.ObjectTypeToolResponse {
+		return ""
+	}
+	if content := strings.TrimSpace(responseContent(ev)); content != "" {
+		return content
+	}
+	if raw := ev.StateDelta[graph.StateKeyLastResponse]; len(raw) > 0 {
+		var s string
+		if err := json.Unmarshal(raw, &s); err == nil {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
+}
+
+func responseContent(ev *event.Event) string {
+	if ev == nil || ev.Response == nil || ev.IsPartial {
+		return ""
+	}
+	var b strings.Builder
+	for _, c := range ev.Choices {
+		b.WriteString(c.Message.Content)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// EvictUser 清除该用户缓存的小囊鼠 runner,登出时调用。下次访问自动重建。
 func EvictUser(userID string) {
 	runners.Delete(userID)
 }
@@ -198,9 +264,178 @@ func EvictUser(userID string) {
 // reportH1 匹配 Markdown 一级标题行。一份报告至多一个一级标题,出现第二个即模型跑飞重写了第二份。
 var reportH1 = regexp.MustCompile(`(?m)^#\s+\S`)
 
+// reportQuery 生成链上三段共享的用户消息:只有任务简报与共享约束,不下达角色顺序指令。
+// 顺序由 chainagent 结构保证,消息里写了角色流程会让挂 planner 的 researcher 把写作评审也规划进去。
 func reportQuery(focus string) string {
-	brief := strings.ReplaceAll(constant.GopherReportPrompt, "{focus}", focus)
-	return brief + "\n\n当前任务: 请按小囊鼠 researcher -> writer -> reviewer 的顺序完成本篇论文研读报告。最终交付只保留 reviewer 修订后的完整 Markdown 报告。"
+	return strings.ReplaceAll(constant.GopherReportPrompt, "{focus}", focus)
+}
+
+const (
+	fallbackDocsPerQuery = 3
+	fallbackMaxTextDocs  = 18
+)
+
+func fallbackReport(ctx context.Context, in *core.ReportInput, focus string, cause error) (*core.Reply, error) {
+	userID := tenant.MustStudentID(ctx)
+	zlog.Warn("报告工具迭代耗尽,启用固定检索兜底",
+		"paper_id", in.PaperID, "type", string(in.ReportType), "err", cause)
+	emitReportPhase(ctx, constant.ReportPhaseWriting, "写报告:检索轮数已达上限,正在用固定检索结果生成保守报告。")
+
+	docs := fallbackReportDocs(ctx, userID, in.PaperID, in.ReportType)
+	prompt := strings.ReplaceAll(constant.GopherFallbackReportPrompt, "{focus}", focus)
+	prompt = strings.ReplaceAll(prompt, "{context}", retrieval.FormatDocs(docs)+fallbackFigureInstruction(docs))
+
+	models, err := aimodel.ModelsForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	gc := core.GenConfig(models.ChatMC)
+	gc.Temperature = trpcmodel.Float64Ptr(constant.ReportTemperature)
+	gc.FrequencyPenalty = trpcmodel.Float64Ptr(constant.ReportFrequencyPenalty)
+	req := &trpcmodel.Request{
+		Messages: []trpcmodel.Message{
+			trpcmodel.NewSystemMessage(prompt),
+			trpcmodel.NewUserMessage("请生成最终版研读报告。"),
+		},
+		GenerationConfig: gc,
+	}
+	content, err := core.GenerateText(ctx, models.Chat, req)
+	if err != nil {
+		return nil, fmt.Errorf("gopher: 兜底报告生成失败: %w", err)
+	}
+	content = sanitizeReport(content)
+
+	reply := &core.Reply{
+		Content: content,
+		Meta: map[string]any{
+			"report_type":     string(in.ReportType),
+			"fallback":        true,
+			"fallback_reason": "max_tool_iterations",
+		},
+	}
+	if sources := retrieval.References(docs); len(sources) > 0 {
+		reply.Meta["sources"] = sources
+	}
+	return reply, nil
+}
+
+func fallbackReportDocs(ctx context.Context, ownerID, paperID string, t constant.ReportType) []*retrieval.Doc {
+	seen := map[string]struct{}{}
+	docs := make([]*retrieval.Doc, 0, fallbackMaxTextDocs+constant.TopKImages)
+	for _, q := range fallbackReportQueries(t) {
+		got, err := retrieval.RetrieveForPaper(ctx, q, ownerID, paperID)
+		if err != nil {
+			zlog.Error("兜底报告正文检索失败", "paper_id", paperID, "query", q, "err", err)
+			continue
+		}
+		docs = appendUniqueDocs(docs, seen, retrieval.DropImageDocs(got), fallbackDocsPerQuery, fallbackMaxTextDocs)
+		if len(docs) >= fallbackMaxTextDocs {
+			break
+		}
+	}
+	if figs, err := retrieval.RetrieveImagesForPaper(ctx, fallbackFigureQuery(t), ownerID, paperID); err != nil {
+		zlog.Error("兜底报告图表检索失败", "paper_id", paperID, "type", string(t), "err", err)
+	} else {
+		docs = appendUniqueDocs(docs, seen, figs, constant.TopKImages, fallbackMaxTextDocs+constant.TopKImages)
+	}
+	return docs
+}
+
+func appendUniqueDocs(out []*retrieval.Doc, seen map[string]struct{}, docs []*retrieval.Doc, maxAdd, maxTotal int) []*retrieval.Doc {
+	added := 0
+	for _, d := range docs {
+		if d == nil {
+			continue
+		}
+		if _, ok := seen[d.ID]; ok {
+			continue
+		}
+		seen[d.ID] = struct{}{}
+		out = append(out, d)
+		added++
+		if (maxAdd > 0 && added >= maxAdd) || (maxTotal > 0 && len(out) >= maxTotal) {
+			break
+		}
+	}
+	return out
+}
+
+func fallbackReportQueries(t constant.ReportType) []string {
+	switch t {
+	case constant.ReportMethod:
+		return []string{
+			"总体技术路线 模型架构 输入输出 流程",
+			"关键模块 算法步骤 目标函数 训练策略 推理策略",
+			"模块设计动机 前后步骤衔接",
+			"实现细节 数据预处理 参数设置 模型规模",
+			"方法优势 代价 复杂度 失败条件",
+		}
+	case constant.ReportResult:
+		return []string{
+			"主实验 数据集 指标 对比基线 结果",
+			"ASR ACC ASRt 表格 提升幅度",
+			"消融实验 模块有效性",
+			"鲁棒性 泛化 分组分析",
+			"失败案例 错误分析 适用范围",
+		}
+	case constant.ReportInnovation:
+		return []string{
+			"作者贡献 创新点 摘要 引言",
+			"相关工作 差异 旧方法不足",
+			"技术新意 架构 目标函数 数据构造 训练策略",
+			"实验证据 支持创新点 证据强弱",
+			"局限性 失败案例 适用边界 风险",
+		}
+	case constant.ReportRelated:
+		return []string{
+			"related work references cited papers",
+			"参考文献 foundational work baseline",
+			"prior work comparison cited method",
+			"benchmark dataset related paper",
+		}
+	default:
+		return []string{
+			"论文题目 研究动机 目标问题 痛点",
+			"核心假设 关键挑战 问题定义",
+			"方法总体思路 主要模块 推理流程",
+			"实验设置 数据集 评测指标 主要结果",
+			"贡献 创新点 局限性 future work",
+		}
+	}
+}
+
+func fallbackFigureQuery(t constant.ReportType) string {
+	switch t {
+	case constant.ReportMethod:
+		return "architecture workflow method diagram pipeline"
+	case constant.ReportResult:
+		return "main results table ablation curve metrics"
+	case constant.ReportInnovation:
+		return "contribution comparison limitation result table"
+	case constant.ReportRelated:
+		return "related work references citation comparison table"
+	default:
+		return "overview architecture main results table figure"
+	}
+}
+
+func fallbackFigureInstruction(docs []*retrieval.Doc) string {
+	var b strings.Builder
+	for _, d := range docs {
+		ref := retrieval.ReferenceFromDocument(d)
+		if ref.ImgName == "" {
+			continue
+		}
+		if b.Len() == 0 {
+			b.WriteString("\n\n可用图表占位如下,只有正文需要时才插入:\n")
+		}
+		if ref.CitationTag != "" {
+			fmt.Fprintf(&b, "- figure://%s : %s, citation_tag: %s\n", ref.ImgName, retrieval.FormatReference(ref), ref.CitationTag)
+		} else {
+			fmt.Fprintf(&b, "- figure://%s : %s\n", ref.ImgName, retrieval.FormatReference(ref))
+		}
+	}
+	return b.String()
 }
 
 // sanitizeReport 是报告输出的最后一道防线:采样退化时模型偶发在一轮里重写出第二份报告

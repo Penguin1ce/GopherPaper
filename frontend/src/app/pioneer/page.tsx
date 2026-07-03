@@ -41,6 +41,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import * as api from "@/lib/gopherpaper/api";
 import type {
+  AuthUser,
   Message,
   PaperDeleteConfirmPayload,
   PaperFlow,
@@ -52,10 +53,11 @@ import { toolStatusText } from "@/lib/gopherpaper/tool-status";
 import { formatTime, messagePlan, metaPlanSteps, sessionTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty } from "@/components/gopherpaper/app-ui";
+import { AgentIntro } from "@/components/gopherpaper/agent-intro";
 import { Markdown } from "@/components/gopherpaper/markdown";
 import { PaperFlowCard } from "@/components/gopherpaper/paper-flow-card";
+import { ProcessTrace } from "@/components/gopherpaper/process-trace";
 import { WorkspaceFrame, WorkspacePanel } from "@/components/gopherpaper/workspace-frame";
-import { Shimmer } from "@/components/ai-elements/shimmer";
 
 const AUTH_KEY = "gopherpaper.auth";
 const LUCKIN_KEY = "gopherpaper.luckin";
@@ -64,14 +66,15 @@ const LUCKIN_HEADER = "X-Luckin-Token";
 const DELETE_CONFIRM_HEADER = "X-GopherPaper-Delete-Confirm";
 const AGENT_TYPE = "pioneer";
 
-function loadToken(): string {
-  if (typeof window === "undefined") return "";
+function loadAuth(): { token: string; user: AuthUser | null } {
+  if (typeof window === "undefined") return { token: "", user: null };
   try {
     const raw = localStorage.getItem(AUTH_KEY);
-    if (!raw) return "";
-    return (JSON.parse(raw) as { token?: string }).token || "";
+    if (!raw) return { token: "", user: null };
+    const saved = JSON.parse(raw) as { token?: string; user?: AuthUser | null };
+    return { token: saved.token || "", user: saved.user ?? null };
   } catch {
-    return "";
+    return { token: "", user: null };
   }
 }
 
@@ -185,137 +188,26 @@ function LuckinCard({
   );
 }
 
-const PLAN_PHASE_LABEL: Record<string, string> = {
-  planning: "规划",
-  replanning: "重新规划",
+const PIONEER_TRACE_LABELS: Record<string, string> = {
   action: "执行",
-  reasoning: "思考",
 };
-
-// 按阶段上色, 一眼区分: 规划=墨蓝, 执行=赭石, 思考=中性灰。
-const PLAN_PHASE_STYLE: Record<string, { dot: string; title: string }> = {
-  planning: { dot: "bg-primary", title: "text-primary" },
-  replanning: { dot: "bg-primary", title: "text-primary" },
-  action: { dot: "bg-sienna", title: "text-sienna" },
-  reasoning: { dot: "bg-muted-foreground", title: "text-foreground/70" },
-};
-const PLAN_PHASE_FALLBACK = PLAN_PHASE_STYLE.reasoning;
-
-// 时间线节点: 完成步骤折叠成单行预览, 点击展开; 正在执行的步骤自动展开并 shimmer。
-const PlanItem = memo(function PlanItem({
-  step,
-  isLast,
-  live,
-}: {
-  step: PlanStep;
-  isLast: boolean;
-  live: boolean;
-}) {
-  const ps = PLAN_PHASE_STYLE[step.phase] || PLAN_PHASE_FALLBACK;
-  const label = PLAN_PHASE_LABEL[step.phase] || step.phase;
-  const text = step.text.trim();
-  const [open, setOpen] = useState(live);
-  useEffect(() => {
-    if (live) setOpen(true);
-  }, [live]);
-
-  return (
-    <li className="relative pb-3 pl-5 last:pb-0">
-      {!isLast && (
-        <span className="absolute bottom-0 left-[3px] top-3 w-px bg-border" aria-hidden />
-      )}
-      <span
-        className={cn("absolute left-0 top-[5px] size-1.5 rounded-full ring-3 ring-background", ps.dot)}
-        aria-hidden
-      />
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="group flex w-full items-center gap-1.5 text-left"
-      >
-        <span className={cn("font-serif text-xs font-semibold", ps.title)}>
-          {live ? <Shimmer>{label}</Shimmer> : label}
-        </span>
-        <ChevronDown
-          className={cn(
-            "size-3 shrink-0 text-muted-foreground/50 transition-transform group-hover:text-muted-foreground",
-            open && "rotate-180",
-          )}
-          aria-hidden
-        />
-      </button>
-      {open ? (
-        <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{text}</p>
-      ) : (
-        <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground/60">{text}</p>
-      )}
-    </li>
-  );
-});
-
-const PlanRail = memo(function PlanRail({
-  steps,
-  live,
-  pending,
-}: {
-  steps: PlanStep[];
-  live: boolean;
-  pending: boolean;
-}) {
-  return (
-    <WorkspacePanel as="aside" className="hidden w-80 flex-col xl:flex">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b px-4">
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-medium">执行计划</span>
-          <span className="text-xs text-muted-foreground">Plan · Execute</span>
-        </div>
-        {(live || pending) && (
-          <Badge variant="secondary" className="rounded-full font-normal">
-            进行中
-          </Badge>
-        )}
-      </div>
-      <div className="relative min-h-0 flex-1">
-        <ScrollArea className="absolute! inset-0">
-          <div className="p-4">
-            {steps.length === 0 ? (
-              <div className="rounded-lg border border-dashed bg-muted/30 p-5 text-center">
-                <div className="text-sm font-medium">
-                  {pending ? "小云雀正在思考…" : "先规划，再分步执行"}
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {pending
-                    ? "若本轮需要分步执行，规划会在这里展开。"
-                    : "发起任务后，规划与动作会实时展示。"}
-                </p>
-              </div>
-            ) : (
-              <ol className="relative">
-                {steps.map((s, i) => (
-                  <PlanItem
-                    key={i}
-                    step={s}
-                    isLast={i === steps.length - 1}
-                    live={live && i === steps.length - 1}
-                  />
-                ))}
-              </ol>
-            )}
-          </div>
-        </ScrollArea>
-      </div>
-    </WorkspacePanel>
-  );
-});
 
 const Bubble = memo(function Bubble({ message }: { message: Message }) {
   const isAssistant = message.role === "assistant";
   // flow 来源:本轮流式挂在 message.flow;刷新/重开会话则从持久化的 meta.flow 还原。
   const flow = message.flow ?? (message.meta?.flow as PaperFlow | undefined);
+  const steps = isAssistant ? messagePlan(message) : [];
   return (
     <article className={cn("flex flex-col gap-1.5", isAssistant ? "items-start" : "items-end")}>
       {isAssistant ? (
         <div className="w-full">
+          {steps.length > 0 && (
+            <ProcessTrace
+              steps={steps}
+              live={!!message.streaming}
+              phaseLabels={PIONEER_TRACE_LABELS}
+            />
+          )}
           <Markdown richLinks>{message.content}</Markdown>
           {flow && <PaperFlowCard flow={flow} />}
         </div>
@@ -347,6 +239,81 @@ const PROMPT_HINTS = [
   "我在重庆大学虎溪校区，帮我点一杯冰美式",
   "画一个思路流程图",
 ];
+
+function PioneerComposer({
+  input,
+  sending,
+  toolNote,
+  variant = "bottom",
+  onInputChange,
+  onSubmit,
+}: {
+  input: string;
+  sending: boolean;
+  toolNote: string;
+  variant?: "bottom" | "center";
+  onInputChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const hasDraft = input.trim().length > 0;
+
+  return (
+    <form
+      className={cn(
+        variant === "center" ? "w-full" : "shrink-0 px-6 pb-5 pt-2",
+      )}
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className={cn("mx-auto w-full", variant === "center" ? "max-w-2xl" : "max-w-3xl")}>
+        <ToolStatus note={toolNote} />
+        <div
+          className={cn(
+            "flex gap-2 border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md",
+            variant === "center" ? "items-center" : "items-end",
+            variant === "center" ? "rounded-[1.5rem]" : "rounded-[1.625rem]",
+          )}
+        >
+          <Textarea
+            rows={1}
+            value={input}
+            placeholder={variant === "center" ? "问问小云雀" : ""}
+            disabled={sending}
+            className={cn(
+              "max-h-44 min-h-9 resize-none overflow-y-auto border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0",
+              variant === "center" && "min-h-10 py-2.5 pl-4 text-sm leading-5",
+            )}
+            onChange={(e) => onInputChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                onSubmit();
+              }
+            }}
+          />
+          {(hasDraft || sending) && (
+            <Button
+              type="submit"
+              size="icon"
+              className="size-9 shrink-0 rounded-full"
+              disabled={sending || !hasDraft}
+              title={sending ? "正在发送" : "发送"}
+              aria-label={sending ? "正在发送" : "发送"}
+            >
+              {sending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ArrowUp className="size-4 stroke-[2.6]" />
+              )}
+            </Button>
+          )}
+        </div>
+      </div>
+    </form>
+  );
+}
 
 interface SessionGroup {
   key: string;
@@ -383,6 +350,7 @@ function groupSessionsByTopic(sessions: Session[], topics: Topic[]): SessionGrou
 
 export default function PioneerPage() {
   const [token, setToken] = useState<string | null>(null);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [topicsSupported, setTopicsSupported] = useState(true);
@@ -393,7 +361,6 @@ export default function PioneerPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sending, setSending] = useState(false);
   const [toolNote, setToolNote] = useState("");
-  const [streamPlan, setStreamPlan] = useState<PlanStep[]>([]);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [luckin, setLuckin] = useState<LuckinCred | null>(null);
@@ -409,7 +376,9 @@ export default function PioneerPage() {
   }, []);
 
   useEffect(() => {
-    setToken(loadToken());
+    const saved = loadAuth();
+    setToken(saved.token);
+    setAuthUser(saved.user);
     setLuckin(loadLuckin());
   }, []);
 
@@ -470,7 +439,6 @@ export default function PioneerPage() {
   const startNewSession = () => {
     setActiveID("");
     setMessages([]);
-    setStreamPlan([]);
     setError("");
     setInput("");
   };
@@ -588,7 +556,7 @@ export default function PioneerPage() {
     const flushPlan = () => {
       planRafID = null;
       if (!mountedRef.current) return;
-      setStreamPlan(planSteps.map((s) => ({ ...s })));
+      patch((m) => ({ ...m, plan: planSteps.map((s) => ({ ...s })) }));
     };
     const cancelFlush = () => {
       if (rafID !== null) cancelAnimationFrame(rafID);
@@ -613,6 +581,8 @@ export default function PioneerPage() {
         },
         onPlan: (phase, content) => {
           if (!mountedRef.current) return;
+          phase = phase.trim();
+          if (!phase) return;
           const last = planSteps[planSteps.length - 1];
           if (last && last.phase === phase) last.text += content;
           else planSteps.push({ phase, text: content });
@@ -649,9 +619,9 @@ export default function PioneerPage() {
       });
       cancelFlush();
       if (!mountedRef.current) return;
-      setStreamPlan([]);
       const finalMeta = data.meta ?? data.message.meta;
-      const finalPlan = planSteps.length > 0 ? planSteps : metaPlanSteps(finalMeta);
+      const persistedPlan = metaPlanSteps(finalMeta);
+      const finalPlan = persistedPlan.length > 0 ? persistedPlan : planSteps;
       setMessages((list) => [
         ...list.filter((m) => m.id !== placeholderID),
         {
@@ -667,7 +637,6 @@ export default function PioneerPage() {
     } catch (e) {
       cancelFlush();
       if (!mountedRef.current) return;
-      setStreamPlan([]);
       setMessages((list) => list.filter((m) => m.id !== placeholderID));
       fail(e);
     } finally {
@@ -730,7 +699,6 @@ export default function PioneerPage() {
     );
   }
 
-  const activeSession = sessions.find((s) => s.id === activeID);
   const q = search.trim().toLowerCase();
   const visibleSessions = q
     ? sessions.filter((s) => sessionTitle(s).toLowerCase().includes(q))
@@ -743,11 +711,8 @@ export default function PioneerPage() {
       else next.add(key);
       return next;
     });
-  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-  const railSteps = sending ? streamPlan : messagePlan(lastAssistant);
-  const railLive = sending && streamPlan.length > 0;
-  const railPending = sending && streamPlan.length === 0;
-  const hasDraft = input.trim().length > 0;
+  const displayName = authUser?.name || authUser?.student_id || "同学";
+  const emptyConversation = messages.length === 0 && !sending;
 
   return (
     <WorkspaceFrame>
@@ -761,10 +726,7 @@ export default function PioneerPage() {
             >
               <ArrowLeft className="size-4" />
             </Link>
-            <div>
-              <div className="text-sm font-medium">小云雀</div>
-              <div className="text-xs text-muted-foreground">查论文 · 点咖啡</div>
-            </div>
+            <AgentIntro kind="pioneer" />
           </div>
           <Button type="button" className="w-full justify-start" onClick={startNewSession}>
             <Plus className="size-4" />
@@ -812,77 +774,77 @@ export default function PioneerPage() {
           )}
         </div>
         <div className="relative min-h-0 flex-1">
-        <ScrollArea className="absolute! inset-0 px-3">
-          <div className="py-3">
-            {sessions.length === 0 ? (
-              <Empty title="还没有会话" text="发送一条消息后会自动创建云雀会话。" compact />
-            ) : sessionGroups.length === 0 ? (
-              <Empty title="没有匹配的会话" text={`没有标题包含「${search.trim()}」的会话。`} compact />
-            ) : (
-              sessionGroups.map((g) => {
-                const isOpen = !collapsed.has(g.key);
-                return (
-                  <section key={g.key} className="mb-3 last:mb-0">
-                    <button
-                      type="button"
-                      onClick={() => toggleCollapse(g.key)}
-                      className="group/topic flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50"
-                    >
-                      <ChevronDown
-                        className={cn(
-                          "size-3 shrink-0 text-muted-foreground/60 transition-transform",
-                          !isOpen && "-rotate-90",
-                        )}
-                        aria-hidden
-                      />
-                      <span className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide text-muted-foreground">
-                        {g.name}
-                      </span>
-                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground/60">
-                        {g.sessions.length}
-                      </span>
-                    </button>
-                    {isOpen && (
-                      <div className="mt-0.5 space-y-1">
-                        {g.sessions.map((s) => (
-                          <div
-                            key={s.id}
-                            className={cn(
-                              "group relative flex items-center gap-1 rounded-md p-1",
-                              s.id === activeID
-                                ? "bg-card shadow-sm before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sienna"
-                                : "hover:bg-accent/60",
-                            )}
-                          >
-                            <button
-                              type="button"
-                              className="min-w-0 flex-1 rounded-md px-2 py-2 text-left"
-                              onClick={() => void openSession(s.id)}
+          <ScrollArea className="absolute! inset-0 px-3">
+            <div className="py-3">
+              {sessions.length === 0 ? (
+                <Empty title="还没有会话" text="发送一条消息后会自动创建云雀会话。" compact />
+              ) : sessionGroups.length === 0 ? (
+                <Empty title="没有匹配的会话" text={`没有标题包含「${search.trim()}」的会话。`} compact />
+              ) : (
+                sessionGroups.map((g) => {
+                  const isOpen = !collapsed.has(g.key);
+                  return (
+                    <section key={g.key} className="mb-3 last:mb-0">
+                      <button
+                        type="button"
+                        onClick={() => toggleCollapse(g.key)}
+                        className="group/topic flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50"
+                      >
+                        <ChevronDown
+                          className={cn(
+                            "size-3 shrink-0 text-muted-foreground/60 transition-transform",
+                            !isOpen && "-rotate-90",
+                          )}
+                          aria-hidden
+                        />
+                        <span className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide text-muted-foreground">
+                          {g.name}
+                        </span>
+                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground/60">
+                          {g.sessions.length}
+                        </span>
+                      </button>
+                      {isOpen && (
+                        <div className="mt-0.5 space-y-1">
+                          {g.sessions.map((s) => (
+                            <div
+                              key={s.id}
+                              className={cn(
+                                "group relative flex items-center gap-1 rounded-md p-1",
+                                s.id === activeID
+                                  ? "bg-card shadow-sm before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sienna"
+                                  : "hover:bg-accent/60",
+                              )}
                             >
-                              <div className="truncate text-sm font-medium">{sessionTitle(s)}</div>
-                              <div className="mt-0.5 text-xs text-muted-foreground">
-                                {formatTime(s.updated_at || s.created_at)}
-                              </div>
-                            </button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              className="opacity-0 group-hover:opacity-100"
-                              onClick={() => void removeSession(s.id)}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                );
-              })
-            )}
-          </div>
-        </ScrollArea>
+                              <button
+                                type="button"
+                                className="min-w-0 flex-1 rounded-md px-2 py-2 text-left"
+                                onClick={() => void openSession(s.id)}
+                              >
+                                <div className="truncate text-sm font-medium">{sessionTitle(s)}</div>
+                                <div className="mt-0.5 text-xs text-muted-foreground">
+                                  {formatTime(s.updated_at || s.created_at)}
+                                </div>
+                              </button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                className="opacity-0 group-hover:opacity-100"
+                                onClick={() => void removeSession(s.id)}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })
+              )}
+            </div>
+          </ScrollArea>
         </div>
         <div className="border-t p-3">
           <LuckinCard cred={luckin} onChange={setLuckin} />
@@ -890,53 +852,62 @@ export default function PioneerPage() {
       </WorkspacePanel>
 
       <WorkspacePanel className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center justify-between border-b px-5">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-medium">
-              {activeSession ? sessionTitle(activeSession) : "输入消息会自动创建云雀会话"}
-            </div>
-            <div className="text-xs text-muted-foreground">工具增强会话</div>
-          </div>
-          <Button type="button" variant="secondary" onClick={startNewSession}>
-            <Plus className="size-4" />
-            新建
-          </Button>
-        </header>
         <div className="relative min-h-0 flex-1">
-        <ScrollArea className="absolute! inset-0">
-          <div className="mx-auto flex max-h-full w-full max-w-3xl flex-col gap-6 px-6 py-5">
-            {messages.length === 0 && !sending ? (
-              <div className="mx-auto flex min-h-[24rem] w-full max-w-xl flex-col justify-center gap-4">
-                <Empty
-                  title="嗨，我是小云雀"
-                  text="学术问题、找论文、点杯瑞幸，都可以直接说。"
-                />
-                <div className="flex flex-wrap justify-center gap-2">
-                  {PROMPT_HINTS.map((h) => (
-                    <Button key={h} type="button" variant="outline" onClick={() => setInput(h)}>
-                      {h}
-                    </Button>
-                  ))}
+          <ScrollArea className="absolute! inset-0">
+            <div
+              className={cn(
+                "mx-auto flex max-h-full w-full flex-col px-6 py-5",
+                emptyConversation ? "max-w-4xl" : "max-w-3xl gap-6",
+              )}
+            >
+              {emptyConversation ? (
+                <div className="mx-auto flex min-h-[calc(100dvh-9rem)] w-full max-w-3xl flex-col justify-center gap-5 pb-16">
+                  <div className="text-center">
+                    <h1 className="text-xl font-medium leading-8 tracking-tight text-foreground sm:text-2xl">
+                      {displayName}，你好
+                    </h1>
+                  </div>
+                  <PioneerComposer
+                    input={input}
+                    sending={sending}
+                    toolNote={toolNote}
+                    variant="center"
+                    onInputChange={setInput}
+                    onSubmit={send}
+                  />
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {PROMPT_HINTS.map((h) => (
+                      <Button
+                        key={h}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 rounded-full px-3 text-xs font-normal text-muted-foreground"
+                        onClick={() => setInput(h)}
+                      >
+                        {h}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <>
-                {messages.map((m) => (
-                  <Bubble key={String(m.id)} message={m} />
-                ))}
-                {sending && !messages.some((m) => m.streaming) && (
-                  <article className="flex items-start">
-                    <div className="inline-flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground">
-                      <Loader2 className="size-4 animate-spin" />
-                      {streamPlan.length > 0 ? "小云雀正在按计划执行…" : "小云雀正在处理工具与上下文…"}
-                    </div>
-                  </article>
+              ) : (
+                <>
+                  {messages.map((m) => (
+                    <Bubble key={String(m.id)} message={m} />
+                  ))}
+                  {sending && !messages.some((m) => m.streaming) && (
+                    <article className="flex items-start">
+                      <div className="inline-flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" />
+                        小云雀正在处理工具与上下文…
+                      </div>
+                    </article>
+                  )}
+                </>
                 )}
-              </>
-            )}
-            <div ref={bottomRef} />
-          </div>
-        </ScrollArea>
+              <div ref={bottomRef} />
+            </div>
+          </ScrollArea>
         </div>
         {error && (
           <div className="shrink-0 px-6 pt-2">
@@ -945,49 +916,15 @@ export default function PioneerPage() {
             </div>
           </div>
         )}
-        <form
-          className="shrink-0 px-6 pb-5 pt-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send();
-          }}
-        >
-          <div className="mx-auto w-full max-w-3xl">
-            <ToolStatus note={toolNote} />
-            <div className="flex items-end gap-2 rounded-[1.625rem] border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md">
-              <Textarea
-                rows={1}
-                value={input}
-                placeholder=""
-                disabled={sending}
-                className="max-h-44 min-h-9 resize-none overflow-y-auto border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0"
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
-                  }
-                }}
-              />
-              {(hasDraft || sending) && (
-                <Button
-                  type="submit"
-                  size="icon"
-                  className="size-9 shrink-0 rounded-full"
-                  disabled={sending || !hasDraft}
-                  title={sending ? "正在发送" : "发送"}
-                  aria-label={sending ? "正在发送" : "发送"}
-                >
-                  {sending ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <ArrowUp className="size-4 stroke-[2.6]" />
-                  )}
-                </Button>
-              )}
-            </div>
-          </div>
-        </form>
+        {!emptyConversation && (
+          <PioneerComposer
+            input={input}
+            sending={sending}
+            toolNote={toolNote}
+            onInputChange={setInput}
+            onSubmit={send}
+          />
+        )}
       </WorkspacePanel>
       <Dialog
         open={Boolean(deleteConfirm)}
@@ -1063,7 +1000,6 @@ export default function PioneerPage() {
           </DialogContent>
         )}
       </Dialog>
-      <PlanRail steps={railSteps} live={railLive} pending={railPending} />
     </WorkspaceFrame>
   );
 }

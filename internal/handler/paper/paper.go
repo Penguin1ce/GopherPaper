@@ -3,6 +3,7 @@
 package paper
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -15,11 +16,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"GopherPaper/internal/ai"
+	"GopherPaper/internal/ai/core"
 	"GopherPaper/internal/auth"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/response"
 	paperservice "GopherPaper/internal/service/paper"
+	"GopherPaper/internal/sse"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
@@ -125,6 +128,65 @@ func Search(c *gin.Context) {
 	response.OK(c, papers)
 }
 
+// Compare 多论文对比分析。
+// POST /api/v1/papers/compare
+func Compare(c *gin.Context) {
+	var req dto.PaperCompareRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+	ids := normalizeRequestPaperIDs(req.PaperIDs)
+	if len(ids) < 2 {
+		response.Fail(c, http.StatusBadRequest, "请至少选择两篇论文")
+		return
+	}
+	if len(ids) > constant.ComparePapersMaxCount {
+		response.Fail(c, http.StatusBadRequest, "单次最多对比 "+strconv.Itoa(constant.ComparePapersMaxCount)+" 篇论文")
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	report, err := paperservice.Compare(c.Request.Context(), ownerID, ids)
+	if err != nil {
+		if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errs.ErrPaperForbidden) {
+			writePaperErr(c, err, "对比失败")
+			return
+		}
+		zlog.Error("多论文对比失败", "owner", ownerID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "对比失败")
+		return
+	}
+	response.OK(c, report)
+}
+
+// CompareReports 列出当前用户的历史多论文对比报告。
+// GET /api/v1/papers/compare/reports
+func CompareReports(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	reports, err := paperservice.ListCompareReports(c.Request.Context(), ownerID)
+	if err != nil {
+		zlog.Error("查询多论文对比报告失败", "owner", ownerID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "查询对比报告失败")
+		return
+	}
+	response.OK(c, reports)
+}
+
+// DeleteCompareReport 删除当前用户的一份历史多论文对比报告。
+// DELETE /api/v1/papers/compare/reports/:report_id
+func DeleteCompareReport(c *gin.Context) {
+	reportID, ok := parseCompareReportID(c)
+	if !ok {
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	if err := paperservice.DeleteCompareReport(c.Request.Context(), ownerID, reportID); err != nil {
+		writePaperErr(c, err, "删除对比报告失败")
+		return
+	}
+	response.OK(c, nil)
+}
+
 // Status 查论文解析状态,SSE 断线兜底用。
 // GET /api/v1/papers/:id/status
 //
@@ -150,6 +212,31 @@ func Status(c *gin.Context) {
 		"id": p.ID, "status": p.Status, "fail_reason": p.FailReason,
 		"parse_progress": p.ParseProgress, "parsed_pages": p.ParsedPages, "total_pages": p.TotalPages,
 	})
+}
+
+// Reparse 重新投递当前用户拥有的论文解析任务。
+// POST /api/v1/papers/:id/reparse
+//
+// @Summary 重新解析论文
+// @Description 清理旧报告缓存并重新投递论文解析任务。正在解析中的论文不可重复投递。
+// @Tags papers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "论文 ID"
+// @Success 200 {object} dto.Response{data=model.Paper}
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 409 {object} dto.Response
+// @Failure 500 {object} dto.Response
+// @Router /papers/{id}/reparse [post]
+func Reparse(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	p, err := paperservice.Reparse(c.Request.Context(), ownerID, c.Param("id"))
+	if err != nil {
+		writePaperErr(c, err, "重新解析失败")
+		return
+	}
+	response.OK(c, p)
 }
 
 // Detail 取论文及其结构化元信息与章节。
@@ -306,7 +393,7 @@ func File(c *gin.Context) {
 // POST /api/v1/papers/:id/report
 //
 // @Summary 生成研读报告
-// @Description 按报告类型生成或读取缓存的研读报告。报告类型包括 quickread、method、result、innovation、future。
+// @Description 按报告类型生成或读取缓存的研读报告。报告类型包括 quickread、method、result、innovation、related。
 // @Tags papers
 // @Accept json
 // @Produce json
@@ -352,6 +439,104 @@ func Report(c *gin.Context) {
 	response.OK(c, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})
 }
 
+// Flow 为某篇论文生成小云雀同款研究思路图,返回节点图 JSON,前端按钮触发。
+// POST /api/v1/papers/:id/flow
+//
+// @Summary 生成论文思路图
+// @Description 复用小云雀同款思路图链路生成研究脉络,返回可持久化的节点图 JSON。
+// @Tags papers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "论文 ID"
+// @Success 200 {object} dto.Response{data=dto.ChatResponse}
+// @Failure 403 {object} dto.Response
+// @Failure 404 {object} dto.Response
+// @Failure 409 {object} dto.Response "论文尚未解析就绪"
+// @Failure 500 {object} dto.Response
+// @Router /papers/{id}/flow [post]
+func Flow(c *gin.Context) {
+	if strings.Contains(c.GetHeader("Accept"), "text/event-stream") {
+		flowStream(c)
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	paperID := c.Param("id")
+	reply, err := paperservice.PaperFlow(c.Request.Context(), ownerID, paperID)
+	if err != nil {
+		if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errs.ErrPaperForbidden) ||
+			errors.Is(err, errs.ErrPaperNotReady) {
+			writePaperErr(c, err, "生成失败")
+			return
+		}
+		zlog.Error("生成论文思路图失败", "paper_id", paperID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "生成失败")
+		return
+	}
+	response.OK(c, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})
+}
+
+// GetFlow 只读取某篇论文已生成的思路图缓存,不触发生成。
+// GET /api/v1/papers/:id/flow
+func GetFlow(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	paperID := c.Param("id")
+	reply, err := paperservice.GetPaperFlow(c.Request.Context(), ownerID, paperID)
+	if err != nil {
+		if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errs.ErrPaperForbidden) ||
+			errors.Is(err, errs.ErrPaperFlowNotFound) {
+			writePaperErr(c, err, "查询失败")
+			return
+		}
+		zlog.Error("查询论文思路图失败", "paper_id", paperID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+	response.OK(c, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})
+}
+
+func flowStream(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	paperID := c.Param("id")
+
+	started := false
+	emit := func(name string, payload any) {
+		if !started {
+			sse.WriteHeaders(c)
+			c.Writer.WriteHeader(http.StatusOK)
+			started = true
+		}
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return
+		}
+		sse.WriteEvent(c.Writer, name, string(b))
+	}
+
+	ctx := core.WithStream(c.Request.Context(), func(ev core.StreamEvent) {
+		switch ev.Kind {
+		case constant.StreamEventPaperFlow, constant.StreamEventPaperFlowNode:
+			emit(ev.Kind, ev.Payload)
+		}
+	})
+	reply, err := paperservice.PaperFlow(ctx, ownerID, paperID)
+	if err != nil {
+		if !started {
+			if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errs.ErrPaperForbidden) ||
+				errors.Is(err, errs.ErrPaperNotReady) {
+				writePaperErr(c, err, "生成失败")
+				return
+			}
+			zlog.Error("生成论文思路图失败", "paper_id", paperID, "err", err)
+			response.Fail(c, http.StatusInternalServerError, "生成失败")
+			return
+		}
+		zlog.Error("流式生成论文思路图失败", "paper_id", paperID, "err", err)
+		emit(constant.StreamEventError, dto.StreamErrorPayload{Message: "生成失败"})
+		return
+	}
+	emit(constant.StreamEventDone, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})
+}
+
 // Reports 列出某篇论文已生成的研读报告类型,前端进入论文时回填就绪态并自动展示,不触发生成。
 // GET /api/v1/papers/:id/reports
 //
@@ -368,7 +553,7 @@ func Report(c *gin.Context) {
 // @Router /papers/{id}/reports [get]
 func Reports(c *gin.Context) {
 	ownerID := tenant.MustStudentID(c.Request.Context())
-	types, running, err := paperservice.ReportOverview(c.Request.Context(), ownerID, c.Param("id"))
+	types, running, flowReady, err := paperservice.ReportOverview(c.Request.Context(), ownerID, c.Param("id"))
 	if err != nil {
 		writePaperErr(c, err, "查询失败")
 		return
@@ -379,7 +564,28 @@ func Reports(c *gin.Context) {
 	if running == nil {
 		running = []paperservice.ReportRun{}
 	}
-	response.OK(c, gin.H{"ready": types, "running": running})
+	response.OK(c, dto.ReadyReportsResponse{
+		Ready:     types,
+		Running:   reportRunsToDTO(running),
+		FlowReady: flowReady,
+	})
+}
+
+func reportRunsToDTO(runs []paperservice.ReportRun) []dto.ReportRun {
+	out := make([]dto.ReportRun, 0, len(runs))
+	for _, run := range runs {
+		steps := make([]dto.ReportProgressStep, 0, len(run.Steps))
+		for _, step := range run.Steps {
+			steps = append(steps, dto.ReportProgressStep{Phase: step.Phase, Text: step.Text})
+		}
+		out = append(out, dto.ReportRun{
+			Type:   run.ReportType,
+			Steps:  steps,
+			Live:   run.Live,
+			Failed: run.Failed,
+		})
+	}
+	return out
 }
 
 // Translate 把精读页选中的英文原文译成中文,前端选区触发,不经分类器、不走 RAG。
@@ -653,6 +859,20 @@ func SyncMindMap(c *gin.Context) {
 	response.OK(c, mindMap)
 }
 
+func normalizeRequestPaperIDs(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
 func parseAnnotationID(c *gin.Context) (uint64, bool) {
 	id, err := strconv.ParseUint(c.Param("annotation_id"), 10, 64)
 	if err != nil || id == 0 {
@@ -666,6 +886,15 @@ func parseMindMapID(c *gin.Context) (uint64, bool) {
 	id, err := strconv.ParseUint(c.Param("mind_map_id"), 10, 64)
 	if err != nil || id == 0 {
 		response.Fail(c, http.StatusBadRequest, "脑图 ID 无效")
+		return 0, false
+	}
+	return id, true
+}
+
+func parseCompareReportID(c *gin.Context) (uint64, bool) {
+	id, err := strconv.ParseUint(c.Param("report_id"), 10, 64)
+	if err != nil || id == 0 {
+		response.Fail(c, http.StatusBadRequest, "对比报告 ID 无效")
 		return 0, false
 	}
 	return id, true
@@ -710,10 +939,20 @@ func writePaperErr(c *gin.Context, err error, fallback string) {
 		response.Fail(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, errs.ErrMindMapNotFound):
 		response.Fail(c, http.StatusNotFound, err.Error())
+	case errors.Is(err, errs.ErrPaperFlowNotFound):
+		response.Fail(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, errs.ErrMindMapInvalid):
 		response.Fail(c, http.StatusBadRequest, err.Error())
+	case errors.Is(err, errs.ErrReportNotFound):
+		response.Fail(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, errs.ErrPaperForbidden):
 		response.Fail(c, http.StatusForbidden, err.Error())
+	case errors.Is(err, errs.ErrPaperNotReady):
+		response.Fail(c, http.StatusConflict, err.Error())
+	case errors.Is(err, errs.ErrPaperBusy):
+		response.Fail(c, http.StatusConflict, err.Error())
+	case errors.Is(err, errs.ErrPaperFileMissing):
+		response.Fail(c, http.StatusNotFound, err.Error())
 	default:
 		zlog.Error("论文接口错误", "err", err)
 		response.Fail(c, http.StatusInternalServerError, fallback)

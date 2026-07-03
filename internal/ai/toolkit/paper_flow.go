@@ -10,6 +10,7 @@ package toolkit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -74,6 +75,11 @@ type paperFlow struct {
 	Edges   []flowEdge   `json:"edges"`
 	Figures []flowFigure `json:"figures,omitempty"`
 }
+
+type PaperFlowNode = flowNode
+type PaperFlowEdge = flowEdge
+type PaperFlowFigure = flowFigure
+type PaperFlow = paperFlow
 
 // paperFlowNodeDetail 是某节点补齐的 detail(及可选配图),经 StreamEventPaperFlowNode 单条推送。
 // 流式增量只带 detail;每节点收尾那条额外带 figure(若检索到相关论文插图)。
@@ -180,6 +186,61 @@ func generatePaperFlow(ctx context.Context, in paperFlowInput) (paperFlowOutput,
 		Status:    "rendered",
 		Message:   fmt.Sprintf("已为《%s》生成研究思路图并推送到前端,共 %d 个关键节点,各节点已结合原文逐个补充细节。可据图向用户讲解这篇论文从问题到结论的脉络。", displayPaperTitle(p), len(flow.Nodes)),
 	}, nil
+}
+
+// BuildPaperFlowGraph 构建与小云雀 generate_paper_flow 同款的完整思路图,
+// 供非聊天入口复用,例如报告页的持久化思路图。
+func BuildPaperFlowGraph(ctx context.Context, paperID string) (PaperFlow, error) {
+	owner := tenant.MustStudentID(ctx)
+	if owner == "" {
+		return PaperFlow{}, fmt.Errorf("generate_paper_flow: 缺少当前用户身份")
+	}
+	paperID = strings.TrimSpace(paperID)
+	if paperID == "" {
+		return PaperFlow{}, fmt.Errorf("generate_paper_flow: paper_id 不能为空")
+	}
+	p, err := getPaperForTool(ctx, paperID)
+	if err != nil {
+		return PaperFlow{}, fmt.Errorf("generate_paper_flow: 查询论文失败: %w", err)
+	}
+	if p.OwnerID != owner {
+		return PaperFlow{}, fmt.Errorf("generate_paper_flow: %w", errs.ErrPaperForbidden)
+	}
+	meta, err := paperdao.GetMeta(ctx, paperID)
+	if errors.Is(err, errs.ErrPaperNotFound) {
+		return PaperFlow{}, errs.ErrPaperNotReady
+	}
+	if err != nil {
+		return PaperFlow{}, err
+	}
+
+	flow, err := buildSkeleton(ctx, meta)
+	if err != nil {
+		return PaperFlow{}, err
+	}
+	flow.PaperID = paperID
+	if flow.Title == "" {
+		flow.Title = displayPaperTitle(p)
+	}
+	emitPaperFlow(ctx, flow)
+
+	usedFigs := map[string]bool{}
+	for i := range flow.Nodes {
+		n := &flow.Nodes[i]
+		nodeCtx, cancel := context.WithTimeout(ctx, paperFlowNodeTimeout)
+		detail := buildNodeDetail(nodeCtx, paperID, owner, meta, n)
+		cancel()
+		if detail == "" {
+			detail = metaFallback(meta, n.Type)
+		}
+		n.Detail = detail
+		fig := nodeFigure(ctx, paperID, owner, n, usedFigs)
+		if fig != nil {
+			flow.Figures = append(flow.Figures, *fig)
+		}
+		emitPaperFlowNode(ctx, paperFlowNodeDetail{PaperID: paperID, NodeID: n.ID, Detail: detail, Figure: fig})
+	}
+	return flow, nil
 }
 
 // buildSkeleton 让 chat 模型从论文结构化信息抽出图骨架(节点小标题 + 有向边,无 detail)。

@@ -113,13 +113,14 @@ type paperSearchInput struct {
 }
 
 type paperHit struct {
-	Content string  `json:"content" jsonschema:"description=命中的文献片段正文"`
-	Source  string  `json:"source" jsonschema:"description=出处:文件名、页码、片段序号与库类型(public 科研基础库 / private 用户论文)"`
-	Score   float64 `json:"score,omitempty" jsonschema:"description=相关度,越大越相关"`
+	Content     string  `json:"content" jsonschema:"description=命中的文献片段正文"`
+	Source      string  `json:"source" jsonschema:"description=完整出处:文件名、页码、片段序号与库类型(public 科研基础库 / private 用户论文),用于核对证据"`
+	CitationTag string  `json:"citation_tag,omitempty" jsonschema:"description=正文内联出处标签;引用该片段时原样复制到事实句末尾,不要自行改写"`
+	Score       float64 `json:"score,omitempty" jsonschema:"description=相关度,越大越相关"`
 }
 
 type paperSearchOutput struct {
-	Hits []paperHit `json:"hits" jsonschema:"description=命中的文献片段列表,引用时务必带上对应 source 出处;为空表示库里没有相关资料,如实告知用户不要编造"`
+	Hits []paperHit `json:"hits" jsonschema:"description=命中的文献片段列表,引用时优先复制 citation_tag 并可用 source 核对;为空表示库里没有相关资料,如实告知用户不要编造"`
 }
 
 // newPaperSearchTool 构建论文库检索工具。用户身份从 ctx 的 tenant 取;
@@ -143,15 +144,16 @@ func newPaperSearchTool() tool.Tool {
 		for _, d := range docs {
 			ref := retrieval.ReferenceFromDocument(d)
 			hits = append(hits, paperHit{
-				Content: d.Content,
-				Source:  retrieval.FormatReference(ref),
-				Score:   d.Score,
+				Content:     d.Content,
+				Source:      retrieval.FormatReference(ref),
+				CitationTag: ref.CitationTag,
+				Score:       d.Score,
 			})
 		}
 		return paperSearchOutput{Hits: hits}, nil
 	}
 	return function.NewFunctionTool(fn,
 		function.WithName("search_my_papers"),
-		function.WithDescription("在用户的科研知识库里做语义检索。问某一篇论文的内容时先用 list_my_papers 拿到 paper_id 再带上限定到该篇;泛泛找'我传过的论文里有没有讲过 X'则不填 paper_id 跨全库检索。回答附上返回的 source 出处,库里没有就如实说明不要编造。"),
+		function.WithDescription("在用户的科研知识库里做语义检索。问某一篇论文的内容时先用 list_my_papers 拿到 paper_id 再带上限定到该篇;泛泛找'我传过的论文里有没有讲过 X'则不填 paper_id 跨全库检索。回答优先原样复制返回的 citation_tag,库里没有就如实说明不要编造。"),
 	)
 }

@@ -31,13 +31,14 @@ type searchInput struct {
 }
 
 type searchHit struct {
-	Content string  `json:"content" jsonschema:"description=命中的文献片段正文"`
-	Source  string  `json:"source" jsonschema:"description=出处:文件名、页码、片段序号与库类型,引用时务必带上"`
-	Score   float64 `json:"score,omitempty" jsonschema:"description=相关度,越大越相关"`
+	Content     string  `json:"content" jsonschema:"description=命中的文献片段正文"`
+	Source      string  `json:"source" jsonschema:"description=完整出处:文件名、页码、片段序号与库类型,用于核对证据"`
+	CitationTag string  `json:"citation_tag,omitempty" jsonschema:"description=正文内联出处标签;引用该片段时原样复制到事实句末尾,不要自行改写"`
+	Score       float64 `json:"score,omitempty" jsonschema:"description=相关度,越大越相关"`
 }
 
 type searchOutput struct {
-	Hits []searchHit `json:"hits" jsonschema:"description=命中的文献片段列表;为空表示没检索到相关资料,如实告知不要编造"`
+	Hits []searchHit `json:"hits" jsonschema:"description=命中的文献片段列表;为空表示没检索到相关资料,如实告知不要编造;引用时优先复制 citation_tag"`
 }
 
 // SearchPaper 构建正文检索工具:身份从 ctx 取,论文范围用会话绑定的 paperID(空则跨可见库)。
@@ -53,17 +54,19 @@ func SearchPaper() tool.Tool {
 		retrieval.AddRefs(ctx, retrieval.References(docs))
 		hits := make([]searchHit, 0, len(docs))
 		for _, d := range docs {
+			ref := retrieval.ReferenceFromDocument(d)
 			hits = append(hits, searchHit{
-				Content: d.Content,
-				Source:  retrieval.FormatReference(retrieval.ReferenceFromDocument(d)),
-				Score:   d.Score,
+				Content:     d.Content,
+				Source:      retrieval.FormatReference(ref),
+				CitationTag: ref.CitationTag,
+				Score:       d.Score,
 			})
 		}
 		return searchOutput{Hits: hits}, nil
 	}
 	return function.NewFunctionTool(fn,
 		function.WithName("search_paper"),
-		function.WithDescription("在用户的论文知识库里做语义检索,返回带 source 出处的相关片段。可多次调用,每次用更聚焦或改写后的 query 检索不同侧面;回答务必依据返回片段并带上 source,检索不到就如实说明不要编造。"),
+		function.WithDescription("在用户的论文知识库里做语义检索,返回带 source 与 citation_tag 的相关片段。可多次调用,每次用更聚焦或改写后的 query 检索不同侧面;回答务必依据返回片段并原样复制 citation_tag,检索不到就如实说明不要编造。"),
 	)
 }
 
@@ -76,11 +79,13 @@ type figuresInput struct {
 type figureHit struct {
 	Description string  `json:"description" jsonschema:"description=图表内容说明(caption 与离线生成的图表描述)"`
 	Figure      string  `json:"figure" jsonschema:"description=插图占位,形如 figure://文件名;要在正文引用该图时用 Markdown ![说明](该值) 原样插入,文件名不可改写"`
+	Source      string  `json:"source" jsonschema:"description=完整出处:文件名、页码、片段序号与库类型,用于核对证据"`
+	CitationTag string  `json:"citation_tag,omitempty" jsonschema:"description=正文内联出处标签;引用该图表说明中的事实时原样复制到句末"`
 	Score       float64 `json:"score,omitempty" jsonschema:"description=相关度,越大越相关"`
 }
 
 type figuresOutput struct {
-	Figures []figureHit `json:"figures" jsonschema:"description=相关的论文插图/表格列表;为空表示没有相关图表,正常作答不必插图"`
+	Figures []figureHit `json:"figures" jsonschema:"description=相关的论文插图/表格列表;为空表示没有相关图表,正常作答不必插图;引用图表事实时优先复制 citation_tag"`
 }
 
 // FindFigures 构建图表检索工具(文本化):只回说明与 figure 占位,不传图片字节。
@@ -100,9 +105,12 @@ func FindFigures() tool.Tool {
 			if name == "" {
 				continue
 			}
+			ref := retrieval.ReferenceFromDocument(d)
 			figs = append(figs, figureHit{
 				Description: d.Content,
 				Figure:      "figure://" + name,
+				Source:      retrieval.FormatReference(ref),
+				CitationTag: ref.CitationTag,
 				Score:       d.Score,
 			})
 		}

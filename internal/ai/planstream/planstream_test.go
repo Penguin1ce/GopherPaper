@@ -145,6 +145,20 @@ func TestCollectEvents_PseudoToolCallRejected(t *testing.T) {
 	}
 }
 
+func TestCollectEvents_MaxToolIterationsTagged(t *testing.T) {
+	ch := make(chan *event.Event, 1)
+	ch <- &event.Event{Response: &trpcmodel.Response{
+		Object: trpcmodel.ObjectTypeError,
+		Error: &trpcmodel.ResponseError{
+			Message: "max tool iterations (20) exceeded",
+		},
+	}}
+	close(ch)
+	if _, err := CollectEvents(context.Background(), ch); !errors.Is(err, ErrMaxToolIterations) {
+		t.Fatalf("CollectEvents err = %v, want ErrMaxToolIterations", err)
+	}
+}
+
 func TestExtractFinalAnswer(t *testing.T) {
 	cases := []struct {
 		name, in, want string

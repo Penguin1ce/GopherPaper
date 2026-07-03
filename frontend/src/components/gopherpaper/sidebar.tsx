@@ -1,77 +1,132 @@
 "use client";
 
-import { Coffee, LogOut, Network, NotebookText, PanelLeftClose } from "lucide-react";
+import { LogOut, Network, NotebookText, PanelLeftClose, Search } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { useApp } from "@/lib/gopherpaper/store";
+import { cn } from "@/lib/utils";
+import { AGENT_INTROS } from "./agent-intro";
 
-export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
-  const { user, logout } = useApp();
-  const fallback = (user?.name || user?.student_id || "G").slice(0, 1).toUpperCase();
+const NAV_ITEMS = [
+  {
+    href: "/reports",
+    icon: NotebookText,
+    ...AGENT_INTROS.reports,
+  },
+  {
+    href: "/graph",
+    icon: Network,
+    ...AGENT_INTROS.graph,
+  },
+  {
+    href: "/pioneer",
+    icon: Search,
+    ...AGENT_INTROS.pioneer,
+  },
+];
+
+export function Sidebar() {
+  const pathname = usePathname();
 
   return (
     <div className="shrink-0 bg-background">
-      <div className="flex h-16 items-center border-b px-4">
-        <div className="flex w-full items-center gap-3">
-          <Link
-            href="/profile"
-            className="rounded-lg outline-none ring-ring/50 transition hover:opacity-90 focus-visible:ring-3"
-            title="个人中心"
-          >
-            <Avatar key={user?.avatar_url || fallback} className="size-9 rounded-lg">
-              {user?.avatar_url && (
-                <AvatarImage src={user.avatar_url} alt="用户头像" className="rounded-md" />
-              )}
-              <AvatarFallback className="rounded-md bg-primary font-serif font-semibold text-primary-foreground">
-                {fallback}
-              </AvatarFallback>
-            </Avatar>
-          </Link>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{user?.name || user?.student_id}</div>
-            <div className="truncate text-xs text-muted-foreground">{user?.email || "已登录"}</div>
-          </div>
-          <Button type="button" variant="ghost" size="icon" onClick={() => logout()} title="退出登录">
-            <LogOut className="size-4" />
-          </Button>
-          {onCollapse && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={onCollapse}
-              title="收起侧栏"
-              className="hidden lg:inline-flex"
-            >
-              <PanelLeftClose className="size-4" />
-            </Button>
-          )}
+      <nav className="px-2.5 py-2" aria-label="主要入口">
+        <div className="space-y-1">
+          {NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "group flex min-h-12 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-ring/50",
+                  active
+                    ? "bg-sienna/[0.08] text-foreground ring-1 ring-sienna/15"
+                    : "text-muted-foreground hover:bg-accent/55 hover:text-foreground",
+                )}
+              >
+                <span
+                  className={cn(
+                    "grid size-7 shrink-0 place-items-center rounded-md border bg-background transition-colors",
+                    active
+                      ? "border-sienna/25 text-sienna"
+                      : "border-border text-muted-foreground group-hover:text-foreground",
+                  )}
+                >
+                  <Icon className="size-3.5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-sm font-semibold leading-5">{item.label}</span>
+                    <span className="shrink-0 rounded border border-border/70 px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground">
+                      {item.agent}
+                    </span>
+                  </span>
+                  <span className="block truncate text-xs leading-4 text-muted-foreground">
+                    {item.desc}
+                  </span>
+                </span>
+              </Link>
+            );
+          })}
         </div>
-      </div>
-      <div className="space-y-2 p-4">
+      </nav>
+    </div>
+  );
+}
+
+export function SidebarUserCard({ onCollapse }: { onCollapse?: () => void }) {
+  const { user, logout } = useApp();
+  const fallback = (user?.name || user?.student_id || "G").slice(0, 1).toUpperCase();
+  const displayName = user?.name || user?.student_id || "GopherPaper 用户";
+
+  return (
+    <div className="shrink-0 border-t border-border/60 bg-background px-3 py-2">
+      <div className="flex min-h-9 items-center gap-1.5">
         <Link
-          className={buttonVariants({ variant: "outline", className: "h-10 w-full justify-start" })}
-          href="/reports"
+          href="/profile"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 outline-none ring-ring/50 transition-colors hover:bg-muted/45 focus-visible:ring-3"
+          title="个人中心"
         >
-          <NotebookText className="size-4" />
-          研读报告 · 小囊鼠
+          <Avatar key={user?.avatar_url || fallback} className="size-7 rounded-full">
+            {user?.avatar_url && (
+              <AvatarImage src={user.avatar_url} alt="用户头像" className="rounded-full" />
+            )}
+            <AvatarFallback className="rounded-full bg-primary/10 font-serif font-semibold text-primary">
+              {fallback}
+            </AvatarFallback>
+          </Avatar>
+          <span className="block min-w-0 flex-1 truncate text-sm font-medium leading-5">
+            {displayName}
+          </span>
         </Link>
-        <Link
-          className={buttonVariants({ variant: "outline", className: "h-10 w-full justify-start" })}
-          href="/graph"
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => logout()}
+          title="退出登录"
+          className="text-muted-foreground hover:text-foreground"
         >
-          <Network className="size-4" />
-          知识图谱 · 论文关系
-        </Link>
-        <Link
-          className={buttonVariants({ variant: "outline", className: "h-10 w-full justify-start" })}
-          href="/pioneer"
-        >
-          <Coffee className="size-4" />
-          工具助手 · 小云雀
-        </Link>
+          <LogOut className="size-4" />
+        </Button>
+        {onCollapse && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onCollapse}
+            title="收起侧栏"
+            className="hidden text-muted-foreground hover:text-foreground lg:inline-flex"
+          >
+            <PanelLeftClose className="size-4" />
+          </Button>
+        )}
       </div>
     </div>
   );

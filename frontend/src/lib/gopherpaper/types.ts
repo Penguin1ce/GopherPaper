@@ -64,7 +64,7 @@ export interface Session {
   id: string;
   student_id: string;
   paper_id?: string;
-  // 空为默认论文助教,"pioneer" 为小云雀会话(独立页 /pioneer)。
+  // 空为默认论文助教,"pioneer" 为小云雀会话,"maodie" 为精读页小耄耋。
   agent_type?: string;
   // 自动归类的主题 ID,空表示尚未归类。仅小云雀会话归类。
   topic_id?: string;
@@ -85,6 +85,12 @@ export interface Topic {
 }
 
 export type IntentType = "chitchat" | "summary" | "method" | "pioneer" | string;
+
+export interface ReaderContext {
+  scope?: "selection" | "page" | string;
+  page_no?: number;
+  selected_text?: string;
+}
 
 export interface Message {
   id: number | string;
@@ -166,18 +172,22 @@ export interface ReportRunStatus extends ReportRun {
 export interface ReportsStatus {
   ready: ReportType[];
   running: ReportRunStatus[];
+  flow_ready?: boolean;
 }
 
 // Reply.Meta["sources"] 透出的出处结构。
 export interface Reference {
+  id?: string;
   source_file?: string;
   source_uri?: string;
   page_no?: number;
   chunk_index?: number;
+  citation_tag?: string;
   knowledge_scope?: string;
   doc_id?: string;
   block_type?: string; // image 时为图块,配合 img_name 渲染缩略图
   img_name?: string; // 图片文件名,与 doc_id 拼取图接口
+  fallback_scope?: string;
   [k: string]: unknown;
 }
 
@@ -199,6 +209,17 @@ export interface ChatResponse {
   intent: string;
   content: string;
   meta?: Record<string, unknown>;
+}
+
+export interface PaperCompareReport {
+  id: number;
+  owner_id: string;
+  title: string;
+  paper_ids: string[];
+  content: string;
+  meta?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AnnotationRect {
@@ -330,6 +351,30 @@ export interface UpdateEmailPayload {
   code: string;
 }
 
+export type PreferenceAnswerStyle =
+  | "concise"
+  | "detailed"
+  | "academic"
+  | "beginner";
+
+export type PreferenceOutputFormat =
+  | "default"
+  | "bullets"
+  | "table"
+  | "conclusion_first";
+
+export type PreferenceLanguage = "auto" | "zh" | "bilingual";
+
+export interface UserPreference {
+  nickname: string;
+  answer_style: PreferenceAnswerStyle;
+  output_format: PreferenceOutputFormat;
+  language: PreferenceLanguage;
+  custom_instruction: string;
+}
+
+export type UpdateUserPreferencePayload = UserPreference;
+
 export interface PasswordResetCodePayload {
   student_id: string;
   email: string;
@@ -341,7 +386,7 @@ export interface ResetPasswordPayload extends PasswordResetCodePayload {
 }
 
 export type ReportType =
-  "quickread" | "method" | "result" | "innovation" | "future";
+  "quickread" | "method" | "result" | "innovation" | "related";
 
 export interface RegisterPayload {
   student_id: string;

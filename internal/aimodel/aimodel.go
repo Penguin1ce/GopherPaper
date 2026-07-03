@@ -94,11 +94,13 @@ type ModelSet struct {
 	Vlm         *trpcopenai.Model  // 带图推理视觉模型:图描述生成与带图问答
 	Translate   *trpcopenai.Model  // 精读页逐段翻译小模型
 	Pioneer     *trpcopenai.Model  // 小云雀工具循环模型,未配置时即 Chat
+	Maodie      *trpcopenai.Model  // 小耄耋局部问答模型,未配置时即 Chat;带图时调用方仍可选择 Chat
 	IntentMC    config.ModelConfig // 意图模型生成参数
 	ChatMC      config.ModelConfig // 对话模型生成参数
 	VlmMC       config.ModelConfig // 视觉模型生成参数
 	TranslateMC config.ModelConfig // 翻译模型生成参数
 	PioneerMC   config.ModelConfig // 小云雀模型生成参数
+	MaodieMC    config.ModelConfig // 小耄耋模型生成参数
 }
 
 // modelSets 按 userID 缓存,保留每用户隔离的口子。
@@ -137,6 +139,14 @@ func ModelsForUser(userID string) (*ModelSet, error) {
 		} else {
 			ent.models.Pioneer = ent.models.Chat
 			ent.models.PioneerMC = cfg.Models.Chat
+		}
+		// 小耄耋模型未配置时回退 Chat,避免缺配置影响精读页。
+		if cfg.Models.Maodie.Model != "" {
+			ent.models.Maodie = NewChatModel(cfg.Models.Maodie)
+			ent.models.MaodieMC = cfg.Models.Maodie
+		} else {
+			ent.models.Maodie = ent.models.Chat
+			ent.models.MaodieMC = cfg.Models.Chat
 		}
 	})
 	return ent.models, nil

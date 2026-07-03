@@ -75,3 +75,19 @@ type UpdateEmailRequest struct {
 	Email string `json:"email" binding:"required,email"`
 	Code  string `json:"code" binding:"required,len=6"`
 }
+
+type UserPreferenceResponse struct {
+	Nickname          string `json:"nickname"`
+	AnswerStyle       string `json:"answer_style"`
+	OutputFormat      string `json:"output_format"`
+	Language          string `json:"language"`
+	CustomInstruction string `json:"custom_instruction"`
+}
+
+type UpdateUserPreferenceRequest struct {
+	Nickname          string `json:"nickname"`
+	AnswerStyle       string `json:"answer_style" binding:"required"`
+	OutputFormat      string `json:"output_format" binding:"required"`
+	Language          string `json:"language" binding:"required"`
+	CustomInstruction string `json:"custom_instruction"`
+}

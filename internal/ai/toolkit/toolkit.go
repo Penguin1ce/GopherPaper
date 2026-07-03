@@ -33,6 +33,8 @@ var (
 	funcTools = map[string][]tool.Tool{}
 	// displayNames 工具显示名映射,SSE 推工具状态时把原始工具名换成前端友好名。
 	displayNames = maps.Clone(builtinToolDisplayNames)
+	// semanticScholarAPIKey 供小云雀工具之外的站内链路复用同一套 S2 配置。
+	semanticScholarAPIKey string
 )
 
 var builtinToolDisplayNames = map[string]string{
@@ -103,6 +105,7 @@ func Init(c config.ToolsConfig) error {
 	if c.SemanticScholarBaseURL != "" {
 		setS2Endpoints(c.SemanticScholarBaseURL)
 	}
+	semanticScholarAPIKey = c.SemanticScholarAPIKey
 	funcTools[constant.AgentPioneer] = append(funcTools[constant.AgentPioneer],
 		newSemanticScholarTool(c.SemanticScholarAPIKey),
 		newS2RecommendTool(c.SemanticScholarAPIKey),
@@ -137,7 +140,10 @@ func Init(c config.ToolsConfig) error {
 	if err := initSkills(c.PioneerSkills, constant.AgentPioneer); err != nil {
 		return err
 	}
-	return initSkills(c.GopherSkills, constant.AgentGopher)
+	if err := initSkills(c.GopherSkills, constant.AgentGopher); err != nil {
+		return err
+	}
+	return nil
 }
 
 // initSkills 给某 agent 分组建 skill 仓库,目录列表为空则跳过。
