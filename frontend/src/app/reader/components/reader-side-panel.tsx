@@ -172,6 +172,7 @@ function TranslationPanel({
 
 function AnnotationCard({
   annotation,
+  selected,
   busy,
   translating,
   translationError,
@@ -187,6 +188,7 @@ function AnnotationCard({
   onLocate,
 }: {
   annotation: PaperAnnotation;
+  selected: boolean;
   busy: string;
   translating: boolean;
   translationError?: string;
@@ -219,11 +221,17 @@ function AnnotationCard({
   };
   return (
     <article
+      data-reader-side-annotation-id={annotation.id}
       role="button"
       tabIndex={0}
+      aria-current={selected ? "true" : undefined}
       onClick={locateFromCard}
       onKeyDown={locateFromKeyboard}
-      className="rounded-md border bg-background p-3 shadow-sm outline-none transition hover:border-foreground/20 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring/30"
+      className={cn(
+        "rounded-md border bg-background p-3 shadow-sm outline-none transition hover:border-foreground/20 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring/30",
+        selected &&
+          "border-sky-300 bg-sky-50/40 shadow-[0_0_0_2px_rgba(14,165,233,0.16),0_14px_30px_rgba(15,23,42,0.16)]",
+      )}
     >
       <div className="flex items-center justify-between gap-2">
         <button
@@ -326,7 +334,6 @@ function AnnotationCard({
                 ? {
                     backgroundColor: freetextPanelStyle.backgroundColor,
                     color: freetextPanelStyle.color,
-                    fontSize: freetextPanelStyle.fontSize,
                   }
                 : undefined
             }
@@ -392,6 +399,7 @@ function AnnotationCard({
 
 function AnnotationPanel({
   annotations,
+  selectedAnnotationId,
   busy,
   translatingIDs,
   translationErrors,
@@ -407,6 +415,7 @@ function AnnotationPanel({
   onLocateAnnotation,
 }: {
   annotations: PaperAnnotation[];
+  selectedAnnotationId: number | null;
   busy: string;
   translatingIDs: Set<number>;
   translationErrors: Record<number, string>;
@@ -443,6 +452,7 @@ function AnnotationPanel({
               <AnnotationCard
                 key={annotation.id}
                 annotation={annotation}
+                selected={selectedAnnotationId === annotation.id}
                 busy={busy}
                 translating={translatingIDs.has(annotation.id)}
                 translationError={translationErrors[annotation.id]}
@@ -470,6 +480,7 @@ export function ReaderSidePanel({
   showAnnotations,
   translation,
   annotations,
+  selectedAnnotationId,
   busy,
   translatingIDs,
   translationErrors,
@@ -489,6 +500,7 @@ export function ReaderSidePanel({
   showAnnotations: boolean;
   translation: TranslationResult | null;
   annotations: PaperAnnotation[];
+  selectedAnnotationId: number | null;
   busy: string;
   translatingIDs: Set<number>;
   translationErrors: Record<number, string>;
@@ -518,6 +530,7 @@ export function ReaderSidePanel({
         {showAnnotations && (
           <AnnotationPanel
             annotations={annotations}
+            selectedAnnotationId={selectedAnnotationId}
             busy={busy}
             translatingIDs={translatingIDs}
             translationErrors={translationErrors}

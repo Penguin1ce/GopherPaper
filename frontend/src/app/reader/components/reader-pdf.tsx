@@ -3,12 +3,10 @@
 import "@/lib/pdfjs-global";
 import {
   BookMarked,
-  Edit3,
   Languages,
   Loader2,
   MessageCircleQuestionMark,
   MessageSquarePlus,
-  Trash2,
 } from "lucide-react";
 import {
   useCallback,
@@ -24,6 +22,7 @@ import {
 import {
   Rnd,
   type DraggableData,
+  type RndDragCallback,
   type RndDragEvent,
   type RndResizeCallback,
 } from "react-rnd";
@@ -35,7 +34,6 @@ import {
 } from "pdfjs-dist";
 import type { DocumentInitParameters } from "pdfjs-dist/types/src/display/api";
 import {
-  DrawingHighlight,
   PdfHighlighter,
   TextHighlight,
   scaledPositionToViewport,
@@ -54,8 +52,6 @@ import {
 import { Button } from "@/components/ui/button";
 import type { PaperAnnotation } from "@/lib/gopherpaper/types";
 import {
-  annotationDisplayText,
-  annotationKind,
   annotationToHighlight,
   colorSolid,
   colorValue,
@@ -72,20 +68,26 @@ const PDF_WORKER = "/pdfjs/pdf.worker.min.mjs";
 const LOCATE_TOP_GAP = 32;
 const SNAPSHOT_PADDING = 24;
 const SNAPSHOT_MAX_SIDE = 560;
-const FREETEXT_MIN_WIDTH = 64;
+const ANNOTATION_DRAGGING_CLASS = "reader-annotation-dragging";
+const FREETEXT_MIN_WIDTH = 24;
 const FREETEXT_TEXT_MIN_HEIGHT = 18;
 const FREETEXT_HEIGHT_EPSILON = 1;
 const FREETEXT_RESIZE_ENABLE = {
   top: false,
   right: true,
   bottom: false,
-  left: false,
+  left: true,
   topRight: false,
   bottomRight: false,
   bottomLeft: false,
   topLeft: false,
 };
 const FREETEXT_RESIZE_HANDLE_STYLES = {
+  left: {
+    left: -6,
+    width: 12,
+    cursor: "ew-resize",
+  },
   right: {
     right: -6,
     width: 12,
@@ -93,6 +95,7 @@ const FREETEXT_RESIZE_HANDLE_STYLES = {
   },
 };
 const FREETEXT_RESIZE_HANDLE_CLASSES = {
+  left: "FreetextHighlight__resize-handle-left",
   right: "FreetextHighlight__resize-handle-right",
 };
 
@@ -125,20 +128,21 @@ export function scrollHighlightToTop(
   const viewport = pageView?.viewport;
   if (!viewport) return null;
   const viewportPosition = scaledPositionToViewport(highlight.position, viewer);
+  const container = viewer.container ?? null;
+  const rect = viewportPosition.boundingRect;
+  const targetLeft = Math.max(0, rect.left + rect.width / 2 - (container?.clientWidth ?? 0) / 2);
+  const targetTop = Math.max(0, rect.top - LOCATE_TOP_GAP);
 
   viewer.scrollPageIntoView({
     pageNumber,
     destArray: [
       null,
       { name: "XYZ" },
-      ...viewport.convertToPdfPoint(
-        0,
-        Math.max(0, viewportPosition.boundingRect.top - LOCATE_TOP_GAP),
-      ),
+      ...viewport.convertToPdfPoint(targetLeft, targetTop),
       0,
     ],
   });
-  return viewer.container ?? null;
+  return container;
 }
 
 function ReaderPdfLoader({
@@ -235,36 +239,6 @@ function SelectionToolbar({
   );
 }
 
-function HighlightTip({
-  annotation,
-  onDelete,
-}: {
-  annotation: PaperAnnotation;
-  onDelete: (annotation: PaperAnnotation) => void;
-}) {
-  return (
-    <div className="max-w-xs rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-lg">
-      <div className="line-clamp-3 leading-5">{annotationDisplayText(annotation)}</div>
-      {annotation.translation && annotationKind(annotation) !== "drawing" && (
-        <div className="mt-2 line-clamp-3 rounded-md bg-muted px-2 py-1.5 text-muted-foreground">
-          {annotation.translation}
-        </div>
-      )}
-      {annotation.note && (
-        <div className="mt-2 rounded-md bg-muted px-2 py-1.5 text-muted-foreground">
-          {annotation.note}
-        </div>
-      )}
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-muted-foreground">p.{annotation.page_no}</span>
-        <Button type="button" size="xs" variant="ghost" onClick={() => onDelete(annotation)}>
-          <Trash2 className="size-3" />
-          删除
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 function shouldIgnoreAnnotationClick(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -278,7 +252,6 @@ function shouldIgnoreAnnotationClick(target: EventTarget | null) {
         ".FreetextHighlight__toolbar",
         ".FreetextHighlight__style-panel",
         ".FreetextHighlight__input",
-        ".FreetextHighlight__text",
         ".DrawingHighlight__toolbar",
         ".DrawingHighlight__style-controls",
       ].join(", "),
@@ -286,17 +259,12 @@ function shouldIgnoreAnnotationClick(target: EventTarget | null) {
   );
 }
 
-function shouldSelectFreetextInput(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false;
-  return Boolean(target.closest(".FreetextHighlight__edit-button, .FreetextHighlight__text"));
+function lockAnnotationTextSelection() {
+  document.body.classList.add(ANNOTATION_DRAGGING_CLASS);
 }
 
-function focusFreetextInputEnd(root: HTMLElement | null) {
-  const input = root?.querySelector<HTMLTextAreaElement>(".FreetextHighlight__input");
-  if (!input) return false;
-  input.focus();
-  input.setSelectionRange(input.value.length, input.value.length);
-  return true;
+function unlockAnnotationTextSelection() {
+  document.body.classList.remove(ANNOTATION_DRAGGING_CLASS);
 }
 
 function scaledFromViewportRect(rect: LTWHP, utils: PdfHighlighterUtils) {
@@ -307,6 +275,48 @@ function scaledFromViewportRect(rect: LTWHP, utils: PdfHighlighterUtils) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function freetextMinWidth(fontSize: string) {
+  const size = Number.parseFloat(fontSize);
+  const textColumn = Number.isFinite(size) && size > 0 ? size : FREETEXT_TEXT_MIN_HEIGHT;
+  return Math.max(FREETEXT_MIN_WIDTH, Math.ceil(textColumn * 1.25 + 18));
+}
+
+function annotationViewportScale(annotation: PaperAnnotation, rect: LTWHP) {
+  const storedPageWidth = annotation.bounding_rect?.width;
+  if (typeof storedPageWidth !== "number" || !Number.isFinite(storedPageWidth) || storedPageWidth <= 0) {
+    return 1;
+  }
+  const scaledRectWidth = annotation.bounding_rect.x2 - annotation.bounding_rect.x1;
+  if (!Number.isFinite(scaledRectWidth) || scaledRectWidth <= 0) return 1;
+  const currentPageWidth = rect.width * (storedPageWidth / scaledRectWidth);
+  if (!Number.isFinite(currentPageWidth) || currentPageWidth <= 0) return 1;
+  return currentPageWidth / storedPageWidth;
+}
+
+function drawingPath(points: DrawingStroke["points"]) {
+  if (points.length === 0) return "";
+  const [first, ...rest] = points;
+  return [`M ${first.x} ${first.y}`, ...rest.map((point) => `L ${point.x} ${point.y}`)].join(" ");
+}
+
+function drawingViewBox(annotation: PaperAnnotation, strokes: DrawingStroke[]) {
+  const rect = annotation.bounding_rect;
+  const rectWidth = Math.max(1, rect.x2 - rect.x1);
+  const rectHeight = Math.max(1, rect.y2 - rect.y1);
+  let maxX = rectWidth;
+  let maxY = rectHeight;
+
+  for (const stroke of strokes) {
+    const padding = Math.max(1, stroke.width || 1) * 2;
+    for (const point of stroke.points) {
+      maxX = Math.max(maxX, point.x + padding);
+      maxY = Math.max(maxY, point.y + padding);
+    }
+  }
+
+  return { width: Math.ceil(maxX), height: Math.ceil(maxY) };
 }
 
 function cropPageSnapshot(
@@ -358,28 +368,35 @@ function cropPageSnapshot(
 function ReaderFreetextHighlight({
   highlight,
   isScrolledTo,
+  selected,
   color,
   backgroundColor,
   fontSize,
   onChange,
   onTextChange,
+  onSelect,
   onEditStart,
   onEditEnd,
-  onDelete,
+  autoFocusEditor,
+  onAutoFocusHandled,
 }: {
   highlight: ViewportHighlight<ReaderHighlight>;
   isScrolledTo: boolean;
+  selected: boolean;
   color: string;
   backgroundColor: string;
   fontSize: string;
   onChange: (rect: LTWHP) => void;
   onTextChange: (text: string) => void;
+  onSelect: () => void;
   onEditStart: () => void;
   onEditEnd?: () => void;
-  onDelete: () => void;
+  autoFocusEditor: boolean;
+  onAutoFocusHandled: () => void;
 }) {
   const rect = highlight.position.boundingRect;
-  const width = Math.max(FREETEXT_MIN_WIDTH, rect.width || FREETEXT_DEFAULT_WIDTH);
+  const minWidth = freetextMinWidth(fontSize);
+  const width = Math.max(minWidth, rect.width || FREETEXT_DEFAULT_WIDTH);
   const [isEditing, setIsEditing] = useState(false);
   const [text, setText] = useState(highlight.content?.text || "");
   const [draftWidth, setDraftWidth] = useState(width);
@@ -395,6 +412,7 @@ function ReaderFreetextHighlight({
   const className = [
     "FreetextHighlight",
     isScrolledTo ? "FreetextHighlight--scrolledTo" : "",
+    selected ? "FreetextHighlight--selected" : "",
     isEditing ? "FreetextHighlight--editing" : "",
   ]
     .filter(Boolean)
@@ -421,6 +439,13 @@ function ReaderFreetextHighlight({
     textarea.focus({ preventScroll: true });
     textarea.setSelectionRange(textarea.value.length, textarea.value.length);
   }, []);
+
+  const focusEditorAtEndSoon = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      placeTextareaCursorEnd();
+      window.requestAnimationFrame(placeTextareaCursorEnd);
+    });
+  }, [placeTextareaCursorEnd]);
 
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current;
@@ -490,7 +515,18 @@ function ReaderFreetextHighlight({
     setText(committedTextRef.current);
     setIsEditing(true);
     onEditStart();
-  }, [highlight.content?.text, onEditStart, text]);
+    focusEditorAtEndSoon();
+  }, [focusEditorAtEndSoon, highlight.content?.text, onEditStart, text]);
+
+  useEffect(() => {
+    if (!autoFocusEditor) return;
+    if (!isEditingRef.current) startEditing();
+    const frame = window.requestAnimationFrame(() => {
+      placeTextareaCursorEnd();
+      onAutoFocusHandled();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [autoFocusEditor, onAutoFocusHandled, placeTextareaCursorEnd, startEditing]);
 
   const finishEditing = useCallback(() => {
     if (!isEditingRef.current) return;
@@ -522,14 +558,27 @@ function ReaderFreetextHighlight({
 
   const handleDragStop = useCallback(
     (_event: RndDragEvent, data: DraggableData) => {
+      unlockAnnotationTextSelection();
       onChange(rectWith({ left: data.x, top: data.y }));
     },
     [onChange, rectWith],
   );
 
+  const handleDragStart = useCallback(
+    (event: RndDragEvent) => {
+      event.preventDefault();
+      lockAnnotationTextSelection();
+      onSelect();
+      onEditStart();
+    },
+    [onEditStart, onSelect],
+  );
+
+  useEffect(() => unlockAnnotationTextSelection, []);
+
   const handleResizeStop: RndResizeCallback = useCallback(
     (_event, _direction, ref, _delta, position) => {
-      const nextWidth = Math.max(FREETEXT_MIN_WIDTH, ref.offsetWidth);
+      const nextWidth = Math.max(minWidth, ref.offsetWidth);
       setDraftWidth(nextWidth);
       const nextHeight = measuredHeight();
       setVisualHeight(nextHeight);
@@ -542,7 +591,7 @@ function ReaderFreetextHighlight({
         }),
       );
     },
-    [measuredHeight, onChange, rectWith],
+    [measuredHeight, minWidth, onChange, rectWith],
   );
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -598,8 +647,8 @@ function ReaderFreetextHighlight({
           backgroundColor,
           color,
           fontSize,
-          border: "1px solid rgba(15, 23, 42, 0.14)",
-          borderRadius: 6,
+          border: 0,
+          borderRadius: 0,
           boxShadow: "none",
           overflow: "visible",
         }}
@@ -610,12 +659,13 @@ function ReaderFreetextHighlight({
           height,
         }}
         size={{ width: draftWidth, height }}
-        minWidth={FREETEXT_MIN_WIDTH}
+        minWidth={minWidth}
         minHeight={FREETEXT_DEFAULT_HEIGHT}
-        enableResizing={FREETEXT_RESIZE_ENABLE}
+        disableDragging={!selected || isEditing}
+        enableResizing={isEditing ? FREETEXT_RESIZE_ENABLE : false}
         resizeHandleClasses={FREETEXT_RESIZE_HANDLE_CLASSES}
         resizeHandleStyles={FREETEXT_RESIZE_HANDLE_STYLES}
-        onDragStart={() => onEditStart()}
+        onDragStart={handleDragStart}
         onDragStop={handleDragStop}
         onResizeStart={() => onEditStart()}
         onResize={(_event, _direction, ref) => {
@@ -623,34 +673,9 @@ function ReaderFreetextHighlight({
           window.requestAnimationFrame(syncVisualHeight);
         }}
         onResizeStop={handleResizeStop}
-        cancel=".FreetextHighlight__text, .FreetextHighlight__input, .FreetextHighlight__edit-button, .FreetextHighlight__delete-button"
+        cancel={selected && !isEditing ? ".FreetextHighlight__input" : ".FreetextHighlight__text, .FreetextHighlight__input"}
       >
         <div className="FreetextHighlight__container" data-reader-freetext-container="true">
-          <div className="FreetextHighlight__toolbar">
-            <button
-              type="button"
-              title="Edit text"
-              className="FreetextHighlight__edit-button"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation();
-                startEditing();
-              }}
-            >
-              <Edit3 className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              title="Delete"
-              className="FreetextHighlight__delete-button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete();
-              }}
-            >
-              <Trash2 className="size-3.5" />
-            </button>
-          </div>
           <div ref={contentRef} className="FreetextHighlight__content">
             {isEditing ? (
               <textarea
@@ -692,11 +717,18 @@ function ReaderFreetextHighlight({
                 className="FreetextHighlight__text"
                 onMouseDown={(event) => {
                   event.preventDefault();
-                  event.stopPropagation();
-                  startEditing();
+                  onSelect();
+                  if (!selected) {
+                    event.stopPropagation();
+                  }
                 }}
                 onClick={(event) => {
                   event.stopPropagation();
+                  onSelect();
+                }}
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  onSelect();
                   startEditing();
                 }}
               >
@@ -710,14 +742,141 @@ function ReaderFreetextHighlight({
   );
 }
 
+function ReaderDrawingHighlight({
+  highlight,
+  isScrolledTo,
+  onChange,
+  onEditStart,
+  onEditEnd,
+}: {
+  highlight: ViewportHighlight<ReaderHighlight>;
+  isScrolledTo: boolean;
+  onChange: (rect: LTWHP) => void;
+  onEditStart: () => void;
+  onEditEnd: () => void;
+}) {
+  const rect = highlight.position.boundingRect;
+  const strokes = highlight.content?.strokes ?? [];
+  const imageUrl = highlight.content?.image;
+  const viewBox = drawingViewBox(highlight.annotation, strokes);
+  const className = ["DrawingHighlight", isScrolledTo ? "DrawingHighlight--scrolledTo" : ""]
+    .filter(Boolean)
+    .join(" ");
+
+  // 使用受控模式：缩放时直接更新 position/size，避免 key 变化导致的卸载/重挂载闪烁
+  const [interacting, setInteracting] = useState(false);
+  const [dragPos, setDragPos] = useState({ x: rect.left, y: rect.top });
+  const [dragSize, setDragSize] = useState({ width: rect.width || 150, height: rect.height || 100 });
+
+  // 非交互时跟随 viewport rect 更新（缩放/翻页等场景）
+  const pos = interacting ? dragPos : { x: rect.left, y: rect.top };
+  const size = interacting ? dragSize : { width: rect.width || 150, height: rect.height || 100 };
+
+  const handleDragStart = useCallback(() => {
+    setInteracting(true);
+    onEditStart();
+  }, [onEditStart]);
+
+  const handleDrag: RndDragCallback = useCallback((_event, data) => {
+    setDragPos({ x: data.x, y: data.y });
+  }, []);
+
+  const handleDragStop = useCallback(
+    (_event: RndDragEvent, data: DraggableData) => {
+      setInteracting(false);
+      onChange({ ...rect, left: data.x, top: data.y });
+      onEditEnd();
+    },
+    [onChange, onEditEnd, rect],
+  );
+
+  const handleResizeStart = useCallback(() => {
+    setInteracting(true);
+    onEditStart();
+  }, [onEditStart]);
+
+  const handleResizeStop: RndResizeCallback = useCallback(
+    (_event, _direction, ref, _delta, position) => {
+      setInteracting(false);
+      onChange({
+        pageNumber: rect.pageNumber,
+        left: position.x,
+        top: position.y,
+        width: ref.offsetWidth,
+        height: ref.offsetHeight,
+      });
+      onEditEnd();
+    },
+    [onChange, onEditEnd, rect.pageNumber],
+  );
+
+  return (
+    <div className={className} data-reader-drawing-id={highlight.annotation.id}>
+      <Rnd
+        className="DrawingHighlight__rnd"
+        position={pos}
+        size={size}
+        minWidth={30}
+        minHeight={30}
+        onDragStart={handleDragStart}
+        onDrag={handleDrag}
+        onDragStop={handleDragStop}
+        onResizeStart={handleResizeStart}
+        onResize={(_e, _dir, ref, _delta, pos) => {
+          setDragPos({ x: pos.x, y: pos.y });
+          setDragSize({ width: ref.offsetWidth, height: ref.offsetHeight });
+        }}
+        onResizeStop={handleResizeStop}
+      >
+        <div className="DrawingHighlight__container">
+          <div className="DrawingHighlight__content">
+            {strokes.length > 0 ? (
+              <svg
+                className="DrawingHighlight__svg"
+                viewBox={`0 0 ${viewBox.width} ${viewBox.height}`}
+                preserveAspectRatio="xMidYMid meet"
+                aria-hidden="true"
+              >
+                {strokes.map((stroke, index) =>
+                  stroke.points.length === 1 ? (
+                    <circle
+                      key={index}
+                      cx={stroke.points[0].x}
+                      cy={stroke.points[0].y}
+                      r={Math.max(1, stroke.width / 2)}
+                      fill={stroke.color}
+                    />
+                  ) : (
+                    <path
+                      key={index}
+                      d={drawingPath(stroke.points)}
+                      fill="none"
+                      stroke={stroke.color}
+                      strokeWidth={stroke.width}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ),
+                )}
+              </svg>
+            ) : imageUrl ? (
+              <img src={imageUrl} alt="Drawing" className="DrawingHighlight__image" draggable={false} />
+            ) : null}
+          </div>
+        </div>
+      </Rnd>
+    </div>
+  );
+}
+
 function HighlightContainer({
   onDelete,
   onUpdatePosition,
   onUpdateText,
-  onUpdateDrawing,
   locatedAnnotationId,
+  selectedAnnotationId,
   pendingFreetextFocusId,
-  suppressTipAnnotationId,
+  onSelectAnnotation,
   onFreetextFocusHandled,
 }: {
   onDelete: (annotation: PaperAnnotation) => void;
@@ -727,69 +886,33 @@ function HighlightContainer({
     snapshot?: string,
   ) => void;
   onUpdateText: (annotation: PaperAnnotation, text: string) => void;
-  onUpdateDrawing: (annotation: PaperAnnotation, image: string, strokes: DrawingStroke[]) => void;
   locatedAnnotationId: number | null;
+  selectedAnnotationId: number | null;
   pendingFreetextFocusId: number | null;
-  suppressTipAnnotationId: number | null;
+  onSelectAnnotation: (annotation: PaperAnnotation) => void;
   onFreetextFocusHandled: (annotationID: number) => void;
 }) {
   const { highlight, isScrolledTo } = useHighlightContainerContext<ReaderHighlight>();
   const utils = usePdfHighlighterContext();
   const rootRef = useRef<HTMLDivElement>(null);
   const annotation = highlight.annotation;
-  const scrolled = isScrolledTo || locatedAnnotationId === annotation.id;
+  const selected = selectedAnnotationId === annotation.id;
+  const located = isScrolledTo || locatedAnnotationId === annotation.id;
+  const active = located || selected;
 
-  const openAnnotationTip = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (highlight.type === "drawing") return;
-    if (highlight.type === "freetext") return;
-    if (annotation.id === suppressTipAnnotationId) return;
+  const selectAnnotationFromPdf = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (shouldIgnoreAnnotationClick(event.target)) return;
-    utils.setTip({
-      position: highlight.position,
-      content: (
-        <HighlightTip
-          annotation={annotation}
-          onDelete={(item) => {
-            utils.setTip(null);
-            onDelete(item);
-          }}
-        />
-      ),
-    });
+    utils.setTip(null);
+    onSelectAnnotation(annotation);
   };
 
-  const selectFreetextInputAfterEdit = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (highlight.type !== "freetext" || !shouldSelectFreetextInput(event.target)) return;
-    window.setTimeout(() => {
-      if (focusFreetextInputEnd(rootRef.current)) return;
-      window.requestAnimationFrame(() => {
-        focusFreetextInputEnd(rootRef.current);
-      });
-    }, 0);
+  const prepareMovableAnnotationDrag = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (highlight.type !== "freetext" && highlight.type !== "drawing") return;
+    if (shouldIgnoreAnnotationClick(event.target)) return;
+    event.preventDefault();
+    lockAnnotationTextSelection();
+    window.addEventListener("mouseup", unlockAnnotationTextSelection, { once: true });
   };
-
-  useEffect(() => {
-    if (highlight.type !== "freetext" || pendingFreetextFocusId !== annotation.id) return;
-    let cancelled = false;
-    const frame = window.requestAnimationFrame(() => {
-      if (cancelled) return;
-      const root = rootRef.current;
-      if (focusFreetextInputEnd(root)) {
-        onFreetextFocusHandled(annotation.id);
-        return;
-      }
-      root?.querySelector<HTMLElement>(".FreetextHighlight__text")?.click();
-      window.setTimeout(() => {
-        if (cancelled) return;
-        focusFreetextInputEnd(root);
-        onFreetextFocusHandled(annotation.id);
-      }, 0);
-    });
-    return () => {
-      cancelled = true;
-      window.cancelAnimationFrame(frame);
-    };
-  }, [annotation.id, highlight.type, onFreetextFocusHandled, pendingFreetextFocusId]);
 
   const handleChange = (rect: LTWHP) => {
     const position = scaledFromViewportRect(rect, utils);
@@ -804,34 +927,38 @@ function HighlightContainer({
   let content: ReactNode;
   if (highlight.type === "freetext") {
     const style = freetextStyle(annotation);
+    const scale = annotationViewportScale(annotation, highlight.position.boundingRect);
     content = (
       <ReaderFreetextHighlight
         highlight={highlight}
-        isScrolledTo={scrolled}
+        isScrolledTo={active}
+        selected={selected}
         color={style.color}
         backgroundColor={style.backgroundColor}
-        fontSize={`${style.fontSize}px`}
+        fontSize={`${style.fontSize * scale}px`}
         onChange={handleChange}
         onTextChange={(text) => onUpdateText(annotation, text)}
+        onSelect={() => onSelectAnnotation(annotation)}
         onEditStart={() => utils.setTip(null)}
-        onDelete={() => onDelete(annotation)}
+        autoFocusEditor={pendingFreetextFocusId === annotation.id}
+        onAutoFocusHandled={() => onFreetextFocusHandled(annotation.id)}
       />
     );
   } else if (highlight.type === "drawing") {
     content = (
-      <DrawingHighlight
+      <ReaderDrawingHighlight
         highlight={highlight}
-        isScrolledTo={scrolled}
+        isScrolledTo={active}
+        onEditStart={lockAnnotationTextSelection}
+        onEditEnd={unlockAnnotationTextSelection}
         onChange={handleChange}
-        onStyleChange={(image, strokes) => onUpdateDrawing(annotation, image, strokes)}
-        onDelete={() => onDelete(annotation)}
       />
     );
   } else {
     content = (
       <TextHighlight
         highlight={highlight}
-        isScrolledTo={scrolled}
+        isScrolledTo={located}
         highlightColor={colorValue(annotation.color)}
         copyText={annotation.text}
         onDelete={() => onDelete(annotation)}
@@ -844,8 +971,9 @@ function HighlightContainer({
       ref={rootRef}
       className="contents"
       data-reader-annotation-id={annotation.id}
-      onClickCapture={selectFreetextInputAfterEdit}
-      onClick={openAnnotationTip}
+      data-reader-annotation-selected={selected ? "true" : undefined}
+      onMouseDownCapture={prepareMovableAnnotationDrag}
+      onClickCapture={selectAnnotationFromPdf}
     >
       {content}
     </div>
@@ -887,11 +1015,11 @@ export function ReaderPdf({
   onDrawingCancel,
   onUpdateAnnotationPosition,
   onUpdateAnnotationText,
-  onUpdateAnnotationDrawing,
   onDeleteAnnotation,
   locatedAnnotationId,
+  selectedAnnotationId,
   pendingFreetextFocusId,
-  suppressTipAnnotationId,
+  onSelectAnnotation,
   onFreetextFocusHandled,
   onDocumentReady,
   onUtilsReady,
@@ -923,11 +1051,11 @@ export function ReaderPdf({
     snapshot?: string,
   ) => void;
   onUpdateAnnotationText: (annotation: PaperAnnotation, text: string) => void;
-  onUpdateAnnotationDrawing: (annotation: PaperAnnotation, image: string, strokes: DrawingStroke[]) => void;
   onDeleteAnnotation: (annotation: PaperAnnotation) => void;
   locatedAnnotationId: number | null;
+  selectedAnnotationId: number | null;
   pendingFreetextFocusId: number | null;
-  suppressTipAnnotationId: number | null;
+  onSelectAnnotation: (annotation: PaperAnnotation) => void;
   onFreetextFocusHandled: (annotationID: number) => void;
   onDocumentReady: (pdfDocument: PDFDocumentProxy) => void;
   onUtilsReady: (utils: PdfHighlighterUtils | null) => void;
@@ -1001,6 +1129,53 @@ export function ReaderPdf({
     window.setTimeout(() => utils.goToPage(initialPage), 250);
   }, [initialPage, pagesReady, utilsVersion]);
 
+  useEffect(() => {
+    if (!pagesReady) return;
+    const utils = utilsRef.current;
+    const viewer = utils?.getViewer();
+    if (!viewer) return;
+    viewer.currentScaleValue = scaleValue.toString();
+  }, [pagesReady, scaleValue, utilsVersion]);
+
+  useEffect(() => {
+    if (activeTool !== "drawing") return;
+    const viewer = utilsRef.current?.getViewer();
+    const scrollElement = viewer?.container;
+    if (!scrollElement) return;
+
+    let canvas: HTMLCanvasElement | null = null;
+    const handleWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) return;
+      if (event.deltaX === 0 && event.deltaY === 0) return;
+
+      const deltaScale =
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? 16
+          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? scrollElement.clientHeight
+            : 1;
+
+      event.preventDefault();
+      event.stopPropagation();
+      scrollElement.scrollBy({
+        left: event.deltaX * deltaScale,
+        top: event.deltaY * deltaScale,
+      });
+    };
+
+    const frame = window.requestAnimationFrame(() => {
+      canvas =
+        scrollElement.querySelector<HTMLCanvasElement>(".DrawingCanvas") ??
+        document.querySelector<HTMLCanvasElement>(".DrawingCanvas");
+      canvas?.addEventListener("wheel", handleWheel, { passive: false });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      canvas?.removeEventListener("wheel", handleWheel);
+    };
+  }, [activeTool, utilsVersion]);
+
   const handleDrawingComplete = useCallback(
     (dataUrl: string, position: ScaledPosition, strokes: DrawingStroke[]) => {
       onCreateDrawing(dataUrl, position, strokes, cropPageSnapshot(utilsRef.current, position));
@@ -1066,10 +1241,10 @@ export function ReaderPdf({
               onDelete={onDeleteAnnotation}
               onUpdatePosition={onUpdateAnnotationPosition}
               onUpdateText={onUpdateAnnotationText}
-              onUpdateDrawing={onUpdateAnnotationDrawing}
               locatedAnnotationId={locatedAnnotationId}
+              selectedAnnotationId={selectedAnnotationId}
               pendingFreetextFocusId={pendingFreetextFocusId}
-              suppressTipAnnotationId={suppressTipAnnotationId}
+              onSelectAnnotation={onSelectAnnotation}
               onFreetextFocusHandled={onFreetextFocusHandled}
             />
           </PdfHighlighter>

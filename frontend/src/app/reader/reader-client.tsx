@@ -94,8 +94,12 @@ const RIGHT_PANEL_WIDTH = "24rem";
 const MIND_MAP_PANEL_DEFAULT_WIDTH = 560;
 const MIND_MAP_PANEL_MIN_WIDTH = 380;
 const MIND_MAP_PANEL_MAX_WIDTH = 860;
+const OUTLINE_PANEL_WIDTH_CLASS = "lg:grid-cols-[20rem_minmax(0,1fr)]";
 const PDF_MIN_SCALE = 0.6;
 const PDF_MAX_SCALE = 2.4;
+const WHEEL_ZOOM_SENSITIVITY = 0.00145;
+const WHEEL_ZOOM_MIN_FACTOR = 0.82;
+const WHEEL_ZOOM_MAX_FACTOR = 1.18;
 const LOCATE_TOP_GAP = 32;
 const LOCATED_ANNOTATION_SCROLL_RESUME_MS = 600;
 const QA_SELECTION_PREVIEW_RUNES = 48;
@@ -287,6 +291,10 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
 
+function roundPdfScale(scale: number) {
+  return Number(scale.toFixed(3));
+}
+
 function scaledToRect(rect: Scaled): AnnotationRect {
   return {
     x1: rect.x1,
@@ -350,6 +358,13 @@ function shouldPreferFreetext(candidate: PaperAnnotation, existing: PaperAnnotat
   return candidateTime > existingTime || (candidateTime === existingTime && candidate.id > existing.id);
 }
 
+function compareReaderAnnotations(a: PaperAnnotation, b: PaperAnnotation) {
+  if (a.page_no !== b.page_no) return a.page_no - b.page_no;
+  if (a.bounding_rect.y1 !== b.bounding_rect.y1) return a.bounding_rect.y1 - b.bounding_rect.y1;
+  if (a.bounding_rect.x1 !== b.bounding_rect.x1) return a.bounding_rect.x1 - b.bounding_rect.x1;
+  return a.id - b.id;
+}
+
 function visibleReaderAnnotations(items: PaperAnnotation[]) {
   const result: PaperAnnotation[] = [];
   const indexById = new Map<number, number>();
@@ -384,7 +399,36 @@ function visibleReaderAnnotations(items: PaperAnnotation[]) {
     }
   }
 
-  return result;
+  return result.sort(compareReaderAnnotations);
+}
+
+function scrollSideAnnotationIntoView(annotationID: number) {
+  const selector = `[data-reader-side-annotation-id="${annotationID}"]`;
+  const scroll = () => {
+    document.querySelector<HTMLElement>(selector)?.scrollIntoView({
+      block: "nearest",
+      behavior: "smooth",
+    });
+  };
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(scroll);
+  });
+}
+
+function shouldKeepAnnotationSelection(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(
+    target.closest(
+      [
+        "[data-reader-annotation-id]",
+        "[data-reader-side-annotation-id]",
+        "input",
+        "textarea",
+        "select",
+        "[contenteditable='true']",
+      ].join(", "),
+    ),
+  );
 }
 
 function annotationWithPosition(
@@ -1091,8 +1135,8 @@ function OutlineDrawer({
   }, [allExpanded, tree]);
 
   return (
-    <aside className="absolute inset-y-0 left-0 z-40 w-80 max-w-[calc(100%-2rem)] border-r bg-background shadow-xl">
-      <div className="flex h-full flex-col">
+    <aside className="h-72 min-h-0 w-full overflow-hidden border-r bg-background shadow-sm lg:h-full">
+      <div className="flex h-full min-h-0 flex-col">
         <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-semibold">
@@ -1607,19 +1651,29 @@ export function ReaderClient() {
   const [pdfUtils, setPdfUtils] = useState<PdfHighlighterUtils | null>(null);
   const [outlineActiveSectionId, setOutlineActiveSectionId] = useState<number | null>(null);
   const [locatedAnnotationId, setLocatedAnnotationId] = useState<number | null>(null);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<number | null>(null);
   const [pendingFreetextFocusId, setPendingFreetextFocusId] = useState<number | null>(null);
-  const [suppressFreetextTipId, setSuppressFreetextTipId] = useState<number | null>(null);
   const translateSeq = useRef(0);
   const progressLoadedRef = useRef(false);
   const outlineFallbackTriedRef = useRef(false);
   const outlineJumpRef = useRef<{ sectionId: number; pageNo: number; ignoreUntil: number } | null>(null);
   const locatedScrollTimerRef = useRef<number | null>(null);
   const locatedScrollCleanupRef = useRef<(() => void) | null>(null);
+  const annotationFocusScrollIgnoreUntilRef = useRef(0);
   const positionPatchSeqRef = useRef(new Map<number, number>());
   const freetextCreateInFlightRef = useRef(false);
   const recentFreetextCreateRef = useRef<RecentFreetextCreate | null>(null);
   const mindMapGridRef = useRef<HTMLDivElement | null>(null);
   const pdfWheelRef = useRef<HTMLDivElement | null>(null);
+  const scaleValueRef = useRef<PdfScaleValue>(scaleValue);
+  const pdfUtilsRef = useRef<PdfHighlighterUtils | null>(pdfUtils);
+  const wheelZoomRef = useRef({
+    frame: 0,
+    restoreSeq: 0,
+    deltaY: 0,
+    clientX: 0,
+    clientY: 0,
+  });
 
   const visibleAnnotations = useMemo(() => visibleReaderAnnotations(annotations), [annotations]);
   const highlights = useMemo(
@@ -1631,8 +1685,13 @@ export function ReaderClient() {
   const qaPanelOpen = !prefs.mindMapOpen && prefs.qaOpen;
   const rightPanelOpen = !prefs.mindMapOpen && !prefs.qaOpen && (prefs.translateOpen || prefs.annotationsOpen);
   const sidePanelOpen = qaPanelOpen || rightPanelOpen;
-  const gridClass =
-    prefs.mindMapOpen
+  const gridClass = prefs.outlineOpen
+    ? prefs.mindMapOpen
+      ? "lg:grid-cols-[20rem_minmax(0,1fr)_var(--mind-map-panel-width)]"
+      : sidePanelOpen
+        ? "lg:grid-cols-[20rem_minmax(0,1fr)_24rem]"
+        : OUTLINE_PANEL_WIDTH_CLASS
+    : prefs.mindMapOpen
       ? "lg:grid-cols-[minmax(0,1fr)_var(--mind-map-panel-width)]"
       : sidePanelOpen
         ? "lg:grid-cols-[minmax(0,1fr)_24rem]"
@@ -1656,6 +1715,14 @@ export function ReaderClient() {
     updatePrefs({ activeTool: "select" });
   }, [updatePrefs]);
 
+  useEffect(() => {
+    scaleValueRef.current = scaleValue;
+  }, [scaleValue]);
+
+  useEffect(() => {
+    pdfUtilsRef.current = pdfUtils;
+  }, [pdfUtils]);
+
   const clearActiveDrawing = useCallback(() => {
     document.querySelector<HTMLButtonElement>(".DrawingCanvas__clearButton")?.click();
   }, []);
@@ -1663,14 +1730,6 @@ export function ReaderClient() {
   const handleFreetextFocusHandled = useCallback((annotationID: number) => {
     setPendingFreetextFocusId((cur) => (cur === annotationID ? null : cur));
   }, []);
-
-  useEffect(() => {
-    if (suppressFreetextTipId == null) return;
-    const timer = window.setTimeout(() => {
-      setSuppressFreetextTipId((cur) => (cur === suppressFreetextTipId ? null : cur));
-    }, 1200);
-    return () => window.clearTimeout(timer);
-  }, [suppressFreetextTipId]);
 
   const toggleTranslatePanel = useCallback(() => {
     setPrefs((cur) => {
@@ -1838,52 +1897,127 @@ export function ReaderClient() {
   const zoomPdfAtWheel = useCallback(
     (event: WheelEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
-      event.preventDefault();
-      event.stopPropagation();
 
-      const viewer = pdfViewerWithScale(pdfUtils);
+      const viewer = pdfViewerWithScale(pdfUtilsRef.current);
       const scrollElement = viewer?.container || pdfWheelRef.current;
       if (!scrollElement || event.deltaY === 0) return;
 
-      const viewerScale = viewer?.currentScale;
-      const baseScale =
-        typeof viewerScale === "number" && Number.isFinite(viewerScale) && viewerScale > 0
-          ? viewerScale
-          : typeof scaleValue === "number"
-            ? scaleValue
+      event.preventDefault();
+      event.stopPropagation();
+
+      const deltaScale =
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? 16
+          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? scrollElement.clientHeight
             : 1;
-      const direction = event.deltaY > 0 ? -1 : 1;
-      const magnitude = clamp(Math.abs(event.deltaY) / 720, 0.04, 0.14);
-      const nextScale = Number(clamp(baseScale * (1 + direction * magnitude), PDF_MIN_SCALE, PDF_MAX_SCALE).toFixed(2));
-      if (nextScale === Number(baseScale.toFixed(2))) return;
+      const zoom = wheelZoomRef.current;
+      zoom.deltaY += event.deltaY * deltaScale;
+      zoom.clientX = event.clientX;
+      zoom.clientY = event.clientY;
 
-      const rect = scrollElement.getBoundingClientRect();
-      const clientX = event.clientX;
-      const clientY = event.clientY;
-      const anchorX = scrollElement.scrollLeft + clientX - rect.left;
-      const anchorY = scrollElement.scrollTop + clientY - rect.top;
-      setScaleValue(nextScale);
+      if (zoom.frame) return;
+      zoom.frame = window.requestAnimationFrame(() => {
+        zoom.frame = 0;
+        const deltaY = zoom.deltaY;
+        zoom.deltaY = 0;
+        if (deltaY === 0) return;
 
-      window.requestAnimationFrame(() => {
+        const currentViewer = pdfViewerWithScale(pdfUtilsRef.current);
+        const currentScrollElement = currentViewer?.container || pdfWheelRef.current;
+        if (!currentScrollElement) return;
+
+        const viewerScale = currentViewer?.currentScale;
+        const refScale = scaleValueRef.current;
+        const baseScale =
+          typeof refScale === "number"
+            ? refScale
+            : typeof viewerScale === "number" && Number.isFinite(viewerScale) && viewerScale > 0
+              ? viewerScale
+              : 1;
+        const factor = clamp(
+          Math.exp(-deltaY * WHEEL_ZOOM_SENSITIVITY),
+          WHEEL_ZOOM_MIN_FACTOR,
+          WHEEL_ZOOM_MAX_FACTOR,
+        );
+        const nextScale = roundPdfScale(clamp(baseScale * factor, PDF_MIN_SCALE, PDF_MAX_SCALE));
+        if (nextScale === roundPdfScale(baseScale)) return;
+
+        const rect = currentScrollElement.getBoundingClientRect();
+        const clientX = zoom.clientX;
+        const clientY = zoom.clientY;
+        const anchorX = currentScrollElement.scrollLeft + clientX - rect.left;
+        const anchorY = currentScrollElement.scrollTop + clientY - rect.top;
+        const restoreSeq = zoom.restoreSeq + 1;
+        zoom.restoreSeq = restoreSeq;
+        scaleValueRef.current = nextScale;
+        setScaleValue(nextScale);
+
         window.requestAnimationFrame(() => {
-          const nextViewer = pdfViewerWithScale(pdfUtils);
-          const nextScrollElement = nextViewer?.container || scrollElement;
-          const nextRect = nextScrollElement.getBoundingClientRect();
-          const ratio = nextScale / baseScale;
-          nextScrollElement.scrollLeft = anchorX * ratio - (clientX - nextRect.left);
-          nextScrollElement.scrollTop = anchorY * ratio - (clientY - nextRect.top);
+          window.requestAnimationFrame(() => {
+            if (wheelZoomRef.current.restoreSeq !== restoreSeq) return;
+            const nextViewer = pdfViewerWithScale(pdfUtilsRef.current);
+            const nextScrollElement = nextViewer?.container || currentScrollElement;
+            const nextRect = nextScrollElement.getBoundingClientRect();
+            const ratio = nextScale / baseScale;
+            nextScrollElement.scrollLeft = anchorX * ratio - (clientX - nextRect.left);
+            nextScrollElement.scrollTop = anchorY * ratio - (clientY - nextRect.top);
+          });
         });
       });
     },
-    [pdfUtils, scaleValue],
+    [],
   );
 
   useEffect(() => {
     const element = pdfWheelRef.current;
     if (!element) return;
+    const zoom = wheelZoomRef.current;
     element.addEventListener("wheel", zoomPdfAtWheel, { passive: false });
-    return () => element.removeEventListener("wheel", zoomPdfAtWheel);
+    return () => {
+      element.removeEventListener("wheel", zoomPdfAtWheel);
+      if (zoom.frame) {
+        window.cancelAnimationFrame(zoom.frame);
+        zoom.frame = 0;
+      }
+    };
   }, [zoomPdfAtWheel]);
+
+  const centerCurrentPdfPage = useCallback(() => {
+    const viewer = pdfViewerWithScale(pdfUtilsRef.current);
+    const scrollElement = viewer?.container || pdfWheelRef.current;
+    if (!scrollElement || currentPage <= 0) return;
+
+    const pageElement =
+      scrollElement.querySelector<HTMLElement>(`.page[data-page-number="${currentPage}"]`) ??
+      findPageElement(currentPage);
+    if (!pageElement) return;
+
+    const scrollRect = scrollElement.getBoundingClientRect();
+    const pageRect = pageElement.getBoundingClientRect();
+    const pageCenter = scrollElement.scrollLeft + pageRect.left - scrollRect.left + pageRect.width / 2;
+    const nextLeft = Math.max(0, pageCenter - scrollElement.clientWidth / 2);
+    scrollElement.scrollTo({ left: nextLeft, top: scrollElement.scrollTop, behavior: "instant" });
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (!ready) return;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(centerCurrentPdfPage);
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [
+    centerCurrentPdfPage,
+    mindMapPanelWidth,
+    prefs.mindMapOpen,
+    prefs.outlineOpen,
+    ready,
+    rightPanelOpen,
+  ]);
 
   const setPageCount = useCallback((pages: number) => {
     if (pages > 0) setNumPages((cur) => (cur === pages ? cur : pages));
@@ -1898,6 +2032,11 @@ export function ReaderClient() {
     locatedScrollCleanupRef.current = null;
     setLocatedAnnotationId(null);
   }, []);
+
+  const clearAnnotationFocus = useCallback(() => {
+    setSelectedAnnotationId(null);
+    clearLocatedAnnotation();
+  }, [clearLocatedAnnotation]);
 
   const scheduleLocatedAnnotationScrollClear = useCallback(
     (container: HTMLElement) => {
@@ -1922,6 +2061,29 @@ export function ReaderClient() {
 
   useEffect(() => clearLocatedAnnotation, [clearLocatedAnnotation]);
 
+  useEffect(() => {
+    const viewer = pdfViewerWithScale(pdfUtils);
+    const container = viewer?.container || pdfWheelRef.current;
+    if (!container) return;
+
+    const clearOnReaderScroll = () => {
+      if (Date.now() < annotationFocusScrollIgnoreUntilRef.current) return;
+      clearAnnotationFocus();
+    };
+
+    container.addEventListener("scroll", clearOnReaderScroll, { passive: true });
+    return () => container.removeEventListener("scroll", clearOnReaderScroll);
+  }, [clearAnnotationFocus, pdfUtils]);
+
+  const selectAnnotation = useCallback(
+    (annotation: PaperAnnotation) => {
+      setSelectedAnnotationId(annotation.id);
+      updatePrefs({ annotationsOpen: true, mindMapOpen: false });
+      scrollSideAnnotationIntoView(annotation.id);
+    },
+    [updatePrefs],
+  );
+
   const clearOutlineActive = useCallback(() => {
     outlineJumpRef.current = null;
     setOutlineActiveSectionId(null);
@@ -1942,7 +2104,7 @@ export function ReaderClient() {
 
   const goToPage = useCallback(
     (page: number, outlineEntry?: OutlineEntry) => {
-      clearLocatedAnnotation();
+      clearAnnotationFocus();
       const max = numPages || paper?.page_count || page;
       const next = clamp(Math.round(page), 1, Math.max(1, max));
       if (outlineEntry) {
@@ -1959,23 +2121,26 @@ export function ReaderClient() {
       setPageDraft(String(next));
       pdfUtils?.goToPage(next);
     },
-    [clearLocatedAnnotation, clearOutlineActive, numPages, paper?.page_count, pdfUtils],
+    [clearAnnotationFocus, clearOutlineActive, numPages, paper?.page_count, pdfUtils],
   );
 
   const goToAnnotation = useCallback(
     (annotationID: number, pageNumber?: number, openAnnotations = false) => {
       const annotation = annotations.find((item) => item.id === annotationID);
       const page = annotation?.page_no || pageNumber || 1;
+      setSelectedAnnotationId(annotationID);
       if (openAnnotations) {
         updatePrefs({ annotationsOpen: true, mindMapOpen: false, qaOpen: false });
         if (annotation?.note) {
           setExpandedAnnotationNoteIDs((prev) => new Set(prev).add(annotation.id));
         }
+        scrollSideAnnotationIntoView(annotationID);
       }
       clearOutlineActive();
       setCurrentPage(page);
       setPageDraft(String(page));
       if (annotation && pdfUtils) {
+        annotationFocusScrollIgnoreUntilRef.current = Date.now() + LOCATED_ANNOTATION_SCROLL_RESUME_MS;
         const container = scrollSplitHighlightToTop(pdfUtils, splitAnnotationToHighlight(annotation));
         if (container) {
           setLocatedAnnotationId(annotation.id);
@@ -2113,7 +2278,9 @@ export function ReaderClient() {
           rects: selection.position.rects.map(scaledToRect),
         });
         setAnnotations((prev) => [annotation, ...prev]);
+        setSelectedAnnotationId(annotation.id);
         updatePrefs({ annotationsOpen: true, mindMapOpen: false, qaOpen: false });
+        scrollSideAnnotationIntoView(annotation.id);
         window.getSelection()?.removeAllRanges();
         if (!note) void translateAnnotation(annotation);
         return true;
@@ -2194,7 +2361,7 @@ export function ReaderClient() {
         await api.deleteAnnotation(id, annotation.id);
         setAnnotations((prev) => prev.filter((item) => item.id !== annotation.id));
         setPendingFreetextFocusId((cur) => (cur === annotation.id ? null : cur));
-        setSuppressFreetextTipId((cur) => (cur === annotation.id ? null : cur));
+        setSelectedAnnotationId((cur) => (cur === annotation.id ? null : cur));
         if (locatedAnnotationId === annotation.id) {
           clearLocatedAnnotation();
         }
@@ -2206,6 +2373,31 @@ export function ReaderClient() {
     },
     [clearLocatedAnnotation, id, locatedAnnotationId],
   );
+
+  useEffect(() => {
+    const handleDeleteSelectedAnnotation = (event: KeyboardEvent) => {
+      if (event.key !== "Delete") return;
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest("input, textarea, select, [contenteditable='true']")
+      ) {
+        return;
+      }
+      if (busy || selectedAnnotationId == null) return;
+
+      const annotation = visibleAnnotations.find((item) => item.id === selectedAnnotationId);
+      const kind = annotation ? annotationKind(annotation) : null;
+      if (!annotation || (kind !== "freetext" && kind !== "drawing")) return;
+
+      event.preventDefault();
+      void deleteAnnotation(annotation);
+    };
+
+    document.addEventListener("keydown", handleDeleteSelectedAnnotation);
+    return () => document.removeEventListener("keydown", handleDeleteSelectedAnnotation);
+  }, [busy, deleteAnnotation, selectedAnnotationId, visibleAnnotations]);
 
   const changeAnnotationColor = useCallback(
     async (annotation: PaperAnnotation, color: AnnotationColor) => {
@@ -2259,9 +2451,10 @@ export function ReaderClient() {
           style_json: freetextStyleForColor(prefs.color, prefs.textSize),
         });
         setAnnotations((prev) => [{ ...annotation, text: FREETEXT_EMPTY_DRAFT }, ...prev]);
+        setSelectedAnnotationId(annotation.id);
         setPendingFreetextFocusId(annotation.id);
-        setSuppressFreetextTipId(annotation.id);
         updatePrefs({ activeTool: "select", annotationsOpen: true, mindMapOpen: false, qaOpen: false });
+        scrollSideAnnotationIntoView(annotation.id);
       } catch (err) {
         setError((err as Error)?.message || "保存文字批注失败");
       } finally {
@@ -2297,7 +2490,9 @@ export function ReaderClient() {
           content_json: contentJson,
         });
         setAnnotations((prev) => [annotation, ...prev]);
+        setSelectedAnnotationId(annotation.id);
         updatePrefs({ activeTool: "select", annotationsOpen: true, mindMapOpen: false, qaOpen: false });
+        scrollSideAnnotationIntoView(annotation.id);
       } catch (err) {
         setError((err as Error)?.message || "保存手绘标注失败");
       } finally {
@@ -2426,21 +2621,13 @@ export function ReaderClient() {
     [deleteAnnotation, patchAnnotation],
   );
 
-  const updateAnnotationDrawing = useCallback(
-    (annotation: PaperAnnotation, image: string, strokes: DrawingStroke[]) => {
-      void patchAnnotation(
-        annotation,
-        {
-          content_json: {
-            ...(annotation.content_json ?? {}),
-            image,
-            strokes,
-          },
-        },
-        `drawing-${annotation.id}`,
-      );
+  const clearAnnotationSelectionFromOutside = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (selectedAnnotationId == null) return;
+      if (shouldKeepAnnotationSelection(event.target)) return;
+      clearAnnotationFocus();
     },
-    [patchAnnotation],
+    [clearAnnotationFocus, selectedAnnotationId],
   );
 
   const zoomBy = (delta: number) => {
@@ -2451,7 +2638,10 @@ export function ReaderClient() {
   };
 
   return (
-    <main className="flex h-dvh flex-col overflow-hidden bg-muted/50">
+    <main
+      className="flex h-dvh flex-col overflow-hidden bg-muted/50"
+      onPointerDownCapture={clearAnnotationSelectionFromOutside}
+    >
       <CompactReaderToolbar
         title={paperName(paper)}
         currentPage={currentPage}
@@ -2481,6 +2671,16 @@ export function ReaderClient() {
       />
 
       <div ref={mindMapGridRef} className={cn("grid min-h-0 flex-1 grid-cols-1", gridClass)} style={gridStyle}>
+        {prefs.outlineOpen && (
+          <OutlineDrawer
+            sections={sections}
+            paperTitle={paperName(paper)}
+            currentPage={currentPage}
+            activeSectionId={outlineActiveSectionId}
+            onClose={() => updatePrefs({ outlineOpen: false })}
+            onGoToEntry={goToOutlineEntry}
+          />
+        )}
         <section className="relative min-h-0 overflow-hidden border-r">
           {error && (
             <div className="absolute left-1/2 top-4 z-50 max-w-md -translate-x-1/2 rounded-lg border border-destructive/30 bg-background px-4 py-3 text-sm text-destructive shadow-lg">
@@ -2496,16 +2696,6 @@ export function ReaderClient() {
             outlineOpen={prefs.outlineOpen}
             onToggleOutline={() => updatePrefs({ outlineOpen: true })}
           />
-          {prefs.outlineOpen && (
-            <OutlineDrawer
-              sections={sections}
-              paperTitle={paperName(paper)}
-              currentPage={currentPage}
-              activeSectionId={outlineActiveSectionId}
-              onClose={() => updatePrefs({ outlineOpen: false })}
-              onGoToEntry={goToOutlineEntry}
-            />
-          )}
           <div ref={pdfWheelRef} className="relative h-full min-h-0 overflow-hidden">
             {ready && pdfUrl ? (
               <InteractiveReaderPdf
@@ -2529,11 +2719,11 @@ export function ReaderClient() {
                 onDrawingCancel={exitDrawingMode}
                 onUpdateAnnotationPosition={updateAnnotationPosition}
                 onUpdateAnnotationText={updateAnnotationText}
-                onUpdateAnnotationDrawing={updateAnnotationDrawing}
                 onDeleteAnnotation={deleteAnnotation}
                 locatedAnnotationId={locatedAnnotationId}
+                selectedAnnotationId={selectedAnnotationId}
                 pendingFreetextFocusId={pendingFreetextFocusId}
-                suppressTipAnnotationId={suppressFreetextTipId}
+                onSelectAnnotation={selectAnnotation}
                 onFreetextFocusHandled={handleFreetextFocusHandled}
                 onDocumentReady={(pdfDocument) => void loadPdfOutlineFallback(pdfDocument)}
                 onUtilsReady={setPdfUtils}
@@ -2559,6 +2749,7 @@ export function ReaderClient() {
             showAnnotations={prefs.annotationsOpen}
             translation={translation}
             annotations={visibleAnnotations}
+            selectedAnnotationId={selectedAnnotationId}
             busy={busy}
             translatingIDs={translatingIDs}
             translationErrors={translationErrors}
@@ -2572,7 +2763,7 @@ export function ReaderClient() {
             onDelete={deleteAnnotation}
             onColorChange={changeAnnotationColor}
             onRetryTranslate={(annotation) => void translateAnnotation(annotation)}
-            onLocateAnnotation={(annotation) => goToAnnotation(annotation.id, annotation.page_no, false)}
+            onLocateAnnotation={(annotation) => goToAnnotation(annotation.id, annotation.page_no, true)}
           />
         )}
         {qaPanelOpen && (
