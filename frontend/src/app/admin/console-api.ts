@@ -370,6 +370,44 @@ export function setAdminStatus(token: string, id: number, status: string) {
   });
 }
 
+// ── 论文批量操作 ─────────────────────────────────────────────
+
+export type BatchPaper = {
+  id: string;
+  title: string;
+  file_name: string;
+  status: string;
+  owner_id: string;
+  created_at: string;
+};
+export type BatchPaperList = {
+  items: BatchPaper[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+export type BatchResult = {
+  requested: number;
+  succeeded: number;
+  failed: number;
+  failed_ids?: string[];
+};
+
+export function fetchPapersForBatch(token: string, params: { page?: number; page_size?: number; query?: string } = {}) {
+  const q = new URLSearchParams();
+  q.set("page", String(params.page ?? 1));
+  q.set("page_size", String(params.page_size ?? 20));
+  if (params.query?.trim()) q.set("query", params.query.trim());
+  return dashboardRequest<BatchPaperList>(`/admin/papers?${q}`, token);
+}
+
+export function batchDeletePapers(token: string, ids: string[]) {
+  return dashboardRequest<BatchResult>("/admin/papers/batch-delete", token, {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
+}
+
 // 小工具:格式化 -----------------------------------------------
 
 export function formatBytes(value: number): string {
