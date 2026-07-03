@@ -34,6 +34,7 @@ import type {
 import { paperTitle } from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty } from "./app-ui";
+import { AgentIntro } from "./agent-intro";
 
 const VIEW_W = 1000;
 const VIEW_H = 620;
@@ -1019,16 +1020,7 @@ export function GraphView() {
         >
           <ArrowLeft className="size-4" />
         </Link>
-        <div className="min-w-0">
-          <h1 className="font-serif text-base font-semibold tracking-tight">
-            {graphMode === "overview" ? "知识图谱 · 总览" : "知识图谱 · 论文实体"}
-          </h1>
-          <p className="truncate text-xs text-muted-foreground">
-            {graphMode === "overview"
-              ? "双击论文节点展开详细知识图谱"
-              : centerPaper ? paperTitle(centerPaper) : "选择一篇论文"}
-          </p>
-        </div>
+        <AgentIntro kind="graph" />
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <Button
             variant="outline"

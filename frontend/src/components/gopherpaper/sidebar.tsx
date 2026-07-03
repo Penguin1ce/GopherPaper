@@ -8,28 +8,23 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/lib/gopherpaper/store";
 import { cn } from "@/lib/utils";
+import { AGENT_INTROS } from "./agent-intro";
 
 const NAV_ITEMS = [
   {
     href: "/reports",
     icon: NotebookText,
-    label: "研读与报告",
-    desc: "速读、方法、结果、相关研究",
-    agent: "小囊鼠",
+    ...AGENT_INTROS.reports,
   },
   {
     href: "/graph",
     icon: Network,
-    label: "论文关系图谱",
-    desc: "查看论文、作者、关键词关系",
-    agent: "知识库",
+    ...AGENT_INTROS.graph,
   },
   {
     href: "/pioneer",
     icon: Search,
-    label: "学术探索引擎",
-    desc: "Ask me anything",
-    agent: "小云雀",
+    ...AGENT_INTROS.pioneer,
   },
 ];
 
