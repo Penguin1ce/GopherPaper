@@ -543,6 +543,18 @@ export default function AdminPage() {
               <span className="hidden text-sm text-muted-foreground sm:inline">
                 {auth.admin.username}
               </span>
+              <Link
+                href="/admin/analytics"
+                className="hidden rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
+              >
+                数据分析
+              </Link>
+              <Link
+                href="/admin/model-configs"
+                className="hidden rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
+              >
+                模型配置
+              </Link>
               <Button variant="outline" size="sm" onClick={() => void refreshAll()}>
                 {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                 刷新
