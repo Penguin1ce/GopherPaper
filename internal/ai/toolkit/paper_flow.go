@@ -222,6 +222,7 @@ func BuildPaperFlowGraph(ctx context.Context, paperID string) (PaperFlow, error)
 	if flow.Title == "" {
 		flow.Title = displayPaperTitle(p)
 	}
+	emitPaperFlow(ctx, flow)
 
 	usedFigs := map[string]bool{}
 	for i := range flow.Nodes {
@@ -233,9 +234,11 @@ func BuildPaperFlowGraph(ctx context.Context, paperID string) (PaperFlow, error)
 			detail = metaFallback(meta, n.Type)
 		}
 		n.Detail = detail
-		if fig := nodeFigure(ctx, paperID, owner, n, usedFigs); fig != nil {
+		fig := nodeFigure(ctx, paperID, owner, n, usedFigs)
+		if fig != nil {
 			flow.Figures = append(flow.Figures, *fig)
 		}
+		emitPaperFlowNode(ctx, paperFlowNodeDetail{PaperID: paperID, NodeID: n.ID, Detail: detail, Figure: fig})
 	}
 	return flow, nil
 }

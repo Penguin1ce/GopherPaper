@@ -66,15 +66,79 @@ const REPORT_LOADING_STEPS: PlanStep[] = [
 type ReportMap = Partial<Record<ReportType, ChatResponse>>;
 type ReportFlagMap = Partial<Record<ReportType, boolean>>;
 
+interface ReportActionButtonProps {
+  label: string;
+  icon: LucideIcon;
+  active: boolean;
+  busy: boolean;
+  ready: boolean;
+  disabled?: boolean;
+  title: string;
+  ariaExpanded?: boolean;
+  onClick: () => void;
+}
+
+function ReportActionButton({
+  label,
+  icon: Icon,
+  active,
+  busy,
+  ready,
+  disabled,
+  title,
+  ariaExpanded,
+  onClick,
+}: ReportActionButtonProps) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      role="tab"
+      aria-selected={active}
+      aria-expanded={ariaExpanded}
+      title={title}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sienna/40 disabled:cursor-not-allowed disabled:opacity-60",
+        active
+          ? "bg-sienna/10 text-sienna ring-1 ring-sienna/20"
+          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+      )}
+    >
+      {busy ? (
+        <Loader2 className="size-3.5 animate-spin" />
+      ) : (
+        <Icon className="size-3.5" />
+      )}
+      <span>{label}</span>
+      {ready && (
+        <span
+          className="size-1.5 rounded-full bg-emerald-500"
+          title="就绪"
+        />
+      )}
+    </button>
+  );
+}
+
 export function ReportPanel() {
-  const { activePaper, activePaperID, reportReady, reportProgress, beginReport, toast } =
-    useApp();
+  const {
+    activePaper,
+    activePaperID,
+    reportReady,
+    paperFlowReady,
+    reportProgress,
+    beginReport,
+    markPaperFlowReady,
+    toast,
+  } = useApp();
   const [active, setActive] = useState<ReportType | null>(null);
   const [reports, setReports] = useState<ReportMap>({});
   const [fetching, setFetching] = useState<ReportFlagMap>({});
   const [awaiting, setAwaiting] = useState<ReportFlagMap>({});
   // 论文思路图独立于报告状态机:按需生成,后端持久化,用小云雀同款节点图渲染。
   const [flow, setFlow] = useState<PaperFlow | null>(null);
+  const [flowOpen, setFlowOpen] = useState(false);
   const [flowLoading, setFlowLoading] = useState(false);
   const [flowError, setFlowError] = useState(false);
   const autoLoadedRef = useRef<string | null>(null);
@@ -108,6 +172,7 @@ export function ReportPanel() {
   const activeReportLabel = active
     ? REPORTS.find((r) => r.type === active)?.label || "研读报告"
     : "研读报告";
+  const flowReady = Boolean(paperFlowReady[activePaperID] || (flow && !flowLoading));
 
   const setTypeFlag = useCallback(
     (setter: Dispatch<SetStateAction<ReportFlagMap>>, type: ReportType, value: boolean) => {
@@ -154,6 +219,7 @@ export function ReportPanel() {
     setFetching({});
     setAwaiting({});
     setFlow(null);
+    setFlowOpen(false);
     setFlowLoading(false);
     setFlowError(false);
   }, [activePaperID]);
@@ -216,17 +282,70 @@ export function ReportPanel() {
 
   // 生成论文思路图:复用小云雀同款思路图链路。独立动作,不进报告状态机。
   const generateFlow = async () => {
-    if (!activePaperID || flowLoading) return;
+    if (!activePaperID) return;
+    if (flowLoading) return;
+    if (flow) {
+      setFlowOpen((open) => !open);
+      return;
+    }
     const paper = activePaperID;
+    if (paperFlowReady[paper]) {
+      setFlowOpen(true);
+      setFlowError(false);
+      setFlowLoading(true);
+      try {
+        const res = await api.getPaperFlow(paper);
+        if (!mountedRef.current || activePaperRef.current !== paper) return;
+        const cachedFlow = res.meta?.flow as PaperFlow | undefined;
+        if (!cachedFlow) throw new Error("思路图数据为空");
+        setFlow(cachedFlow);
+        markPaperFlowReady(paper);
+      } catch (err) {
+        if (!mountedRef.current || activePaperRef.current !== paper) return;
+        setFlowError(true);
+        setFlowOpen(false);
+        toast((err as Error)?.message || "思路图加载失败", "error");
+      } finally {
+        if (mountedRef.current && activePaperRef.current === paper) setFlowLoading(false);
+      }
+      return;
+    }
+
+    let receivedFlow = false;
     setFlow(null);
+    setFlowOpen(true);
     setFlowError(false);
     setFlowLoading(true);
     try {
-      const res = await api.generatePaperFlow(paper);
+      const res = await api.generatePaperFlow(paper, {
+        onPaperFlow: (payload) => {
+          if (!mountedRef.current || activePaperRef.current !== paper) return;
+          receivedFlow = true;
+          setFlow(payload);
+        },
+        onPaperFlowNode: (payload) => {
+          if (!mountedRef.current || activePaperRef.current !== paper) return;
+          receivedFlow = true;
+          setFlow((current) => {
+            if (!current || current.paper_id !== payload.paper_id) return current;
+            const figures = payload.figure
+              ? [...(current.figures ?? []).filter((f) => f.id !== payload.figure?.id), payload.figure]
+              : current.figures;
+            return {
+              ...current,
+              nodes: current.nodes.map((n) =>
+                n.id === payload.node_id ? { ...n, detail: payload.detail } : n,
+              ),
+              figures,
+            };
+          });
+        },
+      });
       if (!mountedRef.current || activePaperRef.current !== paper) return;
       const nextFlow = res.meta?.flow as PaperFlow | undefined;
-      if (!nextFlow) throw new Error("思路图数据为空");
-      setFlow(nextFlow);
+      if (nextFlow) setFlow(nextFlow);
+      else if (!receivedFlow) throw new Error("思路图数据为空");
+      markPaperFlowReady(paper);
     } catch (err) {
       if (!mountedRef.current || activePaperRef.current !== paper) return;
       setFlowError(true);
@@ -256,7 +375,7 @@ export function ReportPanel() {
     <ScrollArea className="h-full">
       <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 py-5 lg:px-7">
         <header className="shrink-0 border-b pb-4">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-4">
             <div className="min-w-0">
               <h2 className="font-serif text-lg font-semibold tracking-tight">
                 研读报告
@@ -265,21 +384,6 @@ export function ReportPanel() {
                 {paperTitle(activePaper)}
               </p>
             </div>
-            <Button
-              type="button"
-              variant={flow || flowLoading ? "secondary" : "outline"}
-              size="sm"
-              disabled={flowLoading}
-              onClick={generateFlow}
-              className="shrink-0 gap-1.5"
-            >
-              {flowLoading ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Waypoints className="size-3.5" />
-              )}
-              思路图
-            </Button>
           </div>
           {activePaper.status !== "ready" && (
             <p className="mt-3 rounded-md bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
@@ -292,7 +396,6 @@ export function ReportPanel() {
             aria-label="报告类型"
           >
             {REPORTS.map((r) => {
-              const Icon = r.icon;
               const isActive = active === r.type;
               const reportRun = reportProgress[activePaperID]?.[r.type];
               const ready = Boolean(
@@ -307,12 +410,14 @@ export function ReportPanel() {
                 (Boolean(reportRun?.live) || isAwaiting);
               const isBusy = isFetching || isGenerating;
               return (
-                <button
+                <ReportActionButton
                   key={r.type}
-                  type="button"
+                  label={r.label}
+                  icon={r.icon}
+                  active={isActive}
+                  busy={isBusy}
+                  ready={ready}
                   disabled={isFetching}
-                  role="tab"
-                  aria-selected={isActive}
                   title={
                     reportRun?.failed
                       ? "生成失败，点击重试"
@@ -323,44 +428,48 @@ export function ReportPanel() {
                         : "点击生成"
                   }
                   onClick={() => openReport(r.type)}
-                  className={cn(
-                    "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sienna/40 disabled:cursor-not-allowed disabled:opacity-60",
-                    isActive
-                      ? "bg-sienna/10 text-sienna ring-1 ring-sienna/20"
-                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                  )}
-                >
-                  {isBusy ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Icon className="size-3.5" />
-                  )}
-                  <span>{r.label}</span>
-                  {ready && (
-                    <span
-                      className="size-1.5 rounded-full bg-emerald-500"
-                      title="就绪"
-                    />
-                  )}
-                </button>
+                />
               );
             })}
+            <ReportActionButton
+              label="思路图"
+              icon={Waypoints}
+              active={flowOpen}
+              busy={flowLoading}
+              ready={flowReady && !flowError}
+              disabled={flowLoading && !flow}
+              ariaExpanded={flowReady ? flowOpen : undefined}
+              title={
+                flowError
+                  ? "生成失败，点击重试"
+                  : flowLoading
+                    ? "生成中"
+                    : flowReady
+                      ? flowOpen
+                        ? "收起思路图"
+                        : "展开思路图"
+                      : "点击生成"
+              }
+              onClick={generateFlow}
+            />
           </div>
         </header>
 
-        {(flowLoading || flow || flowError) && (
-          <section className="mt-4 rounded-lg border bg-muted/20 p-3">
-            {flowLoading ? (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        {(flowLoading || (flow && flowOpen) || flowError) && (
+          <section className="mt-4">
+            {flow && flowOpen ? (
+              <div className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
+                <PaperFlowCard flow={flow} className="mt-0" />
+              </div>
+            ) : flowLoading ? (
+              <p className="flex items-center gap-2 rounded-lg border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
                 正在构建论文思路图…
               </p>
             ) : flowError ? (
-              <p className="text-sm text-destructive">思路图生成失败，请重试。</p>
-            ) : flow ? (
-              <div className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
-                <PaperFlowCard flow={flow} />
-              </div>
+              <p className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                思路图生成失败，请重试。
+              </p>
             ) : null}
           </section>
         )}

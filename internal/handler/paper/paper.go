@@ -3,6 +3,7 @@
 package paper
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -15,11 +16,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"GopherPaper/internal/ai"
+	"GopherPaper/internal/ai/core"
 	"GopherPaper/internal/auth"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/response"
 	paperservice "GopherPaper/internal/service/paper"
+	"GopherPaper/internal/sse"
 	"GopherPaper/internal/tenant"
 	"GopherPaper/internal/zlog"
 	"GopherPaper/pkg/constant"
@@ -452,6 +455,10 @@ func Report(c *gin.Context) {
 // @Failure 500 {object} dto.Response
 // @Router /papers/{id}/flow [post]
 func Flow(c *gin.Context) {
+	if strings.Contains(c.GetHeader("Accept"), "text/event-stream") {
+		flowStream(c)
+		return
+	}
 	ownerID := tenant.MustStudentID(c.Request.Context())
 	paperID := c.Param("id")
 	reply, err := paperservice.PaperFlow(c.Request.Context(), ownerID, paperID)
@@ -466,6 +473,68 @@ func Flow(c *gin.Context) {
 		return
 	}
 	response.OK(c, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})
+}
+
+// GetFlow 只读取某篇论文已生成的思路图缓存,不触发生成。
+// GET /api/v1/papers/:id/flow
+func GetFlow(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	paperID := c.Param("id")
+	reply, err := paperservice.GetPaperFlow(c.Request.Context(), ownerID, paperID)
+	if err != nil {
+		if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errs.ErrPaperForbidden) ||
+			errors.Is(err, errs.ErrPaperFlowNotFound) {
+			writePaperErr(c, err, "查询失败")
+			return
+		}
+		zlog.Error("查询论文思路图失败", "paper_id", paperID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "查询失败")
+		return
+	}
+	response.OK(c, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})
+}
+
+func flowStream(c *gin.Context) {
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	paperID := c.Param("id")
+
+	started := false
+	emit := func(name string, payload any) {
+		if !started {
+			sse.WriteHeaders(c)
+			c.Writer.WriteHeader(http.StatusOK)
+			started = true
+		}
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return
+		}
+		sse.WriteEvent(c.Writer, name, string(b))
+	}
+
+	ctx := core.WithStream(c.Request.Context(), func(ev core.StreamEvent) {
+		switch ev.Kind {
+		case constant.StreamEventPaperFlow, constant.StreamEventPaperFlowNode:
+			emit(ev.Kind, ev.Payload)
+		}
+	})
+	reply, err := paperservice.PaperFlow(ctx, ownerID, paperID)
+	if err != nil {
+		if !started {
+			if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errs.ErrPaperForbidden) ||
+				errors.Is(err, errs.ErrPaperNotReady) {
+				writePaperErr(c, err, "生成失败")
+				return
+			}
+			zlog.Error("生成论文思路图失败", "paper_id", paperID, "err", err)
+			response.Fail(c, http.StatusInternalServerError, "生成失败")
+			return
+		}
+		zlog.Error("流式生成论文思路图失败", "paper_id", paperID, "err", err)
+		emit(constant.StreamEventError, dto.StreamErrorPayload{Message: "生成失败"})
+		return
+	}
+	emit(constant.StreamEventDone, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})
 }
 
 // Reports 列出某篇论文已生成的研读报告类型,前端进入论文时回填就绪态并自动展示,不触发生成。
@@ -484,7 +553,7 @@ func Flow(c *gin.Context) {
 // @Router /papers/{id}/reports [get]
 func Reports(c *gin.Context) {
 	ownerID := tenant.MustStudentID(c.Request.Context())
-	types, running, err := paperservice.ReportOverview(c.Request.Context(), ownerID, c.Param("id"))
+	types, running, flowReady, err := paperservice.ReportOverview(c.Request.Context(), ownerID, c.Param("id"))
 	if err != nil {
 		writePaperErr(c, err, "查询失败")
 		return
@@ -495,7 +564,28 @@ func Reports(c *gin.Context) {
 	if running == nil {
 		running = []paperservice.ReportRun{}
 	}
-	response.OK(c, gin.H{"ready": types, "running": running})
+	response.OK(c, dto.ReadyReportsResponse{
+		Ready:     types,
+		Running:   reportRunsToDTO(running),
+		FlowReady: flowReady,
+	})
+}
+
+func reportRunsToDTO(runs []paperservice.ReportRun) []dto.ReportRun {
+	out := make([]dto.ReportRun, 0, len(runs))
+	for _, run := range runs {
+		steps := make([]dto.ReportProgressStep, 0, len(run.Steps))
+		for _, step := range run.Steps {
+			steps = append(steps, dto.ReportProgressStep{Phase: step.Phase, Text: step.Text})
+		}
+		out = append(out, dto.ReportRun{
+			Type:   run.ReportType,
+			Steps:  steps,
+			Live:   run.Live,
+			Failed: run.Failed,
+		})
+	}
+	return out
 }
 
 // Translate 把精读页选中的英文原文译成中文,前端选区触发,不经分类器、不走 RAG。
@@ -848,6 +938,8 @@ func writePaperErr(c *gin.Context, err error, fallback string) {
 	case errors.Is(err, errs.ErrAnnotationNotFound):
 		response.Fail(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, errs.ErrMindMapNotFound):
+		response.Fail(c, http.StatusNotFound, err.Error())
+	case errors.Is(err, errs.ErrPaperFlowNotFound):
 		response.Fail(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, errs.ErrMindMapInvalid):
 		response.Fail(c, http.StatusBadRequest, err.Error())

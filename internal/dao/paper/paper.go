@@ -289,6 +289,21 @@ func GetPaperFlow(ctx context.Context, ownerID, paperID string) (*model.PaperFlo
 	return &r, nil
 }
 
+// HasPaperFlow 判断某篇论文是否已有思路图缓存,不读取大 JSON。
+func HasPaperFlow(ctx context.Context, ownerID, paperID string) (bool, error) {
+	var id uint64
+	err := dao.DB.WithContext(ctx).
+		Model(&model.PaperFlowCache{}).
+		Select("id").
+		Where("owner_id = ? and paper_id = ?", ownerID, paperID).
+		Limit(1).
+		Scan(&id).Error
+	if err != nil {
+		return false, fmt.Errorf("dao/paper: 查询论文思路图状态失败: %w", err)
+	}
+	return id > 0, nil
+}
+
 // SavePaperFlow 写入或覆盖某篇论文的小云雀同款思路图缓存。
 func SavePaperFlow(ctx context.Context, r *model.PaperFlowCache) error {
 	err := dao.DB.WithContext(ctx).Clauses(clause.OnConflict{

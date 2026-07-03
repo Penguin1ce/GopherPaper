@@ -26,12 +26,8 @@ func PaperFlow(ctx context.Context, ownerID, paperID string) (*core.Reply, error
 	if p.Status != constant.PaperIndexed && p.Status != constant.PaperReady {
 		return nil, errs.ErrPaperNotReady
 	}
-	if cached, err := paperdao.GetPaperFlow(ctx, ownerID, paperID); err == nil {
-		return &core.Reply{Meta: map[string]any{
-			"format": "paper_flow",
-			"flow":   map[string]any(cached.FlowJSON),
-			"cached": true,
-		}}, nil
+	if reply, err := GetPaperFlow(ctx, ownerID, paperID); err == nil {
+		return reply, nil
 	} else if !errors.Is(err, errs.ErrPaperFlowNotFound) {
 		return nil, err
 	}
@@ -59,6 +55,22 @@ func PaperFlow(ctx context.Context, ownerID, paperID string) (*core.Reply, error
 		return nil, err
 	}
 	return reply, nil
+}
+
+// GetPaperFlow 只读取已生成的思路图缓存,不触发昂贵生成。
+func GetPaperFlow(ctx context.Context, ownerID, paperID string) (*core.Reply, error) {
+	if _, err := owned(ctx, ownerID, paperID); err != nil {
+		return nil, err
+	}
+	cached, err := paperdao.GetPaperFlow(ctx, ownerID, paperID)
+	if err != nil {
+		return nil, err
+	}
+	return &core.Reply{Meta: map[string]any{
+		"format": "paper_flow",
+		"flow":   map[string]any(cached.FlowJSON),
+		"cached": true,
+	}}, nil
 }
 
 func normalizeFlowJSON(flow any) (map[string]any, error) {
