@@ -53,6 +53,7 @@ import { SessionsPanel } from "./sessions-panel";
 import { AdminsPanel } from "./admins-panel";
 import { BatchPanel } from "./batch-panel";
 import { StoragePanel } from "./storage-panel";
+import { TasksPanel } from "./tasks-panel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -620,6 +621,7 @@ export default function AdminPage() {
             <FeedbackPanel token={token} />
             <SessionsPanel token={token} />
             <BatchPanel token={token} onChanged={() => void refreshAll()} />
+            <TasksPanel token={token} />
             <StoragePanel token={token} />
             <TagsPanel token={token} />
             <AdminsPanel token={token} />

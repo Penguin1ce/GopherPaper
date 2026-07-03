@@ -163,6 +163,28 @@ func Init(mode string) *gin.Engine {
 			adminAuthed.PUT("/admins/:id/status", adminhandler.SetAdminStatus)
 			adminAuthed.POST("/papers/batch-delete", adminhandler.BatchDeletePapers)
 			adminAuthed.GET("/storage", adminhandler.StorageOverview)
+
+			// 运维任务看板
+			adminAuthed.GET("/tasks", adminhandler.ListTasks)
+			adminAuthed.POST("/tasks", adminhandler.CreateTask)
+			adminAuthed.GET("/tasks/board", adminhandler.TaskBoard)
+			adminAuthed.GET("/tasks/stats", adminhandler.TaskStats)
+			adminAuthed.GET("/tasks/export", adminhandler.ExportTasksCSV)
+			adminAuthed.POST("/tasks/bulk", adminhandler.BulkTasks)
+			adminAuthed.POST("/tasks/demo/seed", adminhandler.SeedDemoTasks)
+			adminAuthed.POST("/tasks/demo/clear", adminhandler.ClearDemoTasks)
+			adminAuthed.GET("/tasks/:id", adminhandler.GetTaskDetail)
+			adminAuthed.PUT("/tasks/:id", adminhandler.UpdateTask)
+			adminAuthed.DELETE("/tasks/:id", adminhandler.DeleteTask)
+			adminAuthed.POST("/tasks/:id/move", adminhandler.MoveTask)
+			adminAuthed.GET("/tasks/:id/comments", adminhandler.ListTaskComments)
+			adminAuthed.POST("/tasks/:id/comments", adminhandler.AddTaskComment)
+			adminAuthed.DELETE("/tasks/:id/comments/:commentId", adminhandler.DeleteTaskComment)
+			adminAuthed.GET("/tasks/:id/checklist", adminhandler.ListChecklist)
+			adminAuthed.POST("/tasks/:id/checklist", adminhandler.AddChecklistItem)
+			adminAuthed.PUT("/tasks/:id/checklist/:itemId", adminhandler.UpdateChecklistItem)
+			adminAuthed.DELETE("/tasks/:id/checklist/:itemId", adminhandler.DeleteChecklistItem)
+			adminAuthed.GET("/tasks/:id/activities", adminhandler.ListTaskActivities)
 		}
 	}
 	return r
