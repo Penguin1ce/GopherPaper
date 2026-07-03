@@ -566,6 +566,198 @@ type AdminStorageTopPaper struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// ── 运维任务看板 ─────────────────────────────────────────────
+
+// AdminTaskComment 是任务卡片下的一条讨论记录(对外视图)。
+type AdminTaskComment struct {
+	ID         uint      `json:"id"`
+	TaskID     uint      `json:"task_id"`
+	AuthorName string    `json:"author_name"`
+	Content    string    `json:"content"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// AdminTaskItem 是一张任务卡片的对外视图。
+type AdminTaskItem struct {
+	ID           uint       `json:"id"`
+	Title        string     `json:"title"`
+	Description  string     `json:"description"`
+	Status       string     `json:"status"`
+	Priority     string     `json:"priority"`
+	Assignee     string     `json:"assignee"`
+	Labels       []string   `json:"labels"`
+	DueAt        *time.Time `json:"due_at,omitempty"`
+	OrderIdx     int        `json:"order_idx"`
+	CreatorName  string     `json:"creator_name"`
+	CommentCount int        `json:"comment_count"`
+	Overdue      bool       `json:"overdue"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+// AdminTaskColumn 是看板的一列及其卡片。
+type AdminTaskColumn struct {
+	Status string          `json:"status"`
+	Label  string          `json:"label"`
+	Count  int             `json:"count"`
+	Items  []AdminTaskItem `json:"items"`
+}
+
+// AdminTaskBoardResponse 是按状态分组的看板视图。
+type AdminTaskBoardResponse struct {
+	Columns []AdminTaskColumn `json:"columns"`
+	Total   int               `json:"total"`
+}
+
+// AdminTaskListResponse 是任务的分页列表视图。
+type AdminTaskListResponse struct {
+	Items    []AdminTaskItem `json:"items"`
+	Total    int64           `json:"total"`
+	Page     int             `json:"page"`
+	PageSize int             `json:"page_size"`
+}
+
+// AdminTaskCreateRequest 是新建任务的请求体。
+type AdminTaskCreateRequest struct {
+	Title       string     `json:"title" binding:"required"`
+	Description string     `json:"description"`
+	Status      string     `json:"status"`
+	Priority    string     `json:"priority"`
+	Assignee    string     `json:"assignee"`
+	Labels      []string   `json:"labels"`
+	DueAt       *time.Time `json:"due_at"`
+}
+
+// AdminTaskUpdateRequest 是编辑任务的请求体,指针字段为空表示不改动。
+type AdminTaskUpdateRequest struct {
+	Title       *string    `json:"title"`
+	Description *string    `json:"description"`
+	Status      *string    `json:"status"`
+	Priority    *string    `json:"priority"`
+	Assignee    *string    `json:"assignee"`
+	Labels      *[]string  `json:"labels"`
+	DueAt       *time.Time `json:"due_at"`
+	ClearDue    bool       `json:"clear_due"`
+}
+
+// AdminTaskMoveRequest 是拖动卡片到某列的请求体。
+type AdminTaskMoveRequest struct {
+	Status   string `json:"status" binding:"required"`
+	OrderIdx *int   `json:"order_idx"`
+}
+
+// AdminTaskCommentRequest 是新增评论的请求体。
+type AdminTaskCommentRequest struct {
+	Content string `json:"content" binding:"required"`
+}
+
+// AdminTaskCommentListResponse 是任务评论列表。
+type AdminTaskCommentListResponse struct {
+	Items []AdminTaskComment `json:"items"`
+	Total int64              `json:"total"`
+}
+
+// AdminTaskStatusCount / AdminTaskPriorityCount / AdminTaskAssigneeCount 是统计分组。
+type AdminTaskStatusCount struct {
+	Status string `json:"status"`
+	Count  int64  `json:"count"`
+}
+
+type AdminTaskPriorityCount struct {
+	Priority string `json:"priority"`
+	Count    int64  `json:"count"`
+}
+
+type AdminTaskAssigneeCount struct {
+	Assignee string `json:"assignee"`
+	Count    int64  `json:"count"`
+}
+
+// AdminTaskStats 是任务看板顶部的汇总统计。
+type AdminTaskStats struct {
+	Total         int64                    `json:"total"`
+	Open          int64                    `json:"open"`
+	Done          int64                    `json:"done"`
+	Overdue       int64                    `json:"overdue"`
+	CompletedRate float64                  `json:"completed_rate"`
+	ByStatus      []AdminTaskStatusCount   `json:"by_status"`
+	ByPriority    []AdminTaskPriorityCount `json:"by_priority"`
+	ByAssignee    []AdminTaskAssigneeCount `json:"by_assignee"`
+}
+
+// ── 任务子清单(checklist)─────────────────────────────────────
+
+// AdminTaskChecklistItem 是一条子任务视图。
+type AdminTaskChecklistItem struct {
+	ID        uint      `json:"id"`
+	TaskID    uint      `json:"task_id"`
+	Content   string    `json:"content"`
+	Done      bool      `json:"done"`
+	OrderIdx  int       `json:"order_idx"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// AdminTaskChecklistResponse 汇总某任务的子清单与完成进度。
+type AdminTaskChecklistResponse struct {
+	Items []AdminTaskChecklistItem `json:"items"`
+	Total int                      `json:"total"`
+	Done  int                      `json:"done"`
+}
+
+// AdminTaskChecklistCreateRequest 是新增子任务的请求体。
+type AdminTaskChecklistCreateRequest struct {
+	Content string `json:"content" binding:"required"`
+}
+
+// AdminTaskChecklistUpdateRequest 是更新子任务的请求体。
+type AdminTaskChecklistUpdateRequest struct {
+	Content *string `json:"content"`
+	Done    *bool   `json:"done"`
+}
+
+// ── 任务活动时间线 ───────────────────────────────────────────
+
+// AdminTaskActivityItem 是时间线上的一条活动。
+type AdminTaskActivityItem struct {
+	ID        uint      `json:"id"`
+	TaskID    uint      `json:"task_id"`
+	ActorName string    `json:"actor_name"`
+	Action    string    `json:"action"`
+	Detail    string    `json:"detail"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// AdminTaskActivityListResponse 是任务的活动时间线。
+type AdminTaskActivityListResponse struct {
+	Items []AdminTaskActivityItem `json:"items"`
+	Total int64                   `json:"total"`
+}
+
+// AdminTaskDetail 聚合任务详情抽屉所需的全部数据。
+type AdminTaskDetail struct {
+	Task       AdminTaskItem              `json:"task"`
+	Checklist  AdminTaskChecklistResponse `json:"checklist"`
+	Comments   []AdminTaskComment         `json:"comments"`
+	Activities []AdminTaskActivityItem    `json:"activities"`
+}
+
+// ── 任务批量操作 ─────────────────────────────────────────────
+
+// AdminTaskBulkRequest 是批量操作的请求体,Action 决定语义。
+type AdminTaskBulkRequest struct {
+	IDs      []uint `json:"ids" binding:"required"`
+	Action   string `json:"action" binding:"required"` // move | assign | priority | delete
+	Status   string `json:"status"`
+	Assignee string `json:"assignee"`
+	Priority string `json:"priority"`
+}
+
+// AdminTaskSeedResult 是演示任务填充/清除的结果。
+type AdminTaskSeedResult struct {
+	Created int    `json:"created"`
+	Message string `json:"message"`
+}
+
 // AdminStorageOverview 是存储管理页的聚合数据。
 type AdminStorageOverview struct {
 	TotalPapers int64                     `json:"total_papers"`
