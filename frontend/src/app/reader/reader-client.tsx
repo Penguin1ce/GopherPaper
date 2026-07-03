@@ -11,6 +11,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
 import {
@@ -235,9 +236,7 @@ function loadToken(): string {
   }
 }
 
-function loadRequestedPage(): number {
-  if (typeof location === "undefined") return 0;
-  const params = new URLSearchParams(location.search);
+function requestedPageFromParams(params: Pick<URLSearchParams, "get">): number {
   const raw = params.get("page") || params.get("page_no") || params.get("p") || "";
   const page = Number.parseInt(raw, 10);
   return Number.isFinite(page) && page > 0 ? page : 0;
@@ -1620,11 +1619,10 @@ function ReaderQAPanel({
 
 export function ReaderClient() {
   const { activePaperID, selectPaper } = useApp();
-  const id = useMemo(() => {
-    if (typeof location === "undefined") return "";
-    return new URLSearchParams(location.search).get("id") || "";
-  }, []);
-  const requestedPage = useMemo(() => loadRequestedPage(), []);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const id = (searchParams.get("id") || "").trim();
+  const requestedPage = useMemo(() => requestedPageFromParams(searchParams), [searchParams]);
   const [ready, setReady] = useState(false);
   const [paper, setPaper] = useState<Paper | null>(null);
   const [sections, setSections] = useState<PaperSection[]>([]);
@@ -1838,12 +1836,9 @@ export function ReaderClient() {
     setPageDraft(String(currentPage));
   }, [currentPage]);
 
-  function closeReader() {
-    window.close();
-    window.setTimeout(() => {
-      if (!window.closed) location.href = "/";
-    }, 120);
-  }
+  const closeReader = useCallback(() => {
+    router.push("/");
+  }, [router]);
 
   useEffect(() => {
     if (!id || activePaperID === id) return;
@@ -1852,6 +1847,17 @@ export function ReaderClient() {
 
   useEffect(() => {
     const token = loadToken();
+    setError("");
+    setReady(false);
+    setPaper(null);
+    setSections([]);
+    setNumPages(0);
+    setCurrentPage(1);
+    setPageDraft("1");
+    setAnnotations([]);
+    setTranslation(null);
+    setPdfUtils(null);
+    progressLoadedRef.current = false;
     if (!token) {
       location.replace("/");
       return;
@@ -1863,7 +1869,6 @@ export function ReaderClient() {
     }
     positionPatchSeqRef.current.clear();
     outlineFallbackTriedRef.current = false;
-    setSections([]);
     setReady(true);
     Promise.all([api.paperDetail(id), api.listAnnotations(id)])
       .then(([detail, list]) => {

@@ -76,6 +76,7 @@ interface AppContextValue {
   // 状态
   user: AuthUser | null;
   preference: UserPreference;
+  authReady: boolean;
   authed: boolean;
   papers: Paper[];
   sessions: Session[];
@@ -145,6 +146,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [preference, setPreference] = useState<UserPreference>(DEFAULT_PREFERENCE);
   const [token, setTokenState] = useState<string>("");
+  const [authReady, setAuthReady] = useState(false);
   // papers 由 Query 接管:paperSearch 空→listPapers,非空→searchPapers,搜索词进 query key。
   const [paperSearch, setPaperSearch] = useState("");
   const papersQuery = useQuery({
@@ -289,6 +291,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       if (notifyServer) void api.logout();
       disconnectWs();
       persist(null, "");
+      setAuthReady(true);
       // 清空所有 Query 缓存(sessions/messages/papers/轮询),与下方业务 state 一并归零。
       queryClient.clear();
       setPaperSearch("");
@@ -679,7 +682,10 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     if (hydratedRef.current) return;
     hydratedRef.current = true;
     const saved = loadAuth();
-    if (!saved.token) return;
+    if (!saved.token) {
+      setAuthReady(true);
+      return;
+    }
     setUser(saved.user);
     setTokenState(saved.token);
     api.setToken(saved.token);
@@ -687,8 +693,10 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     api.preferences()
       .then((data) => setPreference({ ...DEFAULT_PREFERENCE, ...data }))
       .catch(() => {});
-    bootstrapSession(saved.token).catch(() => logout(false));
-  }, [bootstrapSession, logout, persist]);
+    bootstrapSession(saved.token)
+      .catch(() => {})
+      .finally(() => setAuthReady(true));
+  }, [bootstrapSession, persist]);
 
   const login = useCallback(
     async (account: string, password: string) => {
@@ -703,6 +711,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         },
         data.token,
       );
+      setAuthReady(true);
       await bootstrapSession(data.token);
       toast("登录成功");
     },
@@ -1163,6 +1172,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     () => ({
       user,
       preference,
+      authReady,
       authed: Boolean(token),
       papers,
       sessions,
@@ -1208,6 +1218,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     [
       user,
       preference,
+      authReady,
       token,
       papers,
       sessions,

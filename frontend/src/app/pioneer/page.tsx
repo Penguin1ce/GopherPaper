@@ -65,6 +65,7 @@ const LUCKIN_TTL_DAYS = 30;
 const LUCKIN_HEADER = "X-Luckin-Token";
 const DELETE_CONFIRM_HEADER = "X-GopherPaper-Delete-Confirm";
 const AGENT_TYPE = "pioneer";
+const REFERENCE_DRAFT_KEY = "gopherpaper.pioneer.referenceDraft";
 
 function loadAuth(): { token: string; user: AuthUser | null } {
   if (typeof window === "undefined") return { token: "", user: null };
@@ -92,6 +93,17 @@ function loadLuckin(): LuckinCred | null {
     return cred.token ? cred : null;
   } catch {
     return null;
+  }
+}
+
+function consumeReferenceDraft(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const draft = sessionStorage.getItem(REFERENCE_DRAFT_KEY) || "";
+    if (draft) sessionStorage.removeItem(REFERENCE_DRAFT_KEY);
+    return draft;
+  } catch {
+    return "";
   }
 }
 
@@ -367,6 +379,7 @@ export default function PioneerPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<PaperDeleteConfirmPayload | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
+  const incomingReferenceDraftRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -380,6 +393,17 @@ export default function PioneerPage() {
     setToken(saved.token);
     setAuthUser(saved.user);
     setLuckin(loadLuckin());
+  }, []);
+
+  useEffect(() => {
+    const draft = consumeReferenceDraft();
+    if (!draft) return;
+    incomingReferenceDraftRef.current = true;
+    setActiveID("");
+    setMessages([]);
+    setStreamPlan([]);
+    setError("");
+    setInput(draft);
   }, []);
 
   useEffect(() => {
@@ -433,7 +457,7 @@ export default function PioneerPage() {
 
   useEffect(() => {
     if (!token) return;
-    void reloadSidebar(true);
+    void reloadSidebar(!incomingReferenceDraftRef.current);
   }, [token, reloadSidebar]);
 
   const startNewSession = () => {
