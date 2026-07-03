@@ -142,6 +142,9 @@ func Init(mode string) *gin.Engine {
 			adminAuthed.GET("/logs/stats", adminhandler.LogStats)
 			adminAuthed.GET("/analytics/advanced", adminhandler.AdvancedAnalytics)
 			adminAuthed.GET("/audit", adminhandler.ListAudit)
+			adminAuthed.GET("/export/papers", adminhandler.ExportPapersCSV)
+			adminAuthed.GET("/export/users", adminhandler.ExportUsersCSV)
+			adminAuthed.GET("/export/logs", adminhandler.ExportLogsCSV)
 		}
 	}
 	return r
