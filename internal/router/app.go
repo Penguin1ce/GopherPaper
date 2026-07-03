@@ -153,6 +153,14 @@ func Init(mode string) *gin.Engine {
 			adminAuthed.DELETE("/announcements/:id", adminhandler.DeleteAnnouncement)
 			adminAuthed.GET("/feedbacks", adminhandler.ListFeedbacks)
 			adminAuthed.PUT("/feedbacks/:id", adminhandler.UpdateFeedback)
+			adminAuthed.GET("/tags", adminhandler.ListTags)
+			adminAuthed.PUT("/tags/:id", adminhandler.RenameTag)
+			adminAuthed.DELETE("/tags/:id", adminhandler.DeleteTag)
+			adminAuthed.POST("/tags/merge", adminhandler.MergeTags)
+			adminAuthed.GET("/sessions", adminhandler.ListSessions)
+			adminAuthed.DELETE("/sessions/:id", adminhandler.DeleteSession)
+			adminAuthed.GET("/admins", adminhandler.ListAdmins)
+			adminAuthed.PUT("/admins/:id/status", adminhandler.SetAdminStatus)
 		}
 	}
 	return r
