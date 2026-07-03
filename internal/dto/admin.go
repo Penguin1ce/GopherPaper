@@ -365,3 +365,89 @@ type AdminAuditListResponse struct {
 	Page     int              `json:"page"`
 	PageSize int              `json:"page_size"`
 }
+
+// ── 后台系统设置 ─────────────────────────────────────────────
+
+// AdminSettingItem 是一条可配置的系统设置。
+type AdminSettingItem struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Group string `json:"group"`
+	Label string `json:"label"`
+	Type  string `json:"type"`
+}
+
+// AdminSettingsResponse 是全部系统设置。
+type AdminSettingsResponse struct {
+	Items []AdminSettingItem `json:"items"`
+}
+
+// AdminSettingUpdate 是单条设置的更新项。
+type AdminSettingUpdate struct {
+	Key   string `json:"key" binding:"required"`
+	Value string `json:"value"`
+}
+
+// AdminSettingsUpdateRequest 是批量更新设置的请求体。
+type AdminSettingsUpdateRequest struct {
+	Items []AdminSettingUpdate `json:"items"`
+}
+
+// ── 后台站内公告 ─────────────────────────────────────────────
+
+// AdminAnnouncementItem 是一条站内公告。
+type AdminAnnouncementItem struct {
+	ID         uint      `json:"id"`
+	Title      string    `json:"title"`
+	Content    string    `json:"content"`
+	Level      string    `json:"level"`
+	Published  bool      `json:"published"`
+	AuthorName string    `json:"author_name"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// AdminAnnouncementListResponse 是分页的公告列表。
+type AdminAnnouncementListResponse struct {
+	Items    []AdminAnnouncementItem `json:"items"`
+	Total    int64                   `json:"total"`
+	Page     int                     `json:"page"`
+	PageSize int                     `json:"page_size"`
+}
+
+// AdminAnnouncementRequest 是创建/更新公告的请求体。
+type AdminAnnouncementRequest struct {
+	Title     string `json:"title" binding:"required"`
+	Content   string `json:"content"`
+	Level     string `json:"level"`
+	Published bool   `json:"published"`
+}
+
+// ── 后台用户反馈工单 ─────────────────────────────────────────
+
+// AdminFeedbackItem 是一条用户反馈工单。
+type AdminFeedbackItem struct {
+	ID          uint      `json:"id"`
+	StudentID   string    `json:"student_id"`
+	Category    string    `json:"category"`
+	Content     string    `json:"content"`
+	Status      string    `json:"status"`
+	Reply       string    `json:"reply"`
+	HandlerName string    `json:"handler_name"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// AdminFeedbackListResponse 是分页的反馈列表。
+type AdminFeedbackListResponse struct {
+	Items    []AdminFeedbackItem `json:"items"`
+	Total    int64               `json:"total"`
+	Page     int                 `json:"page"`
+	PageSize int                 `json:"page_size"`
+}
+
+// AdminFeedbackUpdateRequest 是处理反馈(改状态/回复)的请求体。
+type AdminFeedbackUpdateRequest struct {
+	Status string `json:"status"`
+	Reply  string `json:"reply"`
+}
