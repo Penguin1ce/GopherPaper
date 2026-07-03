@@ -134,6 +134,11 @@ func Init(mode string) *gin.Engine {
 			adminAuthed.POST("/model-configs/:role/restore", adminhandler.RestoreModelConfig)
 			adminAuthed.POST("/demo/seed", adminhandler.SeedDemo)
 			adminAuthed.POST("/demo/clear", adminhandler.ClearDemo)
+			adminAuthed.GET("/users", adminhandler.ListUsers)
+			adminAuthed.GET("/users/:id", adminhandler.GetUser)
+			adminAuthed.GET("/classes", adminhandler.ClassStats)
+			adminAuthed.GET("/logs", adminhandler.ListLogs)
+			adminAuthed.GET("/logs/stats", adminhandler.LogStats)
 		}
 	}
 	return r

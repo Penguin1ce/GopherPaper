@@ -142,6 +142,69 @@ func ClearDemo(c *gin.Context) {
 	response.OK(c, res)
 }
 
+// ListUsers 分页返回用户列表(支持搜索与班级筛选)。
+func ListUsers(c *gin.Context) {
+	page := parseInt(c.Query("page"), 1)
+	pageSize := parseInt(c.Query("page_size"), 10)
+	res, err := adminservice.ListUsers(c.Request.Context(), c.Query("query"), c.Query("class_id"), page, pageSize)
+	if err != nil {
+		zlog.Error("admin list users failed", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.OK(c, res)
+}
+
+// GetUser 返回单个用户画像。
+func GetUser(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Fail(c, http.StatusBadRequest, "非法用户 ID")
+		return
+	}
+	res, err := adminservice.GetUserDetail(c.Request.Context(), uint(id))
+	if err != nil {
+		response.Fail(c, http.StatusNotFound, err.Error())
+		return
+	}
+	response.OK(c, res)
+}
+
+// ClassStats 返回按班级聚合的统计。
+func ClassStats(c *gin.Context) {
+	res, err := adminservice.ClassStats(c.Request.Context())
+	if err != nil {
+		zlog.Error("admin class stats failed", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.OK(c, res)
+}
+
+// ListLogs 分页返回服务调用日志(支持筛选)。
+func ListLogs(c *gin.Context) {
+	page := parseInt(c.Query("page"), 1)
+	pageSize := parseInt(c.Query("page_size"), 20)
+	res, err := adminservice.ListLogs(c.Request.Context(), c.Query("service_type"), c.Query("result"), c.Query("actor"), page, pageSize)
+	if err != nil {
+		zlog.Error("admin list logs failed", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.OK(c, res)
+}
+
+// LogStats 返回日志筛选辅助统计。
+func LogStats(c *gin.Context) {
+	res, err := adminservice.LogStats(c.Request.Context())
+	if err != nil {
+		zlog.Error("admin log stats failed", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.OK(c, res)
+}
+
 func ListPapers(c *gin.Context) {
 	page := parseInt(c.Query("page"), 1)
 	pageSize := parseInt(c.Query("page_size"), 10)
