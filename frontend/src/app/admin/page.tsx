@@ -42,6 +42,7 @@ import { Threads } from "@/components/reactbits/threads";
 import { AdminDashboard } from "./dashboard";
 import { UsersPanel } from "./users-panel";
 import { LogsPanel } from "./logs-panel";
+import { ArchitectureGraph } from "./architecture-graph";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -596,6 +597,7 @@ export default function AdminPage() {
         {auth ? (
           <section className="flex flex-1 flex-col gap-5 py-5">
             <AdminDashboard token={token} onChanged={() => void refreshAll()} />
+            <ArchitectureGraph />
             <UsersPanel token={token} />
             <LogsPanel token={token} />
             <OverviewGrid overview={overview} onAction={onOverviewAction} />
