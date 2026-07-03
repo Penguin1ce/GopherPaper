@@ -161,8 +161,8 @@ export function colorForeground(color?: string) {
 
 export function freetextStyleForColor(color?: string, fontSize = DEFAULT_TEXT_SIZE) {
   return {
-    color: colorForeground(color),
-    backgroundColor: colorValue(color),
+    color: colorSolid(color),
+    backgroundColor: "transparent",
     fontSize,
   };
 }
@@ -236,19 +236,11 @@ export function freetextStyle(annotation: PaperAnnotation) {
       : typeof style.fontSize === "number"
         ? style.fontSize
         : DEFAULT_TEXT_SIZE;
-  const color =
-    typeof style.text_color === "string"
-      ? style.text_color
-      : typeof style.color === "string"
-        ? style.color
-        : colorForeground(annotation.color);
-  const backgroundColor =
-    typeof style.background_color === "string"
-      ? style.background_color
-      : typeof style.backgroundColor === "string"
-        ? style.backgroundColor
-        : colorValue(annotation.color);
-  return { color, backgroundColor, fontSize };
+  return {
+    color: colorSolid(annotation.color),
+    backgroundColor: "transparent",
+    fontSize,
+  };
 }
 
 export function drawingStyle(annotation: PaperAnnotation) {
