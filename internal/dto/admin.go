@@ -132,3 +132,87 @@ type AdminModelConfigApplyResponse struct {
 	AppliedRoles []string `json:"applied_roles"`
 	Warnings     []string `json:"warnings,omitempty"`
 }
+
+// ── 后台数据分析看板 ─────────────────────────────────────────
+
+// AdminTrendPoint 是某一天的运营指标聚合,构成时间序列。
+type AdminTrendPoint struct {
+	Date         string  `json:"date"` // YYYY-MM-DD
+	Papers       int64   `json:"papers"`
+	Calls        int64   `json:"calls"`
+	Success      int64   `json:"success"`
+	Failed       int64   `json:"failed"`
+	Users        int64   `json:"users"`
+	Sessions     int64   `json:"sessions"`
+	AvgLatencyMS float64 `json:"avg_latency_ms"`
+}
+
+// AdminStatusSlice 是论文按状态的分布切片。
+type AdminStatusSlice struct {
+	Status string `json:"status"`
+	Count  int64  `json:"count"`
+}
+
+// AdminServiceStat 是单个服务类型的调用统计。
+type AdminServiceStat struct {
+	ServiceType string  `json:"service_type"`
+	Total       int64   `json:"total"`
+	Success     int64   `json:"success"`
+	Failed      int64   `json:"failed"`
+	AvgMS       float64 `json:"avg_ms"`
+	MaxMS       int64   `json:"max_ms"`
+}
+
+// AdminAnalytics 汇总看板所需的时间序列、分布与总量。
+type AdminAnalytics struct {
+	Days          int                `json:"days"`
+	Trend         []AdminTrendPoint  `json:"trend"`
+	StatusDist    []AdminStatusSlice `json:"status_distribution"`
+	Services      []AdminServiceStat `json:"services"`
+	TotalPapers   int64              `json:"total_papers"`
+	TotalUsers    int64              `json:"total_users"`
+	TotalCalls    int64              `json:"total_calls"`
+	TotalSessions int64              `json:"total_sessions"`
+}
+
+// ── 后台系统健康监控 ─────────────────────────────────────────
+
+// AdminHealthItem 是单个依赖组件的探活结果。
+type AdminHealthItem struct {
+	Name      string `json:"name"`
+	Status    string `json:"status"` // up | down
+	LatencyMS int64  `json:"latency_ms"`
+	Detail    string `json:"detail,omitempty"`
+}
+
+// AdminHealth 是全部依赖的健康快照。
+type AdminHealth struct {
+	Items     []AdminHealthItem `json:"items"`
+	CheckedAt time.Time         `json:"checked_at"`
+	Healthy   int               `json:"healthy"`
+	Total     int               `json:"total"`
+}
+
+// ── 后台实时活动流 ───────────────────────────────────────────
+
+// AdminActivityItem 是活动流里的一条事件。
+type AdminActivityItem struct {
+	Type      string    `json:"type"` // paper | user | call
+	Title     string    `json:"title"`
+	Subtitle  string    `json:"subtitle,omitempty"`
+	Status    string    `json:"status,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// AdminActivity 是最近事件时间线。
+type AdminActivity struct {
+	Items []AdminActivityItem `json:"items"`
+}
+
+// AdminSeedResult 是演示数据种子写入/清除的计数。
+type AdminSeedResult struct {
+	Users    int `json:"users"`
+	Papers   int `json:"papers"`
+	Calls    int `json:"calls"`
+	Sessions int `json:"sessions"`
+}

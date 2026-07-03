@@ -72,6 +72,14 @@ func Close() {
 	}
 }
 
+// Ping 校验 Neo4j 连通性,供后台健康监控探活使用。
+func Ping(ctx context.Context) error {
+	if driver == nil {
+		return fmt.Errorf("graph: Neo4j 驱动未初始化")
+	}
+	return driver.VerifyConnectivity(ctx)
+}
+
 // exec 跑一条 Cypher,自动按 database 路由,返回急加载结果。写读统一走此入口。
 func exec(ctx context.Context, cypher string, params map[string]any) (*neo4j.EagerResult, error) {
 	opts := []neo4j.ExecuteQueryConfigurationOption{}
