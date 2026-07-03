@@ -135,3 +135,16 @@ func UpdateFeedback(c *gin.Context) {
 	}
 	response.OKMsg(c, "反馈已更新", nil)
 }
+
+// ── 存储管理 ─────────────────────────────────────────────────
+
+func StorageOverview(c *gin.Context) {
+	topN := parseInt(c.Query("top"), 10)
+	res, err := adminservice.StorageOverview(c.Request.Context(), topN)
+	if err != nil {
+		zlog.Error("admin storage overview failed", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.OK(c, res)
+}
