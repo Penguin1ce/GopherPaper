@@ -7,7 +7,13 @@ import * as RealReactDOMClient from "next/dist/compiled/react-dom/client";
 const ROOTS_KEY = "__gopherpaperReactRoots";
 const ROOT_KEY = "__gopherpaperReactRoot";
 
-const ReactDOMClient = RealReactDOMClient as typeof ReactDOMClientTypes;
+type ReactDOMClientModule = typeof ReactDOMClientTypes & {
+  default?: typeof ReactDOMClientTypes;
+  version?: string;
+};
+
+const realReactDOMClient = RealReactDOMClient as ReactDOMClientModule;
+const ReactDOMClient = (realReactDOMClient.default ?? realReactDOMClient) as typeof ReactDOMClientTypes;
 
 type Root = ReturnType<typeof ReactDOMClientTypes.createRoot>;
 type RootRegistry = WeakMap<object, Root>;
@@ -63,3 +69,13 @@ export const createRoot: typeof ReactDOMClientTypes.createRoot = (container, opt
 };
 
 export const hydrateRoot = ReactDOMClient.hydrateRoot;
+export const version = (ReactDOMClient as ReactDOMClientModule).version;
+
+const patchedReactDOMClient = {
+  ...ReactDOMClient,
+  createRoot,
+  hydrateRoot,
+  version,
+};
+
+export default patchedReactDOMClient;
