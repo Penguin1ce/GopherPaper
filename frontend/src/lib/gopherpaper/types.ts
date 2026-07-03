@@ -172,6 +172,7 @@ export interface ReportRunStatus extends ReportRun {
 export interface ReportsStatus {
   ready: ReportType[];
   running: ReportRunStatus[];
+  flow_ready?: boolean;
 }
 
 // Reply.Meta["sources"] 透出的出处结构。

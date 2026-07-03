@@ -295,7 +295,7 @@ export function ReportGallery() {
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
-                className="h-8 rounded-full bg-card px-8"
+                className="h-8 rounded-full border-border/70 bg-card px-8 shadow-none hover:border-border focus-visible:border-primary/60 focus-visible:ring-1 focus-visible:ring-primary/20"
                 placeholder="搜索标题、关键词、作者"
                 onChange={(event) => setQuery(event.target.value)}
               />

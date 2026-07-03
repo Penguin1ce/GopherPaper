@@ -38,8 +38,9 @@ type ReportRun struct {
 
 // ReadyReportsResponse 是某篇论文已生成和生成中的研读报告状态。
 type ReadyReportsResponse struct {
-	Ready   []constant.ReportType `json:"ready"`
-	Running []ReportRun           `json:"running"`
+	Ready     []constant.ReportType `json:"ready"`
+	Running   []ReportRun           `json:"running"`
+	FlowReady bool                  `json:"flow_ready"`
 }
 
 // PaperCompareRequest 是多论文对比分析请求。

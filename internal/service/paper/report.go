@@ -65,15 +65,15 @@ func ReadyReports(ctx context.Context, ownerID, paperID string) ([]constant.Repo
 	return readyReportTypes(ctx, paperID)
 }
 
-// ReportOverview 返回某篇论文报告的就绪态与运行态。运行态来自 Redis 锁与进度快照,
-// 用于前端在 SSE 断开、晚订阅或重复点击时恢复小囊鼠的执行计划。
-func ReportOverview(ctx context.Context, ownerID, paperID string) ([]constant.ReportType, []ReportRun, error) {
+// ReportOverview 返回某篇论文报告与思路图的就绪态。报告运行态来自 Redis 锁与进度快照,
+// 用于前端在 SSE 断开、晚订阅或重复点击时恢复小囊鼠的执行计划与入口绿点。
+func ReportOverview(ctx context.Context, ownerID, paperID string) ([]constant.ReportType, []ReportRun, bool, error) {
 	if _, err := owned(ctx, ownerID, paperID); err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	ready, err := readyReportTypes(ctx, paperID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	readySet := make(map[constant.ReportType]bool, len(ready))
 	for _, t := range ready {
@@ -81,9 +81,13 @@ func ReportOverview(ctx context.Context, ownerID, paperID string) ([]constant.Re
 	}
 	running, err := runningReports(ctx, paperID, readySet)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	return ready, running, nil
+	flowReady, err := paperdao.HasPaperFlow(ctx, ownerID, paperID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	return ready, running, flowReady, nil
 }
 
 func readyReportTypes(ctx context.Context, paperID string) ([]constant.ReportType, error) {

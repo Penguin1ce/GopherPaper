@@ -90,6 +90,8 @@ interface AppContextValue {
   activeSession: Session | null;
   // 各论文已生成就绪的研读报告类型,供报告面板免轮询直接拉缓存
   reportReady: Record<string, Partial<Record<ReportType, boolean>>>;
+  // 各论文已生成就绪的思路图状态,同报告状态快照一起回填
+  paperFlowReady: Record<string, boolean>;
   // 各论文各类报告一次生成的实时进度(执行计划/进行中/失败),由 report_progress 事件累积
   reportProgress: Record<string, Partial<Record<ReportType, ReportRun>>>;
   // 动作
@@ -120,6 +122,7 @@ interface AppContextValue {
   sendMessage: (query: string) => Promise<void>;
   // 后端确认报告进入生成队列后调用,把该报告的进度置为「进行中」,后续阶段由 SSE 累积。
   beginReport: (paperID: string, type: ReportType) => void;
+  markPaperFlowReady: (paperID: string, ready?: boolean) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -202,6 +205,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   const [reportReady, setReportReady] = useState<
     Record<string, Partial<Record<ReportType, boolean>>>
   >({});
+  const [paperFlowReady, setPaperFlowReady] = useState<Record<string, boolean>>({});
   const [reportProgress, setReportProgress] = useState<
     Record<string, Partial<Record<ReportType, ReportRun>>>
   >({});
@@ -291,6 +295,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       setActivePaperID("");
       setActiveSessionID("");
       setReportReady({});
+      setPaperFlowReady({});
       setReportProgress({});
       setPreference(DEFAULT_PREFERENCE);
     },
@@ -412,6 +417,10 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const markPaperFlowReady = useCallback((paperID: string, ready = true) => {
+    setPaperFlowReady((prev) => ({ ...prev, [paperID]: ready }));
+  }, []);
+
   // 报告生成阶段进度:failed 标记失败并停 live;其余阶段按 phase 续接/新建执行计划步。
   const applyReportProgress = useCallback(
     (paperID: string, type: ReportType, phase: string, detail?: string) => {
@@ -472,6 +481,10 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         [paperID]: Object.fromEntries(ready.map((t) => [t, true])) as Partial<
           Record<ReportType, boolean>
         >,
+      }));
+      setPaperFlowReady((prev) => ({
+        ...prev,
+        [paperID]: Boolean(status.flow_ready),
       }));
       const running = status.running ?? [];
       if (running.length === 0) return;
@@ -843,6 +856,11 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         delete next[id];
         return next;
       });
+      setPaperFlowReady((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
 
       if (activePaperID === id) {
         const nextPaper =
@@ -1157,6 +1175,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       activePaper,
       activeSession,
       reportReady,
+      paperFlowReady,
       reportProgress,
       toast,
       dismissToast,
@@ -1184,6 +1203,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       removeSession,
       sendMessage,
       beginReport,
+      markPaperFlowReady,
     }),
     [
       user,
@@ -1200,6 +1220,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       activePaper,
       activeSession,
       reportReady,
+      paperFlowReady,
       reportProgress,
       toast,
       dismissToast,
@@ -1227,6 +1248,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       removeSession,
       sendMessage,
       beginReport,
+      markPaperFlowReady,
     ],
   );
 
