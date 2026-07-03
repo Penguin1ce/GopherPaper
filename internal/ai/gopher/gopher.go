@@ -261,6 +261,13 @@ func EvictUser(userID string) {
 	runners.Delete(userID)
 }
 
+func EvictAll() {
+	runners.Range(func(k, _ any) bool {
+		runners.Delete(k)
+		return true
+	})
+}
+
 // reportH1 匹配 Markdown 一级标题行。一份报告至多一个一级标题,出现第二个即模型跑飞重写了第二份。
 var reportH1 = regexp.MustCompile(`(?m)^#\s+\S`)
 

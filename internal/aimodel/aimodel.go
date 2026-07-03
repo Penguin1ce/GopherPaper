@@ -158,3 +158,10 @@ func ModelsForUser(userID string) (*ModelSet, error) {
 func EvictUser(userID string) {
 	modelSets.Delete(userID)
 }
+
+func EvictAll() {
+	modelSets.Range(func(k, _ any) bool {
+		modelSets.Delete(k)
+		return true
+	})
+}

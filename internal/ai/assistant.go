@@ -79,6 +79,25 @@ func EvictUser(userID string) {
 	aimodel.EvictUser(userID)
 }
 
+func EvictAll() {
+	pioneerflow.EvictAll()
+	agentrt.EvictAll()
+	ragagentflow.EvictAll()
+	gopherflow.EvictAll()
+	aimodel.EvictAll()
+}
+
+func ReloadModels(ctx context.Context, rr trpcreranker.Reranker, redisCfg config.RedisConfig, chatCfg config.ModelConfig) error {
+	if err := retrieval.Init(ctx, rr); err != nil {
+		return fmt.Errorf("reload rag retriever: %w", err)
+	}
+	if err := pioneerflow.Init(redisCfg, chatCfg); err != nil {
+		return fmt.Errorf("reload pioneer session: %w", err)
+	}
+	EvictAll()
+	return nil
+}
+
 // PioneerChat 是小云雀会话入口:不经意图分类与 RAG,直接走带工具的小云雀 agent。
 // ctx 须已注入租户身份;凭据型工具的 token 由请求 ctx 携带,见 credential 包。
 // 多轮上下文由 pioneer 的 Redis session 按 sessionID 自动承载(含工具轨迹),不再手工注入历史。

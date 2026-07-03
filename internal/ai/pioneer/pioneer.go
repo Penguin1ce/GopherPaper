@@ -171,3 +171,10 @@ func runnerForUser(userID string) (runner.Runner, error) {
 func EvictUser(userID string) {
 	runners.Delete(userID)
 }
+
+func EvictAll() {
+	runners.Range(func(k, _ any) bool {
+		runners.Delete(k)
+		return true
+	})
+}
