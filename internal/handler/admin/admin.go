@@ -91,6 +91,57 @@ func Overview(c *gin.Context) {
 	response.OK(c, overview)
 }
 
+// Analytics 返回看板所需的时间序列、状态分布与服务统计。
+func Analytics(c *gin.Context) {
+	days := parseInt(c.Query("days"), 30)
+	data, err := adminservice.Analytics(c.Request.Context(), days)
+	if err != nil {
+		zlog.Error("admin analytics failed", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.OK(c, data)
+}
+
+// Health 返回后台依赖中间件的实时健康快照。
+func Health(c *gin.Context) {
+	response.OK(c, adminservice.Health(c.Request.Context()))
+}
+
+// Activity 返回最近的运营事件时间线。
+func Activity(c *gin.Context) {
+	limit := parseInt(c.Query("limit"), 20)
+	data, err := adminservice.Activity(c.Request.Context(), limit)
+	if err != nil {
+		zlog.Error("admin activity failed", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.OK(c, data)
+}
+
+// SeedDemo 灌入演示数据,便于中期检查演示看板。
+func SeedDemo(c *gin.Context) {
+	res, err := adminservice.SeedDemo(c.Request.Context())
+	if err != nil {
+		zlog.Error("admin seed demo failed", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "seed failed")
+		return
+	}
+	response.OK(c, res)
+}
+
+// ClearDemo 清除全部演示数据。
+func ClearDemo(c *gin.Context) {
+	res, err := adminservice.ClearDemo(c.Request.Context())
+	if err != nil {
+		zlog.Error("admin clear demo failed", "err", err)
+		response.Fail(c, http.StatusInternalServerError, "clear failed")
+		return
+	}
+	response.OK(c, res)
+}
+
 func ListPapers(c *gin.Context) {
 	page := parseInt(c.Query("page"), 1)
 	pageSize := parseInt(c.Query("page_size"), 10)

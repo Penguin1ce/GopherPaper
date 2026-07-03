@@ -122,6 +122,9 @@ func Init(mode string) *gin.Engine {
 		{
 			adminAuthed.GET("/me", adminhandler.Me)
 			adminAuthed.GET("/overview", adminhandler.Overview)
+			adminAuthed.GET("/analytics", adminhandler.Analytics)
+			adminAuthed.GET("/health", adminhandler.Health)
+			adminAuthed.GET("/activity", adminhandler.Activity)
 			adminAuthed.GET("/papers", adminhandler.ListPapers)
 			adminAuthed.DELETE("/papers/:id", adminhandler.DeletePaper)
 			adminAuthed.GET("/model-configs", adminhandler.ListModelConfigs)
@@ -129,6 +132,8 @@ func Init(mode string) *gin.Engine {
 			adminAuthed.PUT("/model-configs/:role", adminhandler.UpdateModelConfig)
 			adminAuthed.POST("/model-configs/:role/test", adminhandler.TestModelConfig)
 			adminAuthed.POST("/model-configs/:role/restore", adminhandler.RestoreModelConfig)
+			adminAuthed.POST("/demo/seed", adminhandler.SeedDemo)
+			adminAuthed.POST("/demo/clear", adminhandler.ClearDemo)
 		}
 	}
 	return r
