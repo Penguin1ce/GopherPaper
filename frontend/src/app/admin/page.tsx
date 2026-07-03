@@ -38,6 +38,7 @@ import {
 } from "@/components/gopherpaper/admin-auth";
 import { GlassSurface } from "@/components/reactbits/glass-surface";
 import { Threads } from "@/components/reactbits/threads";
+import { AdminDashboard } from "./dashboard";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -579,6 +580,7 @@ export default function AdminPage() {
 
         {auth ? (
           <section className="flex flex-1 flex-col gap-5 py-5">
+            <AdminDashboard token={token} onChanged={() => void refreshAll()} />
             <OverviewGrid overview={overview} onAction={onOverviewAction} />
             <section ref={paperSectionRef} className="rounded-lg border border-border bg-card">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">

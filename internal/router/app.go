@@ -122,8 +122,13 @@ func Init(mode string) *gin.Engine {
 		{
 			adminAuthed.GET("/me", adminhandler.Me)
 			adminAuthed.GET("/overview", adminhandler.Overview)
+			adminAuthed.GET("/analytics", adminhandler.Analytics)
+			adminAuthed.GET("/health", adminhandler.Health)
+			adminAuthed.GET("/activity", adminhandler.Activity)
 			adminAuthed.GET("/papers", adminhandler.ListPapers)
 			adminAuthed.DELETE("/papers/:id", adminhandler.DeletePaper)
+			adminAuthed.POST("/demo/seed", adminhandler.SeedDemo)
+			adminAuthed.POST("/demo/clear", adminhandler.ClearDemo)
 		}
 	}
 	return r

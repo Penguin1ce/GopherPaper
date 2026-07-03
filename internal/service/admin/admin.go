@@ -29,6 +29,7 @@ const adminStatusActive = "active"
 
 var (
 	registrationCode string
+	mqURL            string // RabbitMQ 连接串,供健康监控探活
 
 	ErrRegistrationCodeNotConfigured = errors.New("admin: registration code is not configured")
 	ErrRegistrationCodeInvalid       = errors.New("admin: registration code is invalid")
@@ -38,8 +39,9 @@ var (
 	ErrWrongPassword                 = errors.New("admin: password is incorrect")
 )
 
-func Init(cfg config.AdminConfig) {
+func Init(cfg config.AdminConfig, rabbitURL string) {
 	registrationCode = strings.TrimSpace(cfg.RegistrationCode)
+	mqURL = strings.TrimSpace(rabbitURL)
 }
 
 func SendVerifyCode(ctx context.Context, email string) error {

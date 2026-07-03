@@ -144,7 +144,7 @@ func run(cfgPath string, backfillGraph bool) error {
 
 	// 7. JWT、邮件与 HTTP 服务
 	auth.Init(cfg.JWT)
-	adminservice.Init(cfg.Admin)
+	adminservice.Init(cfg.Admin, cfg.MQ.URL)
 	utils.InitMail(cfg.Mail)
 	engine := router.Init(cfg.Server.Mode)
 	srv := &http.Server{Addr: cfg.Server.Addr, Handler: engine}
