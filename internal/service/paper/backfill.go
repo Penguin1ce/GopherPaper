@@ -54,6 +54,8 @@ func BackfillGraph(ctx context.Context) error {
 			Innovations:       meta.Innovations,
 			Limitations:       meta.Limitations,
 			FutureWork:        meta.FutureWork,
+			References:        meta.References,
+			ReferencesLoaded:  meta.References != nil,
 			Embedding: paperEmbedding(uctx, &core.PaperStructured{
 				Title:             title,
 				Abstract:          meta.Abstract,
