@@ -515,3 +515,18 @@ type AdminAccountListResponse struct {
 type AdminAccountStatusRequest struct {
 	Status string `json:"status" binding:"required"`
 }
+
+// ── 后台论文批量操作 ─────────────────────────────────────────
+
+// AdminBatchDeleteRequest 是批量删除论文的请求体。
+type AdminBatchDeleteRequest struct {
+	IDs []string `json:"ids" binding:"required"`
+}
+
+// AdminBatchResult 是批量操作的结果统计。
+type AdminBatchResult struct {
+	Requested int      `json:"requested"`
+	Succeeded int      `json:"succeeded"`
+	Failed    int      `json:"failed"`
+	FailedIDs []string `json:"failed_ids,omitempty"`
+}

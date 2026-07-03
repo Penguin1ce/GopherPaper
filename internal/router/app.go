@@ -161,6 +161,7 @@ func Init(mode string) *gin.Engine {
 			adminAuthed.DELETE("/sessions/:id", adminhandler.DeleteSession)
 			adminAuthed.GET("/admins", adminhandler.ListAdmins)
 			adminAuthed.PUT("/admins/:id/status", adminhandler.SetAdminStatus)
+			adminAuthed.POST("/papers/batch-delete", adminhandler.BatchDeletePapers)
 		}
 	}
 	return r
