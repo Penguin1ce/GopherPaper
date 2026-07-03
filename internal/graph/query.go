@@ -196,7 +196,12 @@ UNION
 MATCH (p:Paper {owner:$owner})-[:FROM_AFFILIATION]->(n:Affiliation)
 WITH n, collect(DISTINCT p) AS ps WHERE size(ps) > 1
 UNWIND ps AS p
-RETURN p.id AS paperID, 'Affiliation:' + coalesce(n.norm, toString(id(n))) AS nodeID, 'Affiliation' AS nodeType, coalesce(n.name, '') AS nodeLabel, 'FROM_AFFILIATION' AS relType`
+RETURN p.id AS paperID, 'Affiliation:' + coalesce(n.norm, toString(id(n))) AS nodeID, 'Affiliation' AS nodeType, coalesce(n.name, '') AS nodeLabel, 'FROM_AFFILIATION' AS relType
+UNION
+MATCH (p:Paper {owner:$owner})-[:CITES]->(n:Reference)
+WITH n, collect(DISTINCT p) AS ps WHERE size(ps) > 1
+UNWIND ps AS p
+RETURN p.id AS paperID, 'Reference:' + coalesce(n.key, toString(id(n))) AS nodeID, 'Reference' AS nodeType, coalesce(n.raw, '') AS nodeLabel, 'CITES' AS relType`
 	linkRes, err := exec(ctx, linksCypher, map[string]any{"owner": owner})
 	if err != nil {
 		return EntityGraph{}, err
@@ -236,10 +241,45 @@ RETURN p.id AS paperID, 'Affiliation:' + coalesce(n.norm, toString(id(n))) AS no
 		})
 		seenEdges[edgeID] = true
 	}
+	if err := appendCitationOverviewEdges(ctx, owner, &g, seenEdges); err != nil {
+		return EntityGraph{}, err
+	}
 	if err := appendSemanticOverviewEdges(ctx, owner, &g, seenEdges); err != nil {
 		return EntityGraph{}, err
 	}
 	return g, nil
+}
+
+func appendCitationOverviewEdges(ctx context.Context, owner string, g *EntityGraph, seenEdges map[string]bool) error {
+	const cypher = `
+MATCH (p:Paper {owner:$owner})-[c:CITES]->(q:Paper {owner:$owner})
+RETURN p.id AS sourceID, q.id AS targetID, type(c) AS relType
+ORDER BY sourceID, targetID`
+	res, err := exec(ctx, cypher, map[string]any{"owner": owner})
+	if err != nil {
+		return err
+	}
+	for _, r := range res.Records {
+		sourceID := asStr(r, "sourceID")
+		targetID := asStr(r, "targetID")
+		relType := asStr(r, "relType")
+		if sourceID == "" || targetID == "" || relType == "" {
+			continue
+		}
+		edgeID := "paper:" + sourceID + ":" + relType + ":paper:" + targetID
+		if seenEdges[edgeID] {
+			continue
+		}
+		g.Edges = append(g.Edges, EntityEdge{
+			ID:     edgeID,
+			Source: "paper:" + sourceID,
+			Target: "paper:" + targetID,
+			Type:   relType,
+			Label:  relationLabel(relType),
+		})
+		seenEdges[edgeID] = true
+	}
+	return nil
 }
 
 func appendSemanticOverviewEdges(ctx context.Context, owner string, g *EntityGraph, seenEdges map[string]bool) error {
@@ -288,7 +328,7 @@ ORDER BY score DESC`
 			Source:  "paper:" + sourceID,
 			Target:  "paper:" + targetID,
 			Type:    "SEMANTIC_SIMILAR",
-			Label:   "语义相似",
+			Label:   "SEMANTIC_SIMILAR",
 			Details: compactDetails(details),
 		})
 		seenEdges[edgeID] = true
@@ -301,9 +341,9 @@ func PaperEntityGraph(ctx context.Context, owner, paperID string) (EntityGraph, 
 MATCH (p:Paper {owner:$owner, id:$id})
 CALL {
   WITH p
-  OPTIONAL MATCH (p)-[r:AUTHORED_BY|HAS_KEYWORD|FROM_AFFILIATION|PUBLISHED_IN|HAS_RESEARCH_QUESTION|USES_METHOD|HAS_EXPERIMENT|HAS_RESULT|HAS_INNOVATION|HAS_LIMITATION|HAS_FUTURE_WORK]->(n)
+  OPTIONAL MATCH (p)-[r:AUTHORED_BY|HAS_KEYWORD|FROM_AFFILIATION|PUBLISHED_IN|HAS_RESEARCH_QUESTION|USES_METHOD|HAS_EXPERIMENT|HAS_RESULT|HAS_INNOVATION|HAS_LIMITATION|HAS_FUTURE_WORK|CITES]->(n)
   WITH collect(CASE WHEN n IS NULL THEN null ELSE {
-    node_id: head(labels(n)) + ':' + coalesce(n.norm, n.key, elementId(n)),
+    node_id: CASE WHEN n:Paper THEN 'Paper:' + n.id ELSE head(labels(n)) + ':' + coalesce(n.norm, n.key, elementId(n)) END,
     node_type: head(labels(n)),
     node_label: coalesce(n.name, n.raw, n.title, ''),
     rel_type: type(r)
@@ -345,13 +385,18 @@ RETURN p.id AS paperID, coalesce(p.title, p.id) AS title, p.year AS year, p.venu
 		if !ok {
 			continue
 		}
-		nodeID := "entity:" + stringFromMap(item, "node_id")
+		rawNodeID := stringFromMap(item, "node_id")
 		label := stringFromMap(item, "node_label")
 		relType := stringFromMap(item, "rel_type")
-		if nodeID == "entity:" || label == "" || relType == "" {
+		nodeType := graphNodeType(stringFromMap(item, "node_type"))
+		nodeID := "entity:" + rawNodeID
+		if nodeType == "paper" {
+			citedPaperID := strings.TrimPrefix(rawNodeID, "Paper:")
+			nodeID = "paper:" + citedPaperID
+		}
+		if rawNodeID == "" || nodeID == "entity:" || nodeID == "paper:" || label == "" || relType == "" {
 			continue
 		}
-		nodeType := graphNodeType(stringFromMap(item, "node_type"))
 		if !seenNodes[nodeID] {
 			g.Nodes = append(g.Nodes, EntityNode{
 				ID:    nodeID,
@@ -526,36 +571,13 @@ func graphNodeType(label string) string {
 		return "limitation"
 	case "FutureWork":
 		return "future_work"
+	case "Reference":
+		return "reference"
 	default:
 		return "entity"
 	}
 }
 
 func relationLabel(rel string) string {
-	switch rel {
-	case "AUTHORED_BY":
-		return "作者"
-	case "HAS_KEYWORD":
-		return "关键词"
-	case "FROM_AFFILIATION":
-		return "机构"
-	case "PUBLISHED_IN":
-		return "发表来源"
-	case "HAS_RESEARCH_QUESTION":
-		return "研究问题"
-	case "USES_METHOD":
-		return "方法"
-	case "HAS_EXPERIMENT":
-		return "实验"
-	case "HAS_RESULT":
-		return "结果"
-	case "HAS_INNOVATION":
-		return "创新点"
-	case "HAS_LIMITATION":
-		return "局限性"
-	case "HAS_FUTURE_WORK":
-		return "未来工作"
-	default:
-		return rel
-	}
+	return rel
 }

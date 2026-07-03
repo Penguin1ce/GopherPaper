@@ -198,6 +198,7 @@ type PaperMeta struct {
 	Innovations       JSONStrings `gorm:"type:text" json:"innovations"`
 	Limitations       JSONStrings `gorm:"type:text" json:"limitations"`
 	FutureWork        JSONStrings `gorm:"type:text" json:"future_work"`
+	References        JSONStrings `gorm:"type:text" json:"references"`
 	UpdatedAt         time.Time   `json:"updated_at"`
 }
 

@@ -303,6 +303,8 @@ func buildPaperGraphFromMeta(ctx context.Context, owner, paperID string) (graphs
 		Innovations:       []string(meta.Innovations),
 		Limitations:       []string(meta.Limitations),
 		FutureWork:        []string(meta.FutureWork),
+		References:        []string(meta.References),
+		ReferencesLoaded:  meta.References != nil,
 	}, nil
 }
 

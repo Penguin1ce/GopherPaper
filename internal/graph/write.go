@@ -26,6 +26,8 @@ type PaperGraph struct {
 	Innovations       []string
 	Limitations       []string
 	FutureWork        []string
+	References        []string
+	ReferencesLoaded  bool
 	Embedding         []float64
 	SemanticProfile   string
 	SemanticEmbedding []float64
@@ -121,6 +123,11 @@ func UpsertPaperMetadata(ctx context.Context, p PaperGraph) error {
 			continue
 		}
 		if err := upsertMetadataTerms(ctx, p.Owner, p.ID, spec, terms); err != nil {
+			return err
+		}
+	}
+	if p.ReferencesLoaded {
+		if err := UpsertCitations(ctx, p.Owner, p.ID, p.References); err != nil {
 			return err
 		}
 	}
@@ -340,7 +347,7 @@ func UpsertCitations(ctx context.Context, owner, paperID string, refs []string) 
 			return err
 		}
 	}
-	return nil
+	return CleanupOrphans(ctx, owner)
 }
 
 func DeletePaper(ctx context.Context, owner, paperID string) error {

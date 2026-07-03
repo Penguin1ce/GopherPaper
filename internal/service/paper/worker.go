@@ -173,6 +173,7 @@ func saveStructured(ctx context.Context, paperID string, s *core.PaperStructured
 		Innovations:       s.Innovations,
 		Limitations:       s.Limitations,
 		FutureWork:        s.FutureWork,
+		References:        model.JSONStrings(doc.References),
 	}
 	if err := paperdao.SaveMeta(ctx, meta); err != nil {
 		return err

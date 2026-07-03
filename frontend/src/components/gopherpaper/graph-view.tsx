@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Download,
   FileText,
+  Hash,
   Network,
   RefreshCw,
   RotateCcw,
@@ -42,23 +43,28 @@ const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 2.6;
 const NODE_DRAG_THRESHOLD = 8;
 const GRAPH_KEYWORD_LIMIT = 10000;
+const DEFAULT_GRAPH_DISPLAY_LIMIT = 60;
 const PAPER_NODE_COLOR = "#35A98D";
 const GRAPH_EDGE_COLOR = "#94a3b8";
+const GRAPH_SELECTED_COLOR = "#22c55e";
+const PAPER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PIONEER_REFERENCE_DRAFT_KEY = "gopherpaper.pioneer.referenceDraft";
 
 const TYPE_META: Record<string, { label: string; color: string; radius: number }> = {
-  paper: { label: "论文名称", color: PAPER_NODE_COLOR, radius: 50 },
-  author: { label: "作者", color: "#6CCB72", radius: 30 },
-  affiliation: { label: "机构", color: "#36B9B5", radius: 30 },
-  keyword: { label: "关键词", color: "#4EA8F1", radius: 30 },
-  research_question: { label: "研究问题", color: "#A88AF0", radius: 30 },
-  method: { label: "方法", color: "#F0A14A", radius: 28 },
-  experiment: { label: "实验", color: "#DDB33F", radius: 27 },
-  result: { label: "结果", color: "#E66C73", radius: 28 },
-  innovation: { label: "创新点", color: "#E578B7", radius: 26 },
-  limitation: { label: "局限性", color: "#8A94A6", radius: 26 },
-  future_work: { label: "未来工作", color: "#35BFD0", radius: 25 },
-  venue: { label: "发表来源", color: "#7184A1", radius: 22 },
-  entity: { label: "实体", color: "#8A94A6", radius: 21 },
+  paper: { label: "Paper", color: PAPER_NODE_COLOR, radius: 36 },
+  author: { label: "Author", color: "#6CCB72", radius: 30 },
+  affiliation: { label: "Affiliation", color: "#36B9B5", radius: 30 },
+  keyword: { label: "Keyword", color: "#4EA8F1", radius: 30 },
+  research_question: { label: "ResearchQuestion", color: "#A88AF0", radius: 30 },
+  method: { label: "Method", color: "#F0A14A", radius: 28 },
+  experiment: { label: "Experiment", color: "#DDB33F", radius: 27 },
+  result: { label: "Result", color: "#E66C73", radius: 28 },
+  innovation: { label: "Innovation", color: "#E578B7", radius: 26 },
+  limitation: { label: "Limitation", color: "#8A94A6", radius: 26 },
+  future_work: { label: "FutureWork", color: "#35BFD0", radius: 25 },
+  reference: { label: "Reference", color: "#F2C84B", radius: 25 },
+  venue: { label: "Venue", color: "#7184A1", radius: 22 },
+  entity: { label: "Entity", color: "#8A94A6", radius: 21 },
 };
 
 type SimNode = EntityGraphNode & {
@@ -83,6 +89,11 @@ type GraphKeywordItem = {
   count?: number;
 };
 
+type GraphFilter =
+  | { kind: "all" }
+  | { kind: "node"; type: string; expanded: boolean }
+  | { kind: "edge"; type: string };
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -96,7 +107,7 @@ function shortText(s: string, n = 18) {
 
 function nodeLabelText(node: EntityGraphNode) {
   const radius = nodeMeta(node.type).radius;
-  const maxChars = node.type === "paper" ? 9 : Math.max(4, Math.floor(radius / 4.6));
+  const maxChars = node.type === "paper" ? 6 : Math.max(4, Math.floor(radius / 4.6));
   return shortText(node.label, maxChars);
 }
 
@@ -132,6 +143,89 @@ function nodeMeta(type: string) {
   return TYPE_META[type] || TYPE_META.entity;
 }
 
+function normalizePaperID(value?: string) {
+  const id = (value || "").trim().replace(/^paper:/, "");
+  return PAPER_ID_RE.test(id) ? id : "";
+}
+
+function normalizePaperTitle(value?: string) {
+  return (value || "").trim().replace(/\.pdf$/i, "").toLowerCase();
+}
+
+function paperIDFromNode(node: EntityGraphNode) {
+  return normalizePaperID(node.details?.paper_id) || normalizePaperID(node.id);
+}
+
+function referenceSearchText(node: EntityGraphNode) {
+  const raw = (node.details?.title || node.details?.name || node.label || "").trim();
+  if (!raw) return "";
+  const quoted = raw.match(/"([^"]{8,180})"/);
+  const text = quoted?.[1] || raw.replace(/^\s*(?:\[\d+\]|\(\d+\)|\d+\.)\s*/, "");
+  return text.replace(/\s+/g, " ").trim();
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+function edgeTypeLabel(edge: EntityGraphEdge) {
+  return edge.type || edge.label || "RELATION";
+}
+
+function dedupeEntityNodes(nodes: EntityGraphNode[]) {
+  const result = new Map<string, EntityGraphNode>();
+  for (const node of nodes) {
+    if (!node?.id) continue;
+    const current = result.get(node.id);
+    result.set(
+      node.id,
+      current
+        ? {
+            ...current,
+            label: current.label || node.label,
+            type: current.type || node.type,
+            details: { ...(current.details || {}), ...(node.details || {}) },
+          }
+        : node,
+    );
+  }
+  return [...result.values()];
+}
+
+function dedupeEntityEdges(edges: EntityGraphEdge[]) {
+  const result = new Map<string, EntityGraphEdge>();
+  for (const edge of edges) {
+    if (!edge?.source || !edge?.target) continue;
+    const key = edgeKey(edge);
+    const current = result.get(key);
+    result.set(
+      key,
+      current
+        ? {
+            ...current,
+            label: current.label || edge.label,
+            type: current.type || edge.type,
+            details: { ...(current.details || {}), ...(edge.details || {}) },
+          }
+        : edge,
+    );
+  }
+  return [...result.values()];
+}
+
 function collisionRadius(node: Pick<EntityGraphNode, "type" | "label">) {
   const base = nodeMeta(node.type).radius;
   const labelPad = Math.min(17, Math.max(5, [...(node.label || "")].length * 1.25));
@@ -140,16 +234,20 @@ function collisionRadius(node: Pick<EntityGraphNode, "type" | "label">) {
 
 function ForceEntityGraph({
   graph,
+  baseGraph,
   mode = "detail",
   keywordItems = [],
   showKeywordCount = false,
-  onPaperDoubleClick,
+  onPaperRead,
+  resolvePaperID,
 }: {
   graph: EntityGraph;
+  baseGraph?: EntityGraph | null;
   mode?: "overview" | "detail";
   keywordItems?: GraphKeywordItem[];
   showKeywordCount?: boolean;
-  onPaperDoubleClick?: (paperID: string) => void;
+  onPaperRead?: (paperID: string) => void;
+  resolvePaperID?: (node: EntityGraphNode) => string;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const nodesRef = useRef<SimNode[]>([]);
@@ -171,11 +269,228 @@ function ForceEntityGraph({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [selected, setSelected] = useState<SelectedItem | null>(null);
-  const graphNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
-  const graphEdges = Array.isArray(graph.edges) ? graph.edges : [];
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [keywordsOpen, setKeywordsOpen] = useState(false);
+  const [limitOpen, setLimitOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const [displayLimit, setDisplayLimit] = useState(DEFAULT_GRAPH_DISPLAY_LIMIT);
+  const [graphFilter, setGraphFilter] = useState<GraphFilter>({ kind: "all" });
+  const [expandedNodeIDs, setExpandedNodeIDs] = useState<string[]>([]);
+  const filterClickTimerRef = useRef<number | null>(null);
+  const paperIDForNode = useCallback(
+    (node: EntityGraphNode) => resolvePaperID?.(node) || paperIDFromNode(node),
+    [resolvePaperID],
+  );
+
+  const allGraphNodes = useMemo(
+    () => dedupeEntityNodes(Array.isArray(graph.nodes) ? graph.nodes : []),
+    [graph.nodes],
+  );
+  const allGraphEdges = useMemo(
+    () => dedupeEntityEdges(Array.isArray(graph.edges) ? graph.edges : []),
+    [graph.edges],
+  );
+  const allNodeByID = useMemo(() => new Map(allGraphNodes.map((node) => [node.id, node])), [allGraphNodes]);
+  const baseGraphEdges = useMemo(
+    () => (Array.isArray(baseGraph?.edges) ? baseGraph.edges : allGraphEdges),
+    [allGraphEdges, baseGraph],
+  );
+  const baseGraphNodeIDs = useMemo(() => {
+    const ids = new Set<string>();
+    for (const edge of baseGraphEdges) {
+      ids.add(edge.source);
+      ids.add(edge.target);
+    }
+    if (baseGraph?.nodes?.length) {
+      for (const node of baseGraph.nodes) ids.add(node.id);
+    }
+    if (ids.size === 0) {
+      for (const node of allGraphNodes) {
+        if (node.type === "paper") ids.add(node.id);
+      }
+    }
+    return ids;
+  }, [allGraphNodes, baseGraph, baseGraphEdges]);
+  const expandedNodeIDSet = useMemo(() => new Set(expandedNodeIDs), [expandedNodeIDs]);
+  const baseFilteredEdges = useMemo(() => {
+    if (graphFilter.kind === "edge") {
+      return allGraphEdges.filter((edge) => edge.type === graphFilter.type);
+    }
+    if (graphFilter.kind === "node") {
+      if (!graphFilter.expanded) return [];
+      if (graphFilter.type === "paper") {
+        return allGraphEdges.filter((edge) => allNodeByID.get(edge.source)?.type === "paper" || allNodeByID.get(edge.target)?.type === "paper");
+      }
+      return allGraphEdges.filter((edge) => {
+        const source = allNodeByID.get(edge.source);
+        const target = allNodeByID.get(edge.target);
+        return (
+          (source?.type === graphFilter.type && target?.type === "paper") ||
+          (target?.type === graphFilter.type && source?.type === "paper")
+        );
+      });
+    }
+    return baseGraphEdges;
+  }, [allGraphEdges, allNodeByID, baseGraphEdges, graphFilter]);
+  const expandedNodeEdges = useMemo(() => {
+    if (expandedNodeIDSet.size === 0) return [];
+    return allGraphEdges.filter((edge) => {
+      const expandedIDs = [edge.source, edge.target].filter((id) => expandedNodeIDSet.has(id));
+      if (expandedIDs.length === 0) return false;
+      return expandedIDs.some((id) => {
+        const node = allNodeByID.get(id);
+        if (node?.type === "paper") return true;
+        const otherID = id === edge.source ? edge.target : edge.source;
+        return allNodeByID.get(otherID)?.type === "paper";
+      });
+    });
+  }, [allGraphEdges, allNodeByID, expandedNodeIDSet]);
+  const graphEdgeCandidates = useMemo(
+    () => dedupeEntityEdges([...expandedNodeEdges, ...baseFilteredEdges]),
+    [baseFilteredEdges, expandedNodeEdges],
+  );
+  const graphNodeCandidates = useMemo(() => {
+    const ids = new Set<string>();
+    if (graphFilter.kind === "all") {
+      for (const id of baseGraphNodeIDs) ids.add(id);
+    } else if (graphFilter.kind === "edge") {
+      for (const edge of baseFilteredEdges) {
+        ids.add(edge.source);
+        ids.add(edge.target);
+      }
+    } else {
+      if (graphFilter.expanded) {
+        for (const edge of baseFilteredEdges) {
+          ids.add(edge.source);
+          ids.add(edge.target);
+        }
+      }
+      for (const node of allGraphNodes) {
+        if (node.type === graphFilter.type) ids.add(node.id);
+      }
+    }
+    for (const edge of expandedNodeEdges) {
+      ids.add(edge.source);
+      ids.add(edge.target);
+    }
+    for (const id of expandedNodeIDs) {
+      ids.add(id);
+    }
+    return allGraphNodes.filter((node) => ids.has(node.id));
+  }, [allGraphNodes, baseFilteredEdges, baseGraphNodeIDs, expandedNodeEdges, expandedNodeIDs, graphFilter]);
+  const visibleGraphNodeIDs = useMemo(() => {
+    const ids = new Set<string>();
+    const add = (id: string) => {
+      if (ids.size < displayLimit) ids.add(id);
+    };
+    for (const id of expandedNodeIDs) add(id);
+    for (const edge of graphEdgeCandidates) {
+      add(edge.source);
+      add(edge.target);
+    }
+    for (const node of graphNodeCandidates) add(node.id);
+    return ids;
+  }, [displayLimit, expandedNodeIDs, graphEdgeCandidates, graphNodeCandidates]);
+  const graphNodes = useMemo(
+    () => allGraphNodes.filter((node) => visibleGraphNodeIDs.has(node.id)),
+    [allGraphNodes, visibleGraphNodeIDs],
+  );
+  const graphEdges = useMemo(
+    () =>
+      graphEdgeCandidates
+        .filter((edge) => visibleGraphNodeIDs.has(edge.source) && visibleGraphNodeIDs.has(edge.target))
+        .slice(0, displayLimit),
+    [displayLimit, graphEdgeCandidates, visibleGraphNodeIDs],
+  );
+  const graphStructureKey = useMemo(
+    () => [
+      mode,
+      graphNodes.map((node) => node.id).join("|"),
+      graphEdges.map(edgeKey).join("|"),
+    ].join("::"),
+    [graphEdges, graphNodes, mode],
+  );
+  const rawNodeFilterItems = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const node of allGraphNodes) counts.set(node.type, (counts.get(node.type) || 0) + 1);
+    return [...counts.entries()]
+      .map(([type, count]) => ({ type, count, meta: nodeMeta(type) }))
+      .sort((a, b) => Object.keys(TYPE_META).indexOf(a.type) - Object.keys(TYPE_META).indexOf(b.type));
+  }, [allGraphNodes]);
+  const nodeFilterItems = rawNodeFilterItems;
+  const rawEdgeFilterItems = useMemo(() => {
+    const counts = new Map<string, { count: number; label: string }>();
+    for (const edge of allGraphEdges) {
+      const current = counts.get(edge.type);
+      counts.set(edge.type, {
+        count: (current?.count || 0) + 1,
+        label: edgeTypeLabel(edge),
+      });
+    }
+    return [...counts.entries()]
+      .map(([type, item]) => ({ type, count: item.count, label: item.label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "en"));
+  }, [allGraphEdges]);
+  const edgeFilterItems = rawEdgeFilterItems;
+  const clearFilterClickTimer = useCallback(() => {
+    if (filterClickTimerRef.current == null) return;
+    window.clearTimeout(filterClickTimerRef.current);
+    filterClickTimerRef.current = null;
+  }, []);
+
+  const selectAllFilter = useCallback(() => {
+    clearFilterClickTimer();
+    setGraphFilter({ kind: "all" });
+    setExpandedNodeIDs([]);
+    setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
+  }, [clearFilterClickTimer]);
+
+  const selectNodeFilter = useCallback(
+    (type: string) => {
+      clearFilterClickTimer();
+      filterClickTimerRef.current = window.setTimeout(() => {
+        setGraphFilter({ kind: "node", type, expanded: false });
+        setExpandedNodeIDs([]);
+        setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
+        filterClickTimerRef.current = null;
+      }, 180);
+    },
+    [clearFilterClickTimer],
+  );
+
+  const toggleNodeExpansion = useCallback(
+    (type: string) => {
+      clearFilterClickTimer();
+      setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
+      setGraphFilter((current) =>
+        current.kind === "node" && current.type === type && current.expanded
+          ? { kind: "node", type, expanded: false }
+          : { kind: "node", type, expanded: true },
+      );
+    },
+    [clearFilterClickTimer],
+  );
+
+  const toggleNodeRelationExpansion = useCallback((node: EntityGraphNode) => {
+    setExpandedNodeIDs((current) =>
+      current.includes(node.id)
+        ? current.filter((id) => id !== node.id)
+        : [...current, node.id],
+    );
+  }, []);
+
+  const selectEdgeFilter = useCallback(
+    (type: string) => {
+      clearFilterClickTimer();
+      setGraphFilter({ kind: "edge", type });
+      setExpandedNodeIDs([]);
+      setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
+    },
+    [clearFilterClickTimer],
+  );
+
+  useEffect(() => () => clearFilterClickTimer(), [clearFilterClickTimer]);
 
   const resetLayout = () => {
     const center = { x: VIEW_W / 2, y: VIEW_H / 2 };
@@ -262,13 +577,20 @@ function ForceEntityGraph({
   };
 
   useEffect(() => {
+    setGraphFilter({ kind: "all" });
+    setExpandedNodeIDs([]);
+    setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
+    setLimitOpen(false);
+  }, [graph, mode]);
+
+  useEffect(() => {
     resetLayout();
     setSelected(null);
     setZoom(1);
     setSearchTerm("");
     setKeywordsOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph, mode]);
+  }, [graphStructureKey]);
 
   useEffect(() => {
     let raf = 0;
@@ -467,29 +789,231 @@ function ForceEntityGraph({
     setSearchTerm("");
     resetLayout();
   };
-  const downloadSvg = () => {
+  const graphDownloadName = (ext: "svg" | "png") =>
+    mode === "overview" ? `overview-knowledge-graph.${ext}` : `paper-knowledge-graph.${ext}`;
+  const serializedGraphSvg = () => {
     const svg = svgRef.current;
-    if (!svg) return;
+    if (!svg) return "";
     const clone = svg.cloneNode(true) as SVGSVGElement;
     clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
     clone.setAttribute("width", String(VIEW_W));
     clone.setAttribute("height", String(VIEW_H));
-    const source = new XMLSerializer().serializeToString(clone);
-    const blob = new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n${source}`], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    clone.setAttribute("viewBox", `0 0 ${VIEW_W} ${VIEW_H}`);
+    return new XMLSerializer().serializeToString(clone);
+  };
+  const triggerDownload = (url: string, filename: string) => {
     const a = document.createElement("a");
     a.href = url;
-    a.download = mode === "overview" ? "overview-knowledge-graph.svg" : "paper-knowledge-graph.svg";
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
+  };
+  const downloadSvg = () => {
+    const source = serializedGraphSvg();
+    if (!source) return;
+    const blob = new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n${source}`], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    triggerDownload(url, graphDownloadName("svg"));
     URL.revokeObjectURL(url);
+    setDownloadOpen(false);
+  };
+  const downloadPng = () => {
+    const source = serializedGraphSvg();
+    if (!source) return;
+    const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    image.onload = () => {
+      const scale = 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = VIEW_W * scale;
+      canvas.height = VIEW_H * scale;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      ctx.drawImage(image, 0, 0, VIEW_W, VIEW_H);
+      canvas.toBlob((pngBlob) => {
+        URL.revokeObjectURL(url);
+        if (!pngBlob) return;
+        const pngUrl = URL.createObjectURL(pngBlob);
+        triggerDownload(pngUrl, graphDownloadName("png"));
+        URL.revokeObjectURL(pngUrl);
+      }, "image/png");
+    };
+    image.onerror = () => URL.revokeObjectURL(url);
+    image.src = url;
+    setDownloadOpen(false);
+  };
+  const searchReferenceInPioneer = async (node: EntityGraphNode) => {
+    const text = referenceSearchText(node);
+    if (!text) return;
+    try {
+      await copyTextToClipboard(text);
+    } catch {
+      // Clipboard permission can fail; the pioneer draft below still keeps the flow usable.
+    }
+    try {
+      sessionStorage.setItem(PIONEER_REFERENCE_DRAFT_KEY, `检索这篇论文：${text}`);
+    } catch {
+      // sessionStorage may be unavailable in strict browser modes.
+    }
+    window.location.assign("/pioneer");
   };
 
+  const filterPanel = (
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="border-b px-4 py-3">
+        <div className="text-base font-semibold">Database information</div>
+        <div className="mt-1 text-xs text-muted-foreground">单击筛选，双击节点标签展开或收回论文关系。</div>
+      </div>
+      <ScrollArea className="min-h-0 flex-1 overflow-hidden">
+        <div className="space-y-5 p-4">
+          {expandedNodeIDs.length > 0 && (
+            <div className="flex items-center justify-between gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
+              <span className="text-muted-foreground">已展开 {expandedNodeIDs.length} 个节点</span>
+              <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setExpandedNodeIDs([])}>
+                清除展开
+              </Button>
+            </div>
+          )}
+
+          <div>
+            <div className="mb-3 text-sm font-semibold">Nodes ({allGraphNodes.length})</div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-8 items-center rounded-full px-3 text-sm font-semibold text-slate-950 transition-transform hover:scale-[1.03]",
+                  graphFilter.kind === "all" ? "ring-2 ring-slate-500/40" : "",
+                )}
+                style={{ background: "#C4A5F4" }}
+                title="Show overview graph"
+                onClick={selectAllFilter}
+              >
+                *
+              </button>
+              {nodeFilterItems.map((item) => {
+                const active = graphFilter.kind === "node" && graphFilter.type === item.type;
+                return (
+                  <button
+                    key={item.type}
+                    type="button"
+                    className={cn(
+                      "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-slate-950 transition-transform hover:scale-[1.03]",
+                      active ? "ring-2 ring-slate-500/45" : "",
+                    )}
+                    style={{ background: item.meta.color }}
+                    aria-pressed={active}
+                    title="单击仅显示该类节点；双击展开/收回与 Paper 的关系"
+                    onClick={() => selectNodeFilter(item.type)}
+                    onDoubleClick={(event) => {
+                      event.preventDefault();
+                      toggleNodeExpansion(item.type);
+                    }}
+                  >
+                    {item.meta.label}
+                    <span className="text-xs font-medium text-slate-800/70">{item.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-3 text-sm font-semibold">Relationships ({allGraphEdges.length})</div>
+            {edgeFilterItems.length === 0 ? (
+              <p className="rounded-md border bg-muted/25 px-2 py-2 text-xs text-muted-foreground">暂无关系</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex h-8 items-center px-4 pl-5 text-sm font-semibold text-slate-950 transition-transform hover:scale-[1.03]",
+                    graphFilter.kind === "all" ? "ring-2 ring-slate-500/40" : "",
+                  )}
+                  style={{
+                    background: "#e5e7eb",
+                    clipPath: "polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%)",
+                  }}
+                  title="Show overview graph"
+                  onClick={selectAllFilter}
+                >
+                  *
+                </button>
+                {edgeFilterItems.map((item) => {
+                  const active = graphFilter.kind === "edge" && graphFilter.type === item.type;
+                  return (
+                    <button
+                      key={item.type}
+                      type="button"
+                      className={cn(
+                        "inline-flex h-8 items-center gap-1.5 px-4 pl-5 text-sm font-semibold text-slate-950 transition-transform hover:scale-[1.03]",
+                        active ? "ring-2 ring-slate-500/45" : "",
+                      )}
+                      style={{
+                        background: "#e5e7eb",
+                        clipPath: "polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%)",
+                      }}
+                      aria-pressed={active}
+                      title="Show node pairs connected by this relationship"
+                      onClick={() => selectEdgeFilter(item.type)}
+                    >
+                      {item.label}
+                      <span className="text-xs font-medium text-slate-800/70">{item.count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </ScrollArea>
+    </div>
+  );
+
   return (
-    <div className="relative min-h-[520px] flex-1 overflow-hidden rounded-lg border bg-background">
+    <div className="grid h-full min-h-0 flex-1 grid-cols-[14rem_minmax(0,1fr)] overflow-hidden rounded-lg border bg-background lg:grid-cols-[16rem_minmax(0,1fr)]">
+      <aside className="min-h-0 overflow-hidden border-r bg-background">{filterPanel}</aside>
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-background">
       <div className="absolute left-3 right-3 top-3 z-10 flex flex-wrap items-start justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Button
+              variant={limitOpen ? "secondary" : "outline"}
+              size="sm"
+              title="设置图谱展示数量上限"
+              onClick={() => setLimitOpen((open) => !open)}
+            >
+              <Hash className="size-4" />
+              数量 {displayLimit}
+            </Button>
+            {limitOpen && (
+              <div className="absolute left-0 top-[calc(100%+0.5rem)] z-20 flex items-center gap-2 rounded-md border bg-background/95 p-2 shadow-sm backdrop-blur">
+                <input
+                  type="number"
+                  min={1}
+                  value={displayLimit}
+                  onChange={(event) => setDisplayLimit(clamp(Number.parseInt(event.target.value, 10) || 1, 1, 9999))}
+                  className="h-8 w-24 rounded-md border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                  autoFocus
+                />
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  title="恢复默认数量"
+                  onClick={() => setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT)}
+                >
+                  <RotateCcw className="size-3.5" />
+                </Button>
+              </div>
+            )}
+          </div>
           <Button
             variant={searchOpen ? "secondary" : "outline"}
             size="sm"
@@ -560,10 +1084,22 @@ function ForceEntityGraph({
             <RotateCcw className="size-4" />
             重置
           </Button>
-          <Button variant="outline" size="sm" title="下载 SVG" onClick={downloadSvg}>
-            <Download className="size-4" />
-            下载
-          </Button>
+          <div className="relative">
+            <Button variant={downloadOpen ? "secondary" : "outline"} size="sm" title="下载知识图谱" onClick={() => setDownloadOpen((open) => !open)}>
+              <Download className="size-4" />
+              下载
+            </Button>
+            {downloadOpen && (
+              <div className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-36 overflow-hidden rounded-md border bg-popover p-1 shadow-lg">
+                <button type="button" className="flex w-full items-center rounded px-2.5 py-2 text-left text-sm hover:bg-accent" onClick={downloadSvg}>
+                  SVG
+                </button>
+                <button type="button" className="flex w-full items-center rounded px-2.5 py-2 text-left text-sm hover:bg-accent" onClick={downloadPng}>
+                  PNG
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       <svg
@@ -579,6 +1115,25 @@ function ForceEntityGraph({
         onPointerCancel={onPointerUp}
       >
         <defs>
+          <style>
+            {`
+              @keyframes graphSelectedNodeRingIn {
+                from {
+                  opacity: 0;
+                  transform: scale(0.82);
+                }
+                to {
+                  opacity: 1;
+                  transform: scale(1);
+                }
+              }
+              .graph-selected-node-ring {
+                animation: graphSelectedNodeRingIn 180ms ease-out;
+                transform-box: fill-box;
+                transform-origin: center;
+              }
+            `}
+          </style>
           <filter id="graph-selected-shadow" x="-60%" y="-60%" width="220%" height="220%">
             <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#64748b" floodOpacity="0.28" />
           </filter>
@@ -592,10 +1147,18 @@ function ForceEntityGraph({
             const b = nodeByID.get(edge.target);
             if (!a || !b) return null;
             const selectedEdge = selected?.kind === "edge" && edgeKey(selected.edge) === edgeKey(edge);
-            const color = isSearching ? "#cbd5e1" : GRAPH_EDGE_COLOR;
+            const color = selectedEdge ? GRAPH_SELECTED_COLOR : isSearching ? "#cbd5e1" : GRAPH_EDGE_COLOR;
             const line = edgeLinePoints(a, b);
             const midX = (line.x1 + line.x2) / 2;
             const midY = (line.y1 + line.y2) / 2;
+            const dx = line.x2 - line.x1;
+            const dy = line.y2 - line.y1;
+            const edgeLen = Math.max(1, Math.hypot(dx, dy));
+            const rawAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
+            const labelAngle = rawAngle > 90 || rawAngle < -90 ? rawAngle + 180 : rawAngle;
+            const labelOffset = selectedEdge ? 12:8;
+            const labelX = midX + (-dy / edgeLen) * labelOffset;
+            const labelY = midY + (dx / edgeLen) * labelOffset;
             return (
               <g
                 key={edgeKey(edge)}
@@ -612,15 +1175,52 @@ function ForceEntityGraph({
                   y1={line.y1}
                   x2={line.x2}
                   y2={line.y2}
+                  stroke={GRAPH_SELECTED_COLOR}
+                  strokeLinecap="round"
+                  strokeOpacity={selectedEdge ? 0.2 : 0}
+                  strokeWidth={selectedEdge ? 7 : 0}
+                  style={{
+                    transition: "stroke-width 180ms ease-out, stroke-opacity 180ms ease-out",
+                  }}
+                />
+                <line
+                  x1={line.x1}
+                  y1={line.y1}
+                  x2={line.x2}
+                  y2={line.y2}
                   stroke={color}
-                  strokeOpacity={isSearching ? 0.35 : 0.42}
-                  strokeWidth={1.6}
+                  strokeLinecap="round"
+                  strokeOpacity={selectedEdge ? 0.95 : isSearching ? 0.35 : 0.42}
+                  strokeWidth={selectedEdge ? 2.4 : 1.6}
                   markerEnd="url(#graph-edge-arrow)"
                   filter={selectedEdge ? "url(#graph-selected-shadow)" : undefined}
+                  style={{
+                    transition: "stroke 180ms ease-out, stroke-width 180ms ease-out, stroke-opacity 180ms ease-out",
+                  }}
                 />
-                <text x={midX} y={midY - 5} textAnchor="middle" className="fill-muted-foreground text-[10px]" style={{ fill: isSearching ? "#94a3b8" : "#64748b", fontWeight: 500 }}>
-                  {edge.label}
-                </text>
+                <g transform={`translate(${labelX} ${labelY}) rotate(${labelAngle})`}>
+                  <text
+                    x={0}
+                    y={0}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    className="fill-muted-foreground"
+                    style={{
+                      fill: selectedEdge ? GRAPH_SELECTED_COLOR : isSearching ? "#94a3b8" : "#64748b",
+                      fontSize: selectedEdge ? 7.2 : 5,
+                      fontWeight: selectedEdge ? 700 : 500,
+                      paintOrder: "stroke",
+                      stroke: "#ffffff",
+                      strokeWidth: selectedEdge ? 3 : 2.5,
+                      transform: `scale(${selectedEdge ? 1.12 : 1})`,
+                      transformBox: "fill-box",
+                      transformOrigin: "center",
+                      transition: "fill 180ms ease-out, font-size 180ms ease-out, font-weight 180ms ease-out, stroke-width 180ms ease-out, transform 180ms ease-out",
+                    }}
+                  >
+                    {edgeTypeLabel(edge)}
+                  </text>
+                </g>
               </g>
             );
           })}
@@ -642,13 +1242,38 @@ function ForceEntityGraph({
                 }}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  if (node.type === "paper") onPaperDoubleClick?.(node.id.replace(/^paper:/, ""));
+                  if (!movedRef.current) {
+                    toggleNodeRelationExpansion(node);
+                    setSelected({ kind: "node", node });
+                  }
                 }}
               >
-                <g transform={`scale(${selectedNode ? 1.045 : 1})`} style={{ transition: "transform 160ms ease-out" }} filter={selectedNode ? "url(#graph-selected-shadow)" : undefined}>
-                  <circle r={meta.radius} fill={nodeColor} fillOpacity={matched ? 1 : 0.32} stroke="transparent" strokeWidth={0} />
+                <g
+                  transform={`scale(${selectedNode ? 1.055 : 1})`}
+                  style={{ transition: "transform 180ms ease-out" }}
+                  filter={selectedNode ? "url(#graph-selected-shadow)" : undefined}
+                >
+                  {selectedNode && (
+                    <circle
+                      className="graph-selected-node-ring"
+                      r={meta.radius +3}
+                      fill="none"
+                      stroke={GRAPH_SELECTED_COLOR}
+                      strokeOpacity={0.92}
+                      strokeWidth={2.5}
+                      style={{ transition: "r 180ms ease-out, stroke-opacity 180ms ease-out, stroke-width 180ms ease-out" }}
+                    />
+                  )}
+                  <circle
+                    r={meta.radius}
+                    fill={nodeColor}
+                    fillOpacity={matched ? 1 : 0.32}
+                    stroke="transparent"
+                    strokeWidth={0}
+                    style={{ transition: "stroke 180ms ease-out, stroke-width 180ms ease-out, fill-opacity 180ms ease-out" }}
+                  />
                   <text
-                    y={node.type === "paper" ? -4 : 5}
+                    y={5}
                     textAnchor="middle"
                     className={cn("pointer-events-none font-medium", node.type === "paper" ? "fill-primary-foreground text-[11px]" : "fill-foreground text-[12px]")}
                     style={{ fill: labelColor, fontSize: nodeLabelFontSize(node) }}
@@ -663,7 +1288,7 @@ function ForceEntityGraph({
       </svg>
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[calc(100%-2rem)] rounded-md bg-background/82 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur">
         鼠标滚轮缩放图谱大小，拖拽空白区域平移，拖拽节点调整位置。
-        {mode === "overview" && " 总览页可双击论文节点展开或收回详细节点信息。"}
+        {mode === "overview" && " 总览页可双击任意节点展开或收回它与论文节点的关系。"}
       </div>
       {selected && (
         <div className="absolute bottom-3 right-3 z-20 flex max-h-[min(32rem,calc(100%-5.5rem))] w-fit min-w-56 max-w-[min(26rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border bg-popover shadow-lg">
@@ -684,6 +1309,38 @@ function ForceEntityGraph({
                     <div className="mb-1 text-xs text-muted-foreground">名称</div>
                     <div className="whitespace-pre-wrap break-words text-sm">{selected.node.label}</div>
                   </div>
+                  {selected.node.type === "paper" &&
+                    (() => {
+                      const paperID = paperIDForNode(selected.node);
+                      if (!paperID) {
+                        return (
+                          <div className="rounded-md border bg-muted/35 px-2.5 py-2 text-xs text-muted-foreground">
+                            缺少论文 ID，无法跳转
+                          </div>
+                        );
+                      }
+                      return (
+                        <Link
+                          href={`/reader?id=${encodeURIComponent(paperID)}`}
+                          className={cn(buttonVariants({ variant: "default", size: "sm" }), "w-full")}
+                          onClick={() => onPaperRead?.(paperID)}
+                        >
+                          <FileText className="size-3.5" />
+                          进入论文精读
+                        </Link>
+                      );
+                    })()}
+                  {selected.node.type === "reference" && referenceSearchText(selected.node) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => void searchReferenceInPioneer(selected.node)}
+                    >
+                      <Search className="size-3.5" />
+                      小云雀检索
+                    </Button>
+                  )}
                   {Object.entries(selected.node.details || {})
                     .filter(([k, v]) => {
                       if (!v) return false;
@@ -702,7 +1359,7 @@ function ForceEntityGraph({
                 <>
                   <div>
                     <div className="mb-1 text-xs text-muted-foreground">关系</div>
-                    <div className="whitespace-pre-wrap break-words text-sm">{selected.edge.label}</div>
+                    <div className="whitespace-pre-wrap break-words text-sm">{edgeTypeLabel(selected.edge)}</div>
                   </div>
                   <div>
                     <div className="mb-1 text-xs text-muted-foreground">起点实体</div>
@@ -730,6 +1387,7 @@ function ForceEntityGraph({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -740,16 +1398,16 @@ function graphRequestErrorMessage(err: unknown, fallback: string) {
 function normalizeEntityGraph(graph: EntityGraph | null | undefined): EntityGraph | null {
   if (!graph || !Array.isArray(graph.nodes)) return null;
   return {
-    nodes: graph.nodes,
-    edges: Array.isArray(graph.edges) ? graph.edges : [],
+    nodes: dedupeEntityNodes(graph.nodes),
+    edges: dedupeEntityEdges(Array.isArray(graph.edges) ? graph.edges : []),
   };
 }
 
 function mergeEntityGraphs(base: EntityGraph, addition: EntityGraph): EntityGraph {
-  const baseNodes = Array.isArray(base.nodes) ? base.nodes : [];
-  const additionNodes = Array.isArray(addition.nodes) ? addition.nodes : [];
-  const baseEdges = Array.isArray(base.edges) ? base.edges : [];
-  const additionEdges = Array.isArray(addition.edges) ? addition.edges : [];
+  const baseNodes = dedupeEntityNodes(Array.isArray(base.nodes) ? base.nodes : []);
+  const additionNodes = dedupeEntityNodes(Array.isArray(addition.nodes) ? addition.nodes : []);
+  const baseEdges = dedupeEntityEdges(Array.isArray(base.edges) ? base.edges : []);
+  const additionEdges = dedupeEntityEdges(Array.isArray(addition.edges) ? addition.edges : []);
   const nodes = new Map(baseNodes.map((node) => [node.id, node]));
   for (const node of additionNodes) {
     const current = nodes.get(node.id);
@@ -771,29 +1429,16 @@ function mergeEntityGraphs(base: EntityGraph, addition: EntityGraph): EntityGrap
   };
 }
 
-function composeOverviewGraph(base: EntityGraph | null, expandedGraphs: Record<string, EntityGraph>) {
-  let next = normalizeEntityGraph(base);
-  for (const addition of Object.values(expandedGraphs)) {
-    const normalized = normalizeEntityGraph(addition);
-    if (!normalized) continue;
-    next = next ? mergeEntityGraphs(next, normalized) : normalized;
-  }
-  return next;
-}
-
 export function GraphView() {
-  const { authed, papers, activePaperID, selectPaper } = useApp();
+  const { authReady, authed, papers, selectPaper } = useApp();
 
   const [keywords, setKeywords] = useState<NameCount[]>([]);
   const [entityGraph, setEntityGraph] = useState<EntityGraph | null>(null);
-  const [overviewBaseGraph, setOverviewBaseGraph] = useState<EntityGraph | null>(null);
-  const [expandedPaperGraphs, setExpandedPaperGraphs] = useState<Record<string, EntityGraph>>({});
+  const [overviewGraph, setOverviewGraph] = useState<EntityGraph | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
   const [rebuildingGraph, setRebuildingGraph] = useState(false);
   const [graphError, setGraphError] = useState("");
   const [graphNotice, setGraphNotice] = useState("");
-  const [graphMode, setGraphMode] = useState<"overview" | "detail">("overview");
-  const [detailPaperID, setDetailPaperID] = useState("");
 
   useEffect(() => {
     if (!authed) return;
@@ -811,11 +1456,25 @@ export function GraphView() {
     };
   }, [authed]);
 
+  const loadFullOverviewGraph = useCallback(
+    async (base: EntityGraph | null) => {
+      let combined = normalizeEntityGraph(base) || { nodes: [], edges: [] };
+      const detailResults = await Promise.allSettled(
+        papers.map(async (paper) => normalizeEntityGraph(await api.paperEntityGraph(paper.id))),
+      );
+      for (const result of detailResults) {
+        if (result.status !== "fulfilled" || !result.value) continue;
+        combined = mergeEntityGraphs(combined, result.value);
+      }
+      return combined.nodes.length > 0 ? combined : null;
+    },
+    [papers],
+  );
+
   useEffect(() => {
     if (!authed) {
       setEntityGraph(null);
-      setOverviewBaseGraph(null);
-      setExpandedPaperGraphs({});
+      setOverviewGraph(null);
       return;
     }
     let cancelled = false;
@@ -824,12 +1483,14 @@ export function GraphView() {
     setLoadingGraph(true);
     api
       .graphNetwork()
-      .then((g) => {
+      .then(async (g) => {
         if (!cancelled) {
           const normalized = normalizeEntityGraph(g);
-          setOverviewBaseGraph(normalized);
-          setExpandedPaperGraphs({});
-          setEntityGraph(normalized);
+          const fullGraph = await loadFullOverviewGraph(normalized);
+          if (!cancelled) {
+            setOverviewGraph(normalized);
+            setEntityGraph(fullGraph || normalized);
+          }
         }
       })
       .catch((err) => {
@@ -844,89 +1505,7 @@ export function GraphView() {
     return () => {
       cancelled = true;
     };
-  }, [authed]);
-
-  useEffect(() => {
-    if (!authed || graphMode !== "detail" || !detailPaperID) return;
-    let cancelled = false;
-    setGraphError("");
-    setGraphNotice("");
-    setLoadingGraph(true);
-    api
-      .paperEntityGraph(detailPaperID)
-      .then((g) => {
-        if (!cancelled) setEntityGraph(normalizeEntityGraph(g));
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setEntityGraph(null);
-          setGraphError(graphRequestErrorMessage(err, "璁烘枃鐭ヨ瘑鍥捐氨鍔犺浇澶辫触"));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingGraph(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [authed, graphMode, detailPaperID]);
-
-  const openOverviewGraph = () => {
-    setGraphMode("overview");
-    setDetailPaperID("");
-    setGraphError("");
-    setGraphNotice("");
-    setLoadingGraph(true);
-    api
-      .graphNetwork()
-      .then((g) => {
-        const normalized = normalizeEntityGraph(g);
-        setOverviewBaseGraph(normalized);
-        setExpandedPaperGraphs({});
-        setEntityGraph(normalized);
-      })
-      .catch((err) => {
-        setEntityGraph(null);
-        setGraphError(graphRequestErrorMessage(err, "鎬昏鐭ヨ瘑鍥捐氨鍔犺浇澶辫触"));
-      })
-      .finally(() => setLoadingGraph(false));
-  };
-
-  const openDetailGraph = (paperID: string) => {
-    setGraphNotice("");
-    selectPaper(paperID);
-    setDetailPaperID(paperID);
-    setGraphMode("detail");
-  };
-
-  const expandPaperInOverview = (paperID: string) => {
-    if (graphMode !== "overview") return;
-    setGraphError("");
-    setGraphNotice("");
-    selectPaper(paperID);
-    setDetailPaperID(paperID);
-    if (expandedPaperGraphs[paperID]) {
-      const nextExpanded = { ...expandedPaperGraphs };
-      delete nextExpanded[paperID];
-      setExpandedPaperGraphs(nextExpanded);
-      setEntityGraph(composeOverviewGraph(overviewBaseGraph, nextExpanded));
-      setGraphNotice("已收回论文实体");
-      return;
-    }
-    api
-      .paperEntityGraph(paperID)
-      .then((g) => {
-        const nextGraph = normalizeEntityGraph(g);
-        if (!nextGraph) return;
-        const nextExpanded = { ...expandedPaperGraphs, [paperID]: nextGraph };
-        setExpandedPaperGraphs(nextExpanded);
-        setEntityGraph(composeOverviewGraph(overviewBaseGraph || entityGraph, nextExpanded));
-        if (nextGraph) setGraphNotice("已在总览图谱中展开论文实体");
-      })
-      .catch((err) => {
-        setGraphError(graphRequestErrorMessage(err, "论文知识图谱展开失败"));
-      });
-  };
+  }, [authed, loadFullOverviewGraph]);
 
   const rebuildCurrentGraph = () => {
     if (rebuildingGraph) return;
@@ -936,66 +1515,55 @@ export function GraphView() {
     const refreshStats = () => {
       api.graphKeywords(GRAPH_KEYWORD_LIMIT).then(setKeywords).catch(() => setKeywords([]));
     };
-    if (graphMode === "overview") {
-      setGraphMode("overview");
-      setDetailPaperID("");
-      setLoadingGraph(true);
-      api
-        .rebuildGraphNetwork()
-        .then((g) => {
-          const normalized = normalizeEntityGraph(g);
-          setOverviewBaseGraph(normalized);
-          setExpandedPaperGraphs({});
-          setEntityGraph(normalized);
-          setGraphNotice("总览图谱已更新");
-          refreshStats();
-        })
-        .catch((err) => {
-          setGraphError(graphRequestErrorMessage(err, "总览知识图谱更新失败"));
-        })
-        .finally(() => {
-          setLoadingGraph(false);
-          setRebuildingGraph(false);
-        });
-      return;
-    }
-    const paperID = detailPaperID || activePaperID;
-    if (!paperID) {
-      setGraphError("请先选择一篇论文");
-      setRebuildingGraph(false);
-      return;
-    }
+    setLoadingGraph(true);
     api
-      .rebuildPaperEntityGraph(paperID)
-      .then((g) => {
-        setDetailPaperID(paperID);
-        setEntityGraph(normalizeEntityGraph(g));
-        setGraphNotice("论文图谱已更新");
+      .rebuildGraphNetwork()
+      .then(async (g) => {
+        const normalized = normalizeEntityGraph(g);
+        const fullGraph = await loadFullOverviewGraph(normalized);
+        setOverviewGraph(normalized);
+        setEntityGraph(fullGraph || normalized);
+        setGraphNotice("总览图谱已更新");
         refreshStats();
       })
       .catch((err) => {
-        setGraphError(graphRequestErrorMessage(err, "论文知识图谱更新失败"));
+        setGraphError(graphRequestErrorMessage(err, "总览知识图谱更新失败"));
       })
-      .finally(() => setRebuildingGraph(false));
+      .finally(() => {
+        setLoadingGraph(false);
+        setRebuildingGraph(false);
+      });
   };
 
-  const centerPaper = useMemo(
-    () => papers.find((p) => p.id === activePaperID) || null,
-    [papers, activePaperID],
-  );
-  const detailKeywords = useMemo(() => {
-    const graphKeywords =
-      entityGraph?.nodes
-        .filter((node) => node.type === "keyword")
-        .map((node) => node.label.trim())
-        .filter(Boolean) || [];
-    const fallbackKeywords = centerPaper?.keywords?.map((kw) => kw.trim()).filter(Boolean) || [];
-    return [...new Set(graphKeywords.length > 0 ? graphKeywords : fallbackKeywords)];
-  }, [centerPaper, entityGraph]);
   const graphKeywordItems = useMemo<GraphKeywordItem[]>(() => {
-    if (graphMode === "overview") return keywords.map((k) => ({ name: k.name, count: k.count }));
-    return detailKeywords.map((name) => ({ name }));
-  }, [detailKeywords, graphMode, keywords]);
+    return keywords.map((k) => ({ name: k.name, count: k.count }));
+  }, [keywords]);
+  const resolveGraphPaperID = useCallback(
+    (node: EntityGraphNode) => {
+      const direct = paperIDFromNode(node);
+      if (direct) return direct;
+      const title = normalizePaperTitle(node.label);
+      if (!title) return "";
+      const matched = papers.find((p) =>
+        [p.id, p.title, p.file_name, paperTitle(p)]
+          .map(normalizePaperTitle)
+          .some((candidate) => candidate === title),
+      );
+      return matched?.id || "";
+    },
+    [papers],
+  );
+
+  if (!authReady) {
+    return (
+      <main className="flex h-dvh items-center justify-center bg-muted/50 p-6">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <RefreshCw className="size-4 animate-spin" />
+          正在恢复登录状态...
+        </div>
+      </main>
+    );
+  }
 
   if (!authed) {
     return (
@@ -1011,7 +1579,7 @@ export function GraphView() {
   }
 
   return (
-    <main className="flex h-dvh min-h-[640px] flex-col overflow-hidden bg-muted/50">
+    <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-muted/50">
       <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-4">
         <Link
           href="/"
@@ -1026,141 +1594,58 @@ export function GraphView() {
             variant="outline"
             size="sm"
             onClick={rebuildCurrentGraph}
-            disabled={rebuildingGraph || (graphMode === "detail" && !detailPaperID && !activePaperID)}
-            title={graphMode === "overview" ? "从 MySQL 更新总览图谱" : "从 MySQL 更新当前论文图谱"}
+            disabled={rebuildingGraph}
+            title="从 MySQL 更新总览图谱"
           >
             <RefreshCw className={cn("size-4", rebuildingGraph && "animate-spin")} />
-            {graphMode === "overview" ? "更新总览" : "更新论文"}
-          </Button>
-          <Button variant="outline" size="sm" className="lg:hidden" onClick={openOverviewGraph}>
-            总览图谱
+            更新总览
           </Button>
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[18rem_minmax(0,1fr)]">
-        <aside className="hidden min-h-0 flex-col border-r bg-background lg:flex">
-          <div className="sticky top-0 z-10 border-b bg-background p-3">
-            <button
-              type="button"
-              onClick={openOverviewGraph}
-              className={cn(
-                "flex w-full items-center gap-2 rounded-md border px-3 py-2.5 text-left transition-colors",
-                graphMode === "overview"
-                  ? "border-primary/35 bg-primary/10 shadow-sm"
-                  : "border-border bg-muted/40 hover:bg-muted",
-              )}
-            >
-              <Network className="size-4 shrink-0 text-primary" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold">总览图谱</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  论文 - 共享点 - 论文
-                </span>
+      <div className="min-h-0 flex-1 overflow-hidden bg-background p-5">
+        <section className="flex h-full min-h-0 min-w-0 flex-col rounded-lg border bg-card p-4 shadow-sm">
+            <div className="mb-3 flex shrink-0 items-center gap-2 text-sm font-medium">
+              <Network className="size-4 text-primary" />
+              总览知识图谱
+              <span className="rounded-full border bg-muted/45 px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                论文 {papers.length}
               </span>
-            </button>
-          </div>
-          <div className="flex items-center justify-between px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            <span>论文</span>
-            <span className="rounded-full border bg-muted/45 px-2 py-0.5 tabular-nums">{papers.length}</span>
-          </div>
-          <ScrollArea className="min-h-0 flex-1">
-            <div className="space-y-1 px-3 pb-4">
-              {papers.length === 0 ? (
-                <Empty title="还没有论文" text="先在工作台上传并解析论文。" compact />
-              ) : (
-                papers.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => openDetailGraph(p.id)}
-                    className={cn(
-                      "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors",
-                      p.id === activePaperID
-                        ? "bg-card shadow-sm ring-1 ring-primary/20"
-                        : "hover:bg-accent/60",
-                    )}
-                  >
-                    <FileText
-                      className={cn(
-                        "mt-0.5 size-3.5 shrink-0",
-                        p.id === activePaperID ? "text-primary" : "text-muted-foreground",
-                      )}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{paperTitle(p)}</span>
-                      {p.status !== "ready" && (
-                        <span className="text-xs text-muted-foreground">{p.status}</span>
-                      )}
-                    </span>
-                  </button>
-                ))
-              )}
             </div>
-          </ScrollArea>
-        </aside>
 
-        <ScrollArea className="h-full min-h-0 bg-background">
-          <div className="h-full min-h-0 p-5">
-            <div className="grid h-full min-h-0">
-              <section className="flex min-h-[calc(100dvh-7rem)] min-w-0 flex-col rounded-lg border bg-card p-4 shadow-sm xl:min-h-0">
-                <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Network className="size-4 text-primary" />
-                    {graphMode === "overview" ? "总览知识图谱" : "论文中心图谱"}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(TYPE_META)
-                      .filter(([k]) => !["entity", "venue"].includes(k))
-                      .map(([k, meta]) => (
-                        <span key={k} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span className="size-2.5 rounded-full" style={{ background: meta.color }} />
-                          {meta.label}
-                        </span>
-                      ))}
-                  </div>
-                </div>
+            {graphError && (
+              <div className="mb-3 shrink-0 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {graphError}
+              </div>
+            )}
+            {graphNotice && !graphError && (
+              <div className="mb-3 shrink-0 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700">
+                {graphNotice}
+              </div>
+            )}
 
-                {graphError && (
-                  <div className="mb-3 shrink-0 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {graphError}
-                  </div>
-                )}
-                {graphNotice && !graphError && (
-                  <div className="mb-3 shrink-0 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700">
-                    {graphNotice}
-                  </div>
-                )}
-
-                {graphMode === "detail" && !centerPaper ? (
-                  <Empty title="选择一篇论文" text="图谱会显示论文与结构化实体的关系。" compact />
-                ) : loadingGraph ? (
-                  <div className="flex min-h-[520px] flex-1 items-center justify-center text-sm text-muted-foreground">
-                    加载中...
-                  </div>
-                ) : !entityGraph || entityGraph.nodes.length <= 1 ? (
-                  <Empty
-                    title={graphMode === "overview" ? "暂无共享关系" : "暂无实体关系"}
-                    text={
-                      graphMode === "overview"
-                        ? "当论文共享作者、关键词或机构时，会在这里形成总览关系。"
-                        : "解析完成后会自动生成论文知识图谱。"
-                    }
-                    compact
-                  />
-                ) : (
-                  <ForceEntityGraph
-                    graph={entityGraph}
-                    mode={graphMode}
-                    keywordItems={graphKeywordItems}
-                    showKeywordCount={graphMode === "overview"}
-                    onPaperDoubleClick={graphMode === "overview" ? expandPaperInOverview : undefined}
-                  />
-                )}
-              </section>
-            </div>
-          </div>
-        </ScrollArea>
+            {loadingGraph ? (
+              <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+                加载中...
+              </div>
+            ) : !entityGraph || entityGraph.nodes.length <= 1 ? (
+              <Empty
+                title="暂无知识图谱"
+                text="解析完成后会自动生成论文知识图谱；共享关系会在总览中形成连接。"
+                compact
+              />
+            ) : (
+              <ForceEntityGraph
+                graph={entityGraph}
+                baseGraph={overviewGraph}
+                mode="overview"
+                keywordItems={graphKeywordItems}
+                showKeywordCount
+                onPaperRead={selectPaper}
+                resolvePaperID={resolveGraphPaperID}
+              />
+            )}
+        </section>
       </div>
     </main>
   );
