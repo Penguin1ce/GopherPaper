@@ -14,6 +14,65 @@
   -webkit-user-select: none !important;
 }
 
+.PdfHighlighter,
+.PdfHighlighter > div,
+.PdfHighlighter .pdfViewer {
+  scrollbar-color: rgba(115, 115, 115, 0.5) rgba(245, 245, 244, 0.72);
+  scrollbar-width: thin;
+}
+
+.PdfHighlighter:hover,
+.PdfHighlighter:focus-within,
+.PdfHighlighter:hover > div,
+.PdfHighlighter:focus-within > div,
+.PdfHighlighter:hover .pdfViewer,
+.PdfHighlighter:focus-within .pdfViewer {
+  scrollbar-color: rgba(115, 115, 115, 0.82) rgba(245, 245, 244, 0.95);
+}
+
+.PdfHighlighter::-webkit-scrollbar,
+.PdfHighlighter > div::-webkit-scrollbar,
+.PdfHighlighter .pdfViewer::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.PdfHighlighter:hover::-webkit-scrollbar,
+.PdfHighlighter:focus-within::-webkit-scrollbar,
+.PdfHighlighter:hover > div::-webkit-scrollbar,
+.PdfHighlighter:focus-within > div::-webkit-scrollbar,
+.PdfHighlighter:hover .pdfViewer::-webkit-scrollbar,
+.PdfHighlighter:focus-within .pdfViewer::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.PdfHighlighter::-webkit-scrollbar-track,
+.PdfHighlighter > div::-webkit-scrollbar-track,
+.PdfHighlighter .pdfViewer::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(245, 245, 244, 0.72);
+}
+
+.PdfHighlighter::-webkit-scrollbar-thumb,
+.PdfHighlighter > div::-webkit-scrollbar-thumb,
+.PdfHighlighter .pdfViewer::-webkit-scrollbar-thumb {
+  min-height: 40px;
+  border: 1px solid rgba(245, 245, 244, 0.9);
+  border-radius: 999px;
+  background: rgba(115, 115, 115, 0.5);
+}
+
+.PdfHighlighter:hover::-webkit-scrollbar-thumb,
+.PdfHighlighter:focus-within::-webkit-scrollbar-thumb,
+.PdfHighlighter:hover > div::-webkit-scrollbar-thumb,
+.PdfHighlighter:focus-within > div::-webkit-scrollbar-thumb,
+.PdfHighlighter:hover .pdfViewer::-webkit-scrollbar-thumb,
+.PdfHighlighter:focus-within .pdfViewer::-webkit-scrollbar-thumb {
+  border-width: 2px;
+  background: rgba(115, 115, 115, 0.82);
+}
+
 .FreetextHighlight__input {
   user-select: text;
   -webkit-user-select: text;
