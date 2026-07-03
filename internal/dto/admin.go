@@ -451,3 +451,67 @@ type AdminFeedbackUpdateRequest struct {
 	Status string `json:"status"`
 	Reply  string `json:"reply"`
 }
+
+// ── 后台标签管理 ─────────────────────────────────────────────
+
+// AdminTagItem 是一个标签及其被引用的论文数。
+type AdminTagItem struct {
+	ID         uint64 `json:"id"`
+	OwnerID    string `json:"owner_id"`
+	Name       string `json:"name"`
+	PaperCount int64  `json:"paper_count"`
+}
+
+// AdminTagListResponse 是标签列表。
+type AdminTagListResponse struct {
+	Items []AdminTagItem `json:"items"`
+	Total int64          `json:"total"`
+}
+
+// AdminTagRenameRequest 是重命名标签的请求体。
+type AdminTagRenameRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+// ── 后台会话管理 ─────────────────────────────────────────────
+
+// AdminSessionItem 是一条会话记录。
+type AdminSessionItem struct {
+	ID        string    `json:"id"`
+	StudentID string    `json:"student_id"`
+	PaperID   string    `json:"paper_id,omitempty"`
+	AgentType string    `json:"agent_type,omitempty"`
+	Title     string    `json:"title"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// AdminSessionListResponse 是分页的会话列表。
+type AdminSessionListResponse struct {
+	Items    []AdminSessionItem `json:"items"`
+	Total    int64              `json:"total"`
+	Page     int                `json:"page"`
+	PageSize int                `json:"page_size"`
+}
+
+// ── 后台管理员账号管理 ───────────────────────────────────────
+
+// AdminAccountItem 是一个管理员账号。
+type AdminAccountItem struct {
+	ID          uint       `json:"id"`
+	Username    string     `json:"username"`
+	Email       string     `json:"email"`
+	Name        string     `json:"name"`
+	Status      string     `json:"status"`
+	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// AdminAccountListResponse 是管理员账号列表。
+type AdminAccountListResponse struct {
+	Items []AdminAccountItem `json:"items"`
+}
+
+// AdminAccountStatusRequest 是启停管理员账号的请求体。
+type AdminAccountStatusRequest struct {
+	Status string `json:"status" binding:"required"`
+}
