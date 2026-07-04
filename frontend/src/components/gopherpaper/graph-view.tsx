@@ -2,14 +2,23 @@
 
 import {
   ArrowLeft,
+  BookOpenText,
+  Check,
+  Copy,
   Download,
   FileText,
   Hash,
-  Network,
+  Maximize2,
+  MessageCircle,
+  MousePointer2,
+  Pin,
+  PinOff,
+  Redo2,
   RefreshCw,
   RotateCcw,
   Search,
   Tags,
+  Undo2,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -25,11 +34,16 @@ import {
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import * as api from "@/lib/gopherpaper/api";
+import {
+  PAPER_CHAT_DRAFT_KEY,
+  PIONEER_REFERENCE_DRAFT_KEY,
+} from "@/lib/gopherpaper/navigation-drafts";
 import { useApp } from "@/lib/gopherpaper/store";
 import type {
   EntityGraph,
   EntityGraphEdge,
   EntityGraphNode,
+  GraphRebuildJob,
   NameCount,
 } from "@/lib/gopherpaper/types";
 import { paperTitle } from "@/lib/gopherpaper/utils";
@@ -44,11 +58,31 @@ const MAX_ZOOM = 2.6;
 const NODE_DRAG_THRESHOLD = 8;
 const GRAPH_KEYWORD_LIMIT = 10000;
 const DEFAULT_GRAPH_DISPLAY_LIMIT = 60;
+const HISTORY_LIMIT = 30;
+const MINIMAP_W = 168;
+const MINIMAP_H = 96;
 const PAPER_NODE_COLOR = "#35A98D";
 const GRAPH_EDGE_COLOR = "#94a3b8";
 const GRAPH_SELECTED_COLOR = "#22c55e";
 const PAPER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const PIONEER_REFERENCE_DRAFT_KEY = "gopherpaper.pioneer.referenceDraft";
+const QUESTION_CONTEXT_NODE_TYPES = new Set([
+  "experiment",
+  "future_work",
+  "innovation",
+  "limitation",
+  "research_question",
+  "result",
+  "method",
+]);
+const QUESTION_CONTEXT_LABELS: Record<string, string> = {
+  experiment: "实验",
+  future_work: "未来工作",
+  innovation: "创新点",
+  limitation: "局限性",
+  research_question: "研究问题",
+  result: "结果",
+  method: "研究方法",
+};
 
 const TYPE_META: Record<string, { label: string; color: string; radius: number }> = {
   paper: { label: "Paper", color: PAPER_NODE_COLOR, radius: 36 },
@@ -94,6 +128,29 @@ type GraphFilter =
   | { kind: "node"; type: string; expanded: boolean }
   | { kind: "edge"; type: string };
 
+type SceneSnapshot = {
+  nodes: Array<{
+    id: string;
+    x: number;
+    y: number;
+    fx?: number;
+    fy?: number;
+  }>;
+  zoom: number;
+  pan: { x: number; y: number };
+  pinnedNodeIDs: string[];
+  graphFilter: GraphFilter;
+  expandedNodeIDs: string[];
+  displayLimit: number;
+};
+
+type BoxSelection = {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+};
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -117,6 +174,17 @@ function nodeLabelFontSize(node: EntityGraphNode) {
   if (length > 6) return 8.5;
   if (length > 4) return 9.5;
   return 10.5;
+}
+
+function nodeLabelLines(node: EntityGraphNode) {
+  const perLine = node.type === "paper" ? 7 : 6;
+  const text = shortText(node.label, perLine * 2);
+  const chars = [...text];
+  if (chars.length <= perLine) return [text];
+  return [
+    chars.slice(0, perLine).join(""),
+    chars.slice(perLine, perLine * 2).join(""),
+  ];
 }
 
 function edgeKey(edge: EntityGraphEdge) {
@@ -164,6 +232,20 @@ function referenceSearchText(node: EntityGraphNode) {
   return text.replace(/\s+/g, " ").trim();
 }
 
+function edgeQuestionContext(
+  selected: Extract<SelectedItem, { kind: "edge" }>,
+) {
+  const source = selected.source;
+  const target = selected.target;
+  if (!source || !target) return null;
+  const paper = source.type === "paper" ? source : target.type === "paper" ? target : null;
+  const entity = paper === source ? target : paper === target ? source : null;
+  if (!paper || !entity || !QUESTION_CONTEXT_NODE_TYPES.has(entity.type)) {
+    return null;
+  }
+  return { paper, entity };
+}
+
 async function copyTextToClipboard(text: string) {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
@@ -179,6 +261,50 @@ async function copyTextToClipboard(text: string) {
   textarea.select();
   document.execCommand("copy");
   textarea.remove();
+}
+
+function GraphDetailField({
+  label,
+  value,
+  copyKey,
+  copiedKey,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  copyKey: string;
+  copiedKey: string;
+  onCopy: (key: string, value: string) => void;
+}) {
+  if (!value) return null;
+  const copied = copiedKey === copyKey;
+  return (
+    <div className="border-b border-border/70 py-3 last:border-b-0">
+      <div className="mb-1.5 flex items-center justify-between gap-3">
+        <span className="text-xs font-medium text-muted-foreground">
+          {label}
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground hover:text-foreground"
+          title={`复制${label}`}
+          aria-label={`复制${label}`}
+          onClick={() => onCopy(copyKey, value)}
+        >
+          {copied ? (
+            <Check className="size-3.5 text-emerald-600" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
+        </Button>
+      </div>
+      <div className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+        {value}
+      </div>
+    </div>
+  );
 }
 
 function edgeTypeLabel(edge: EntityGraphEdge) {
@@ -232,6 +358,21 @@ function collisionRadius(node: Pick<EntityGraphNode, "type" | "label">) {
   return base + labelPad;
 }
 
+function sceneBounds(nodes: SimNode[]) {
+  if (nodes.length === 0) {
+    return { minX: 0, minY: 0, maxX: VIEW_W, maxY: VIEW_H };
+  }
+  const xs = nodes.map((node) => node.x);
+  const ys = nodes.map((node) => node.y);
+  const padding = 80;
+  return {
+    minX: Math.min(...xs) - padding,
+    minY: Math.min(...ys) - padding,
+    maxX: Math.max(...xs) + padding,
+    maxY: Math.max(...ys) + padding,
+  };
+}
+
 function ForceEntityGraph({
   graph,
   baseGraph,
@@ -254,7 +395,7 @@ function ForceEntityGraph({
   const edgesRef = useRef<EntityGraphEdge[]>([]);
   const alphaRef = useRef(0.75);
   const dragRef = useRef<{
-    mode: "node" | "pan";
+    mode: "node" | "pan" | "box";
     id?: string;
     startX: number;
     startY: number;
@@ -263,8 +404,12 @@ function ForceEntityGraph({
     moved: boolean;
     offsetX?: number;
     offsetY?: number;
+    additive?: boolean;
+    before?: SceneSnapshot;
   } | null>(null);
   const movedRef = useRef(false);
+  const boxSelectionRef = useRef<BoxSelection | null>(null);
+  const pendingSceneSnapshotRef = useRef<SceneSnapshot | null>(null);
   const [, setVersion] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -277,11 +422,34 @@ function ForceEntityGraph({
   const [displayLimit, setDisplayLimit] = useState(DEFAULT_GRAPH_DISPLAY_LIMIT);
   const [graphFilter, setGraphFilter] = useState<GraphFilter>({ kind: "all" });
   const [expandedNodeIDs, setExpandedNodeIDs] = useState<string[]>([]);
+  const [selectedNodeIDs, setSelectedNodeIDs] = useState<string[]>([]);
+  const [pinnedNodeIDs, setPinnedNodeIDs] = useState<string[]>([]);
+  const [boxSelectMode, setBoxSelectMode] = useState(false);
+  const [boxSelection, setBoxSelection] = useState<BoxSelection | null>(null);
+  const [undoStack, setUndoStack] = useState<SceneSnapshot[]>([]);
+  const [redoStack, setRedoStack] = useState<SceneSnapshot[]>([]);
+  const [copiedDetailKey, setCopiedDetailKey] = useState("");
   const filterClickTimerRef = useRef<number | null>(null);
+  const copyResetTimerRef = useRef<number | null>(null);
   const paperIDForNode = useCallback(
     (node: EntityGraphNode) => resolvePaperID?.(node) || paperIDFromNode(node),
     [resolvePaperID],
   );
+  const copyDetailValue = useCallback(async (key: string, value: string) => {
+    try {
+      await copyTextToClipboard(value);
+      setCopiedDetailKey(key);
+      if (copyResetTimerRef.current != null) {
+        window.clearTimeout(copyResetTimerRef.current);
+      }
+      copyResetTimerRef.current = window.setTimeout(() => {
+        setCopiedDetailKey("");
+        copyResetTimerRef.current = null;
+      }, 1400);
+    } catch {
+      setCopiedDetailKey("");
+    }
+  }, []);
 
   const allGraphNodes = useMemo(
     () => dedupeEntityNodes(Array.isArray(graph.nodes) ? graph.nodes : []),
@@ -433,6 +601,106 @@ function ForceEntityGraph({
       .sort((a, b) => a.label.localeCompare(b.label, "en"));
   }, [allGraphEdges]);
   const edgeFilterItems = rawEdgeFilterItems;
+  const selectedNodeIDSet = useMemo(
+    () => new Set(selectedNodeIDs),
+    [selectedNodeIDs],
+  );
+  const pinnedNodeIDSet = useMemo(
+    () => new Set(pinnedNodeIDs),
+    [pinnedNodeIDs],
+  );
+  const captureSceneSnapshot = useCallback(
+    (): SceneSnapshot => ({
+      nodes: nodesRef.current.map((node) => ({
+        id: node.id,
+        x: node.x,
+        y: node.y,
+        fx: node.fx,
+        fy: node.fy,
+      })),
+      zoom,
+      pan: { ...pan },
+      pinnedNodeIDs: [...pinnedNodeIDs],
+      graphFilter,
+      expandedNodeIDs: [...expandedNodeIDs],
+      displayLimit,
+    }),
+    [
+      displayLimit,
+      expandedNodeIDs,
+      graphFilter,
+      pan,
+      pinnedNodeIDs,
+      zoom,
+    ],
+  );
+
+  const applySnapshotPositions = useCallback((snapshot: SceneSnapshot) => {
+    const positions = new Map(snapshot.nodes.map((node) => [node.id, node]));
+    const pinned = new Set(snapshot.pinnedNodeIDs);
+    for (const node of nodesRef.current) {
+      const saved = positions.get(node.id);
+      if (!saved) continue;
+      node.x = saved.x;
+      node.y = saved.y;
+      node.vx = 0;
+      node.vy = 0;
+      node.fx = pinned.has(node.id) ? saved.x : undefined;
+      node.fy = pinned.has(node.id) ? saved.y : undefined;
+    }
+    alphaRef.current = 0.25;
+    setVersion((version) => version + 1);
+  }, []);
+
+  const restoreSceneSnapshot = useCallback(
+    (snapshot: SceneSnapshot) => {
+      pendingSceneSnapshotRef.current = snapshot;
+      setZoom(snapshot.zoom);
+      setPan(snapshot.pan);
+      setPinnedNodeIDs(snapshot.pinnedNodeIDs);
+      setGraphFilter(snapshot.graphFilter);
+      setExpandedNodeIDs(snapshot.expandedNodeIDs);
+      setDisplayLimit(snapshot.displayLimit);
+      applySnapshotPositions(snapshot);
+    },
+    [applySnapshotPositions],
+  );
+
+  const recordSceneSnapshot = useCallback(
+    (snapshot = captureSceneSnapshot()) => {
+      setUndoStack((current) => [
+        ...current.slice(-(HISTORY_LIMIT - 1)),
+        snapshot,
+      ]);
+      setRedoStack([]);
+    },
+    [captureSceneSnapshot],
+  );
+
+  const undoScene = useCallback(() => {
+    const snapshot = undoStack.at(-1);
+    if (!snapshot) return;
+    const current = captureSceneSnapshot();
+    setUndoStack((stack) => stack.slice(0, -1));
+    setRedoStack((stack) => [
+      ...stack.slice(-(HISTORY_LIMIT - 1)),
+      current,
+    ]);
+    restoreSceneSnapshot(snapshot);
+  }, [captureSceneSnapshot, restoreSceneSnapshot, undoStack]);
+
+  const redoScene = useCallback(() => {
+    const snapshot = redoStack.at(-1);
+    if (!snapshot) return;
+    const current = captureSceneSnapshot();
+    setRedoStack((stack) => stack.slice(0, -1));
+    setUndoStack((stack) => [
+      ...stack.slice(-(HISTORY_LIMIT - 1)),
+      current,
+    ]);
+    restoreSceneSnapshot(snapshot);
+  }, [captureSceneSnapshot, redoStack, restoreSceneSnapshot]);
+
   const clearFilterClickTimer = useCallback(() => {
     if (filterClickTimerRef.current == null) return;
     window.clearTimeout(filterClickTimerRef.current);
@@ -441,27 +709,31 @@ function ForceEntityGraph({
 
   const selectAllFilter = useCallback(() => {
     clearFilterClickTimer();
+    recordSceneSnapshot();
     setGraphFilter({ kind: "all" });
     setExpandedNodeIDs([]);
     setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
-  }, [clearFilterClickTimer]);
+  }, [clearFilterClickTimer, recordSceneSnapshot]);
 
   const selectNodeFilter = useCallback(
     (type: string) => {
       clearFilterClickTimer();
+      const before = captureSceneSnapshot();
       filterClickTimerRef.current = window.setTimeout(() => {
+        recordSceneSnapshot(before);
         setGraphFilter({ kind: "node", type, expanded: false });
         setExpandedNodeIDs([]);
         setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
         filterClickTimerRef.current = null;
       }, 180);
     },
-    [clearFilterClickTimer],
+    [captureSceneSnapshot, clearFilterClickTimer, recordSceneSnapshot],
   );
 
   const toggleNodeExpansion = useCallback(
     (type: string) => {
       clearFilterClickTimer();
+      recordSceneSnapshot();
       setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
       setGraphFilter((current) =>
         current.kind === "node" && current.type === type && current.expanded
@@ -469,30 +741,40 @@ function ForceEntityGraph({
           : { kind: "node", type, expanded: true },
       );
     },
-    [clearFilterClickTimer],
+    [clearFilterClickTimer, recordSceneSnapshot],
   );
 
   const toggleNodeRelationExpansion = useCallback((node: EntityGraphNode) => {
+    recordSceneSnapshot();
     setExpandedNodeIDs((current) =>
       current.includes(node.id)
         ? current.filter((id) => id !== node.id)
         : [...current, node.id],
     );
-  }, []);
+  }, [recordSceneSnapshot]);
 
   const selectEdgeFilter = useCallback(
     (type: string) => {
       clearFilterClickTimer();
+      recordSceneSnapshot();
       setGraphFilter({ kind: "edge", type });
       setExpandedNodeIDs([]);
       setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
     },
+    [clearFilterClickTimer, recordSceneSnapshot],
+  );
+
+  useEffect(
+    () => () => {
+      clearFilterClickTimer();
+      if (copyResetTimerRef.current != null) {
+        window.clearTimeout(copyResetTimerRef.current);
+      }
+    },
     [clearFilterClickTimer],
   );
 
-  useEffect(() => () => clearFilterClickTimer(), [clearFilterClickTimer]);
-
-  const resetLayout = () => {
+  const resetLayout = (clearPinned = false) => {
     const center = { x: VIEW_W / 2, y: VIEW_H / 2 };
     const next: SimNode[] = [];
     if (mode === "detail") {
@@ -569,6 +851,15 @@ function ForceEntityGraph({
         next.push({ ...n, x: center.x + Math.cos(angle) * ring, y: center.y + Math.sin(angle) * ring, vx: 0, vy: 0 });
       });
     }
+    const retainedPinnedIDs = clearPinned
+      ? new Set<string>()
+      : pinnedNodeIDSet;
+    for (const node of next) {
+      if (!retainedPinnedIDs.has(node.id)) continue;
+      node.fx = node.x;
+      node.fy = node.y;
+    }
+    if (clearPinned) setPinnedNodeIDs([]);
     nodesRef.current = next;
     edgesRef.current = graphEdges;
     alphaRef.current = 0.9;
@@ -579,16 +870,27 @@ function ForceEntityGraph({
   useEffect(() => {
     setGraphFilter({ kind: "all" });
     setExpandedNodeIDs([]);
+    setSelectedNodeIDs([]);
+    setPinnedNodeIDs([]);
     setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
     setLimitOpen(false);
-  }, [graph, mode]);
-
-  useEffect(() => {
-    resetLayout();
     setSelected(null);
     setZoom(1);
     setSearchTerm("");
     setKeywordsOpen(false);
+    setUndoStack([]);
+    setRedoStack([]);
+  }, [graph, mode]);
+
+  useEffect(() => {
+    resetLayout();
+    const pending = pendingSceneSnapshotRef.current;
+    if (pending) {
+      applySnapshotPositions(pending);
+      setZoom(pending.zoom);
+      setPan(pending.pan);
+      pendingSceneSnapshotRef.current = null;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphStructureKey]);
 
@@ -723,13 +1025,43 @@ function ForceEntityGraph({
       moved: false,
       offsetX: node ? node.x - p.x : 0,
       offsetY: node ? node.y - p.y : 0,
+      before: captureSceneSnapshot(),
     };
   };
 
   const onSvgDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     movedRef.current = false;
-    dragRef.current = { mode: "pan", startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y, moved: false };
+    if (boxSelectMode) {
+      const point = graphPoint(event.clientX, event.clientY);
+      dragRef.current = {
+        mode: "box",
+        startX: event.clientX,
+        startY: event.clientY,
+        panX: pan.x,
+        panY: pan.y,
+        moved: false,
+        additive: event.shiftKey || event.ctrlKey || event.metaKey,
+      };
+      const selection = {
+        x1: point.x,
+        y1: point.y,
+        x2: point.x,
+        y2: point.y,
+      };
+      boxSelectionRef.current = selection;
+      setBoxSelection(selection);
+      return;
+    }
+    dragRef.current = {
+      mode: "pan",
+      startX: event.clientX,
+      startY: event.clientY,
+      panX: pan.x,
+      panY: pan.y,
+      moved: false,
+      before: captureSceneSnapshot(),
+    };
   };
 
   const onPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -745,6 +1077,16 @@ function ForceEntityGraph({
       const rect = svgRef.current?.getBoundingClientRect();
       if (!rect) return;
       setPan({ x: drag.panX + (dx / rect.width) * VIEW_W, y: drag.panY + (dy / rect.height) * VIEW_H });
+      return;
+    }
+    if (drag.mode === "box") {
+      const point = graphPoint(event.clientX, event.clientY);
+      const current = boxSelectionRef.current;
+      const selection = current
+        ? { ...current, x2: point.x, y2: point.y }
+        : { x1: point.x, y1: point.y, x2: point.x, y2: point.y };
+      boxSelectionRef.current = selection;
+      setBoxSelection(selection);
       return;
     }
     if (!drag.moved) return;
@@ -763,19 +1105,82 @@ function ForceEntityGraph({
 
   const onPointerUp = () => {
     const drag = dragRef.current;
+    const completedBox = boxSelectionRef.current;
+    if (drag?.mode === "pan" && !drag.moved) {
+      setSelected(null);
+      setSelectedNodeIDs([]);
+    }
+    if (drag?.mode === "box" && completedBox) {
+      const minX = Math.min(completedBox.x1, completedBox.x2);
+      const maxX = Math.max(completedBox.x1, completedBox.x2);
+      const minY = Math.min(completedBox.y1, completedBox.y2);
+      const maxY = Math.max(completedBox.y1, completedBox.y2);
+      const selectedIDs = nodesRef.current
+        .filter((node) => {
+          const x = pan.x + node.x * zoom;
+          const y = pan.y + node.y * zoom;
+          return x >= minX && x <= maxX && y >= minY && y <= maxY;
+        })
+        .map((node) => node.id);
+      setSelectedNodeIDs((current) =>
+        drag.additive
+          ? [...new Set([...current, ...selectedIDs])]
+          : selectedIDs,
+      );
+      const last = nodesRef.current.find(
+        (node) => node.id === selectedIDs.at(-1),
+      );
+      if (last) setSelected({ kind: "node", node: last });
+      boxSelectionRef.current = null;
+      setBoxSelection(null);
+    }
     if (drag?.mode === "node") {
       const node = nodesRef.current.find((n) => n.id === drag.id);
       if (node) {
-        node.fx = undefined;
-        node.fy = undefined;
+        if (pinnedNodeIDSet.has(node.id)) {
+          node.fx = node.x;
+          node.fy = node.y;
+        } else {
+          node.fx = undefined;
+          node.fy = undefined;
+        }
       }
       alphaRef.current = Math.max(alphaRef.current, 0.35);
+    }
+    if (drag?.moved && drag.before && drag.mode !== "box") {
+      recordSceneSnapshot(drag.before);
     }
     dragRef.current = null;
   };
 
   const nodes = nodesRef.current;
   const nodeByID = new Map(nodes.map((n) => [n.id, n]));
+  const renderedNodes = nodes;
+  const renderedEdges = edgesRef.current;
+  const viewportWorld = {
+    minX: -pan.x / zoom,
+    minY: -pan.y / zoom,
+    maxX: (VIEW_W - pan.x) / zoom,
+    maxY: (VIEW_H - pan.y) / zoom,
+  };
+  const rawMinimapBounds = sceneBounds(nodes);
+  const minimapBounds = {
+    minX: Math.min(rawMinimapBounds.minX, viewportWorld.minX),
+    minY: Math.min(rawMinimapBounds.minY, viewportWorld.minY),
+    maxX: Math.max(rawMinimapBounds.maxX, viewportWorld.maxX),
+    maxY: Math.max(rawMinimapBounds.maxY, viewportWorld.maxY),
+  };
+  const minimapPadding = 6;
+  const minimapScale = Math.min(
+    (MINIMAP_W - minimapPadding * 2) /
+      Math.max(1, minimapBounds.maxX - minimapBounds.minX),
+    (MINIMAP_H - minimapPadding * 2) /
+      Math.max(1, minimapBounds.maxY - minimapBounds.minY),
+  );
+  const minimapX = (x: number) =>
+    minimapPadding + (x - minimapBounds.minX) * minimapScale;
+  const minimapY = (y: number) =>
+    minimapPadding + (y - minimapBounds.minY) * minimapScale;
   const query = searchTerm.trim().toLowerCase();
   const isSearching = query.length > 0;
   const matchesSearch = (node: EntityGraphNode) => {
@@ -784,22 +1189,257 @@ function ForceEntityGraph({
     const detailText = Object.entries(node.details || {}).map(([key, value]) => `${key} ${value}`).join(" ");
     return `${node.id} ${node.type} ${meta.label} ${node.label} ${detailText}`.toLowerCase().includes(query);
   };
+  const selectionForActions =
+    selectedNodeIDs.length > 0
+      ? selectedNodeIDs
+      : selected?.kind === "node"
+        ? [selected.node.id]
+        : [];
+  const selectionIsPinned =
+    selectionForActions.length > 0 &&
+    selectionForActions.every((id) => pinnedNodeIDSet.has(id));
+  const selectedAccent =
+    selected?.kind === "node"
+      ? nodeMeta(selected.node.type).color
+      : GRAPH_SELECTED_COLOR;
+  const selectedInspectorTitle =
+    selected?.kind === "node"
+      ? nodeMeta(selected.node.type).label
+      : selected?.kind === "edge"
+        ? edgeTypeLabel(selected.edge)
+        : "";
+  const selectedInspectorSubtitle =
+    selected?.kind === "node"
+      ? selected.node.label
+      : selected?.kind === "edge"
+        ? `${selected.source?.label || selected.edge.source} → ${
+            selected.target?.label || selected.edge.target
+          }`
+        : "";
+  const selectedDetailFields = useMemo(() => {
+    if (!selected) return [];
+    if (selected.kind === "node") {
+      const base = [
+        { key: "name", label: "名称", value: selected.node.label },
+        {
+          key: "entity_type",
+          label: "实体类型",
+          value: nodeMeta(selected.node.type).label,
+        },
+        { key: "entity_id", label: "实体 ID", value: selected.node.id },
+      ];
+      const details = Object.entries(selected.node.details || {})
+        .filter(([key, value]) => {
+          if (!value) return false;
+          if (key === "name" && value === selected.node.label) return false;
+          return key !== "type";
+        })
+        .map(([key, value]) => ({
+          key: `detail:${key}`,
+          label: key,
+          value,
+        }));
+      return [...base, ...details];
+    }
+    return [
+      {
+        key: "relationship",
+        label: "关系名称",
+        value: edgeTypeLabel(selected.edge),
+      },
+      {
+        key: "source",
+        label: "起点实体",
+        value: selected.source?.label || selected.edge.source,
+      },
+      {
+        key: "target",
+        label: "连接实体",
+        value: selected.target?.label || selected.edge.target,
+      },
+      {
+        key: "relationship_type",
+        label: "关系类型",
+        value: selected.edge.type,
+      },
+      {
+        key: "relationship_id",
+        label: "关系 ID",
+        value: selected.edge.id,
+      },
+      ...Object.entries(selected.edge.details || {})
+        .filter(([, value]) => Boolean(value))
+        .map(([key, value]) => ({
+          key: `detail:${key}`,
+          label: key,
+          value,
+        })),
+    ];
+  }, [selected]);
+  const selectedQuestionContext =
+    selected?.kind === "edge" ? edgeQuestionContext(selected) : null;
+  const selectedQuestionPaperID = selectedQuestionContext
+    ? paperIDForNode(selectedQuestionContext.paper)
+    : "";
+  const togglePinnedSelection = () => {
+    if (selectionForActions.length === 0) return;
+    recordSceneSnapshot();
+    const nextPinned = new Set(pinnedNodeIDs);
+    for (const id of selectionForActions) {
+      if (selectionIsPinned) nextPinned.delete(id);
+      else nextPinned.add(id);
+      const node = nodesRef.current.find((item) => item.id === id);
+      if (!node) continue;
+      node.fx = selectionIsPinned ? undefined : node.x;
+      node.fy = selectionIsPinned ? undefined : node.y;
+    }
+    setPinnedNodeIDs([...nextPinned]);
+    alphaRef.current = 0.35;
+    setVersion((version) => version + 1);
+  };
+  const fitSelectedNodes = () => {
+    const selectedNodes = nodesRef.current.filter((node) =>
+      selectedNodeIDSet.has(node.id),
+    );
+    if (selectedNodes.length === 0) return;
+    recordSceneSnapshot();
+    const minX = Math.min(
+      ...selectedNodes.map((node) => node.x - nodeMeta(node.type).radius),
+    );
+    const maxX = Math.max(
+      ...selectedNodes.map((node) => node.x + nodeMeta(node.type).radius),
+    );
+    const minY = Math.min(
+      ...selectedNodes.map((node) => node.y - nodeMeta(node.type).radius),
+    );
+    const maxY = Math.max(
+      ...selectedNodes.map((node) => node.y + nodeMeta(node.type).radius),
+    );
+    const width = Math.max(80, maxX - minX);
+    const height = Math.max(80, maxY - minY);
+    const nextZoom = clamp(
+      Math.min((VIEW_W - 180) / width, (VIEW_H - 140) / height),
+      MIN_ZOOM,
+      MAX_ZOOM,
+    );
+    setZoom(nextZoom);
+    setPan({
+      x: VIEW_W / 2 - ((minX + maxX) / 2) * nextZoom,
+      y: VIEW_H / 2 - ((minY + maxY) / 2) * nextZoom,
+    });
+  };
   const resetGraphView = () => {
+    recordSceneSnapshot();
     setZoom(1);
     setSearchTerm("");
-    resetLayout();
+    resetLayout(true);
   };
   const graphDownloadName = (ext: "svg" | "png") =>
     mode === "overview" ? `overview-knowledge-graph.${ext}` : `paper-knowledge-graph.${ext}`;
+  const exportFilterLabel = () => {
+    if (graphFilter.kind === "node") {
+      return `节点：${nodeMeta(graphFilter.type).label}${graphFilter.expanded ? "（含关系）" : ""}`;
+    }
+    if (graphFilter.kind === "edge") return `关系：${graphFilter.type}`;
+    return "全部节点与关系";
+  };
   const serializedGraphSvg = () => {
     const svg = svgRef.current;
-    if (!svg) return "";
+    if (!svg) return null;
+    const namespace = "http://www.w3.org/2000/svg";
     const clone = svg.cloneNode(true) as SVGSVGElement;
-    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    const legendTypes = [...new Set(renderedNodes.map((node) => node.type))];
+    const legendColumns = 7;
+    const legendRows = Math.max(1, Math.ceil(legendTypes.length / legendColumns));
+    const headerHeight = 74 + legendRows * 25;
+    const exportHeight = headerHeight + VIEW_H + 30;
+    const output = document.createElementNS(namespace, "svg");
+    output.setAttribute("xmlns", namespace);
+    output.setAttribute("width", String(VIEW_W));
+    output.setAttribute("height", String(exportHeight));
+    output.setAttribute("viewBox", `0 0 ${VIEW_W} ${exportHeight}`);
+
+    const background = document.createElementNS(namespace, "rect");
+    background.setAttribute("width", String(VIEW_W));
+    background.setAttribute("height", String(exportHeight));
+    background.setAttribute("fill", "#ffffff");
+    output.appendChild(background);
+
+    const style = document.createElementNS(namespace, "style");
+    style.textContent =
+      "text{font-family:Arial,'Microsoft YaHei',sans-serif}.fill-muted-foreground{fill:#64748b}.fill-foreground{fill:#fff}.fill-primary-foreground{fill:#fff}";
+    output.appendChild(style);
+
+    const addText = (
+      text: string,
+      x: number,
+      y: number,
+      size: number,
+      color: string,
+      weight = "400",
+    ) => {
+      const element = document.createElementNS(namespace, "text");
+      element.setAttribute("x", String(x));
+      element.setAttribute("y", String(y));
+      element.setAttribute("font-size", String(size));
+      element.setAttribute("font-weight", weight);
+      element.setAttribute("fill", color);
+      element.textContent = text;
+      output.appendChild(element);
+    };
+
+    const generatedAt = new Intl.DateTimeFormat("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(new Date());
+    addText(mode === "overview" ? "总览知识图谱" : "论文知识图谱", 24, 30, 18, "#0f172a", "700");
+    addText(
+      `筛选条件：${exportFilterLabel()}  ·  节点 ${renderedNodes.length}  ·  关系 ${renderedEdges.length}`,
+      24,
+      53,
+      11,
+      "#475569",
+    );
+    addText(`生成时间：${generatedAt}`, 760, 30, 10, "#64748b");
+
+    legendTypes.forEach((type, index) => {
+      const meta = nodeMeta(type);
+      const column = index % legendColumns;
+      const row = Math.floor(index / legendColumns);
+      const x = 24 + column * 138;
+      const y = 78 + row * 25;
+      const circle = document.createElementNS(namespace, "circle");
+      circle.setAttribute("cx", String(x + 6));
+      circle.setAttribute("cy", String(y - 4));
+      circle.setAttribute("r", "5");
+      circle.setAttribute("fill", meta.color);
+      output.appendChild(circle);
+      addText(meta.label, x + 17, y, 10, "#334155", "600");
+    });
+
+    clone.setAttribute("x", "0");
+    clone.setAttribute("y", String(headerHeight));
     clone.setAttribute("width", String(VIEW_W));
     clone.setAttribute("height", String(VIEW_H));
     clone.setAttribute("viewBox", `0 0 ${VIEW_W} ${VIEW_H}`);
-    return new XMLSerializer().serializeToString(clone);
+    clone.removeAttribute("class");
+    output.appendChild(clone);
+    addText(
+      `当前缩放 ${Math.round(zoom * 100)}% · 导出包含当前筛选结果`,
+      24,
+      exportHeight - 10,
+      10,
+      "#64748b",
+    );
+    return {
+      source: new XMLSerializer().serializeToString(output),
+      width: VIEW_W,
+      height: exportHeight,
+    };
   };
   const triggerDownload = (url: string, filename: string) => {
     const a = document.createElement("a");
@@ -810,25 +1450,25 @@ function ForceEntityGraph({
     a.remove();
   };
   const downloadSvg = () => {
-    const source = serializedGraphSvg();
-    if (!source) return;
-    const blob = new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n${source}`], { type: "image/svg+xml;charset=utf-8" });
+    const exported = serializedGraphSvg();
+    if (!exported) return;
+    const blob = new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n${exported.source}`], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     triggerDownload(url, graphDownloadName("svg"));
     URL.revokeObjectURL(url);
     setDownloadOpen(false);
   };
   const downloadPng = () => {
-    const source = serializedGraphSvg();
-    if (!source) return;
-    const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
+    const exported = serializedGraphSvg();
+    if (!exported) return;
+    const blob = new Blob([exported.source], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const image = new Image();
     image.onload = () => {
       const scale = 2;
       const canvas = document.createElement("canvas");
-      canvas.width = VIEW_W * scale;
-      canvas.height = VIEW_H * scale;
+      canvas.width = exported.width * scale;
+      canvas.height = exported.height * scale;
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         URL.revokeObjectURL(url);
@@ -837,7 +1477,7 @@ function ForceEntityGraph({
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
-      ctx.drawImage(image, 0, 0, VIEW_W, VIEW_H);
+      ctx.drawImage(image, 0, 0, exported.width, exported.height);
       canvas.toBlob((pngBlob) => {
         URL.revokeObjectURL(url);
         if (!pngBlob) return;
@@ -866,6 +1506,35 @@ function ForceEntityGraph({
     window.location.assign("/pioneer");
   };
 
+  const openPaperChat = (
+    paperID: string,
+    draft = "请结合论文原文，概括这篇论文的研究问题、方法和主要结论。",
+  ) => {
+    onPaperRead?.(paperID);
+    try {
+      sessionStorage.setItem(PAPER_CHAT_DRAFT_KEY, draft);
+    } catch {
+      // 严格隐私模式下 sessionStorage 可能不可用。
+    }
+    window.location.assign(
+      `/?paper_id=${encodeURIComponent(paperID)}`,
+    );
+  };
+
+  const searchRelatedPapersInPioneer = (node: EntityGraphNode) => {
+    const title = (node.details?.title || node.label || "").trim();
+    if (!title) return;
+    try {
+      sessionStorage.setItem(
+        PIONEER_REFERENCE_DRAFT_KEY,
+        `请帮我找找与论文《${title}》相关的论文，并说明它们与该论文的研究问题或方法有什么联系。`,
+      );
+    } catch {
+      // 严格隐私模式下 sessionStorage 可能不可用。
+    }
+    window.location.assign("/pioneer");
+  };
+
   const filterPanel = (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="border-b px-4 py-3">
@@ -877,7 +1546,16 @@ function ForceEntityGraph({
           {expandedNodeIDs.length > 0 && (
             <div className="flex items-center justify-between gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
               <span className="text-muted-foreground">已展开 {expandedNodeIDs.length} 个节点</span>
-              <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setExpandedNodeIDs([])}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => {
+                  recordSceneSnapshot();
+                  setExpandedNodeIDs([]);
+                }}
+              >
                 清除展开
               </Button>
             </div>
@@ -1052,35 +1730,104 @@ function ForceEntityGraph({
               关键词
             </Button>
             {keywordsOpen && (
-              <div className="absolute left-0 top-[calc(100%+0.5rem)] z-20 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-popover shadow-lg">
+              <div className="absolute left-0 top-[calc(100%+0.5rem)] z-20 w-[min(34rem,calc(100vw-19rem))] min-w-80 overflow-hidden rounded-lg border bg-popover shadow-lg">
                 <div className="flex items-center justify-between border-b px-3 py-2">
-                  <div className="text-sm font-medium">关键词</div>
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    关键词汇总
+                    <span className="text-xs font-normal tabular-nums text-muted-foreground">
+                      {keywordItems.length}
+                    </span>
+                  </div>
                   <Button variant="ghost" size="icon-xs" title="关闭" onClick={() => setKeywordsOpen(false)}>
                     <X className="size-3.5" />
                   </Button>
                 </div>
-                <ScrollArea className="max-h-72">
+                <div className="max-h-[min(62vh,34rem)] overflow-y-auto overscroll-contain">
                   <div className="p-3">
                     {keywordItems.length === 0 ? (
                       <p className="text-sm text-muted-foreground">暂无关键词数据</p>
                     ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {keywordItems.map((item) => (
-                          <span key={item.name} className="inline-flex items-center gap-1.5 rounded-full border bg-muted/45 px-3 py-1 text-xs" title={showKeywordCount && item.count != null ? `${item.count}` : item.name}>
-                            {item.name}
-                            {showKeywordCount && item.count != null && <span className="tabular-nums text-muted-foreground">{item.count}</span>}
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {keywordItems.map((item, index) => (
+                          <span
+                            key={`${item.name}:${index}`}
+                            className="flex min-w-0 items-start justify-between gap-2 rounded-md border bg-muted/35 px-3 py-2 text-xs"
+                            title={item.name}
+                          >
+                            <span className="min-w-0 whitespace-normal break-words leading-5">
+                              {item.name}
+                            </span>
+                            {showKeywordCount && item.count != null && (
+                              <span className="shrink-0 rounded-full bg-background px-1.5 py-0.5 tabular-nums text-muted-foreground">
+                                {item.count}
+                              </span>
+                            )}
                           </span>
                         ))}
                       </div>
                     )}
                   </div>
-                </ScrollArea>
+                </div>
               </div>
             )}
           </div>
+          <Button
+            variant={boxSelectMode ? "secondary" : "outline"}
+            size="sm"
+            title="框选节点；按住 Shift 可追加选择"
+            aria-pressed={boxSelectMode}
+            onClick={() => {
+              setBoxSelectMode((active) => !active);
+              boxSelectionRef.current = null;
+              setBoxSelection(null);
+            }}
+          >
+            <MousePointer2 className="size-4" />
+            框选
+          </Button>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            title={selectionIsPinned ? "取消固定选中节点" : "固定选中节点"}
+            disabled={selectionForActions.length === 0}
+            onClick={togglePinnedSelection}
+          >
+            {selectionIsPinned ? (
+              <PinOff className="size-4" />
+            ) : (
+              <Pin className="size-4" />
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            title="适应选中区域"
+            disabled={selectedNodeIDs.length === 0}
+            onClick={fitSelectedNodes}
+          >
+            <Maximize2 className="size-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            title="撤销"
+            disabled={undoStack.length === 0}
+            onClick={undoScene}
+          >
+            <Undo2 className="size-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            title="重做"
+            disabled={redoStack.length === 0}
+            onClick={redoScene}
+          >
+            <Redo2 className="size-4" />
+          </Button>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" title="重置图谱位置" onClick={resetGraphView}>
+          <Button variant="outline" size="sm" title="重置位置并解除全部固定" onClick={resetGraphView}>
             <RotateCcw className="size-4" />
             重置
           </Button>
@@ -1106,7 +1853,7 @@ function ForceEntityGraph({
         ref={svgRef}
         xmlns="http://www.w3.org/2000/svg"
         viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-        className="h-full min-h-[520px] w-full touch-none select-none bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--muted)_72%,transparent)_1px,transparent_1px)] [background-size:22px_22px]"
+        className="h-full min-h-0 w-full touch-none select-none bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--muted)_72%,transparent)_1px,transparent_1px)] [background-size:22px_22px]"
         role="img"
         aria-label="论文知识图谱"
         onPointerDown={onSvgDown}
@@ -1142,7 +1889,7 @@ function ForceEntityGraph({
           </marker>
         </defs>
         <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
-          {edgesRef.current.map((edge) => {
+          {renderedEdges.map((edge) => {
             const a = nodeByID.get(edge.source);
             const b = nodeByID.get(edge.target);
             if (!a || !b) return null;
@@ -1166,6 +1913,7 @@ function ForceEntityGraph({
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
+                  setSelectedNodeIDs([]);
                   setSelected({ kind: "edge", edge, source: a, target: b });
                 }}
               >
@@ -1224,10 +1972,14 @@ function ForceEntityGraph({
               </g>
             );
           })}
-          {nodes.map((node) => {
+          {renderedNodes.map((node) => {
             const meta = nodeMeta(node.type);
             const matched = matchesSearch(node);
-            const selectedNode = selected?.kind === "node" && selected.node.id === node.id;
+            const selectedNode =
+              selectedNodeIDSet.has(node.id) ||
+              (selected?.kind === "node" && selected.node.id === node.id);
+            const pinnedNode = pinnedNodeIDSet.has(node.id);
+            const labelLines = nodeLabelLines(node);
             const nodeColor = matched ? (node.type === "paper" ? PAPER_NODE_COLOR : meta.color) : "#cbd5e1";
             const labelColor = matched ? "#ffffff" : "#94a3b8";
             return (
@@ -1238,7 +1990,15 @@ function ForceEntityGraph({
                 onPointerDown={(e) => onNodeDown(e, node.id)}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (!movedRef.current) setSelected({ kind: "node", node });
+                  if (movedRef.current) return;
+                  const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+                  setSelectedNodeIDs((current) => {
+                    if (!additive) return [node.id];
+                    return current.includes(node.id)
+                      ? current.filter((id) => id !== node.id)
+                      : [...current, node.id];
+                  });
+                  setSelected({ kind: "node", node });
                 }}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
@@ -1256,7 +2016,7 @@ function ForceEntityGraph({
                   {selectedNode && (
                     <circle
                       className="graph-selected-node-ring"
-                      r={meta.radius +3}
+                      r={meta.radius + 6}
                       fill="none"
                       stroke={GRAPH_SELECTED_COLOR}
                       strokeOpacity={0.92}
@@ -1272,118 +2032,291 @@ function ForceEntityGraph({
                     strokeWidth={0}
                     style={{ transition: "stroke 180ms ease-out, stroke-width 180ms ease-out, fill-opacity 180ms ease-out" }}
                   />
+                  {pinnedNode && (
+                    <circle
+                      cx={meta.radius * 0.62}
+                      cy={-meta.radius * 0.62}
+                      r={3.2}
+                      fill="#ffffff"
+                      fillOpacity={0.96}
+                    />
+                  )}
                   <text
-                    y={5}
+                    y={labelLines.length > 1 ? -3 : 4}
                     textAnchor="middle"
                     className={cn("pointer-events-none font-medium", node.type === "paper" ? "fill-primary-foreground text-[11px]" : "fill-foreground text-[12px]")}
                     style={{ fill: labelColor, fontSize: nodeLabelFontSize(node) }}
                   >
-                    {nodeLabelText(node)}
+                    {labelLines.map((line, index) => (
+                      <tspan
+                        key={`${node.id}:label:${index}`}
+                        x={0}
+                        dy={index === 0 ? 0 : 11}
+                      >
+                        {line}
+                      </tspan>
+                    ))}
                   </text>
                 </g>
               </g>
             );
           })}
         </g>
+        {boxSelection && (
+          <rect
+            x={Math.min(boxSelection.x1, boxSelection.x2)}
+            y={Math.min(boxSelection.y1, boxSelection.y2)}
+            width={Math.abs(boxSelection.x2 - boxSelection.x1)}
+            height={Math.abs(boxSelection.y2 - boxSelection.y1)}
+            rx={4}
+            fill={GRAPH_SELECTED_COLOR}
+            fillOpacity={0.08}
+            stroke={GRAPH_SELECTED_COLOR}
+            strokeDasharray="6 4"
+            strokeWidth={1.5}
+            className="pointer-events-none"
+          />
+        )}
       </svg>
-      <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[calc(100%-2rem)] rounded-md bg-background/82 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur">
+      <div className="absolute bottom-3 right-3 z-10 w-48 overflow-hidden rounded-md border bg-background/92 shadow-sm backdrop-blur">
+        <div className="flex items-center justify-between border-b px-2.5 py-1.5 text-[11px]">
+          <span className="font-medium">小地图</span>
+          <span className="tabular-nums text-muted-foreground">
+            {Math.round(zoom * 100)}%
+          </span>
+        </div>
+        <svg
+          viewBox={`0 0 ${MINIMAP_W} ${MINIMAP_H}`}
+          className="h-24 w-full cursor-crosshair bg-muted/20"
+          aria-label="知识图谱小地图"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            const x =
+              ((event.clientX - rect.left) / rect.width) * MINIMAP_W;
+            const y =
+              ((event.clientY - rect.top) / rect.height) * MINIMAP_H;
+            const worldX =
+              (x - minimapPadding) / minimapScale + minimapBounds.minX;
+            const worldY =
+              (y - minimapPadding) / minimapScale + minimapBounds.minY;
+            recordSceneSnapshot();
+            setPan({
+              x: VIEW_W / 2 - worldX * zoom,
+              y: VIEW_H / 2 - worldY * zoom,
+            });
+          }}
+        >
+          {renderedEdges.map((edge) => {
+            const source = nodeByID.get(edge.source);
+            const target = nodeByID.get(edge.target);
+            if (!source || !target) return null;
+            return (
+              <line
+                key={`minimap:${edgeKey(edge)}`}
+                x1={minimapX(source.x)}
+                y1={minimapY(source.y)}
+                x2={minimapX(target.x)}
+                y2={minimapY(target.y)}
+                stroke="#cbd5e1"
+                strokeWidth={0.7}
+              />
+            );
+          })}
+          {renderedNodes.map((node) => (
+            <circle
+              key={`minimap:${node.id}`}
+              cx={minimapX(node.x)}
+              cy={minimapY(node.y)}
+              r={node.type === "paper" ? 2.7 : 1.8}
+              fill={nodeMeta(node.type).color}
+              stroke={
+                selectedNodeIDSet.has(node.id)
+                  ? GRAPH_SELECTED_COLOR
+                  : "transparent"
+              }
+              strokeWidth={1}
+            />
+          ))}
+          <rect
+            x={minimapX(viewportWorld.minX)}
+            y={minimapY(viewportWorld.minY)}
+            width={Math.max(
+              2,
+              (viewportWorld.maxX - viewportWorld.minX) * minimapScale,
+            )}
+            height={Math.max(
+              2,
+              (viewportWorld.maxY - viewportWorld.minY) * minimapScale,
+            )}
+            fill="none"
+            stroke="#475569"
+            strokeWidth={1}
+          />
+        </svg>
+      </div>
+      <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[calc(100%-14rem)] rounded-md bg-background/82 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur">
         鼠标滚轮缩放图谱大小，拖拽空白区域平移，拖拽节点调整位置。
         {mode === "overview" && " 总览页可双击任意节点展开或收回它与论文节点的关系。"}
       </div>
       {selected && (
-        <div className="absolute bottom-3 right-3 z-20 flex max-h-[min(32rem,calc(100%-5.5rem))] w-fit min-w-56 max-w-[min(26rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border bg-popover shadow-lg">
-          <div className="flex shrink-0 items-center justify-between border-b px-3 py-2">
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium">{selected.kind === "node" ? nodeMeta(selected.node.type).label : "关系详情"}</div>
-              <div className="truncate text-xs text-muted-foreground">{selected.kind === "node" ? selected.node.id : selected.edge.id}</div>
+        <div className="absolute right-3 top-14 z-20 flex max-h-[min(36rem,calc(100%-8rem))] w-[min(25rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-md border bg-background shadow-xl shadow-slate-950/10">
+          <div
+            className="h-1 shrink-0"
+            style={{ backgroundColor: selectedAccent }}
+          />
+          <div className="flex shrink-0 items-start justify-between gap-3 border-b px-4 py-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <span
+                className="mt-1 size-3 shrink-0 rounded-full"
+                style={{ backgroundColor: selectedAccent }}
+              />
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-muted-foreground">
+                  {selected.kind === "node" ? "实体详情" : "关系详情"}
+                </div>
+                <div className="mt-0.5 break-words text-sm font-semibold leading-5">
+                  {selectedInspectorTitle}
+                </div>
+                <div className="mt-1 line-clamp-2 break-words text-xs leading-5 text-muted-foreground">
+                  {selectedInspectorSubtitle}
+                </div>
+              </div>
             </div>
-            <Button variant="ghost" size="icon-xs" title="关闭" onClick={() => setSelected(null)}>
-              <X className="size-3.5" />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0"
+              title="关闭详情"
+              onClick={() => setSelected(null)}
+            >
+              <X className="size-4" />
             </Button>
           </div>
-          <div className="min-h-0 overflow-y-auto overscroll-contain">
-            <div className="space-y-3 p-3 pr-4">
-              {selected.kind === "node" ? (
-                <>
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">名称</div>
-                    <div className="whitespace-pre-wrap break-words text-sm">{selected.node.label}</div>
-                  </div>
-                  {selected.node.type === "paper" &&
-                    (() => {
-                      const paperID = paperIDForNode(selected.node);
-                      if (!paperID) {
-                        return (
-                          <div className="rounded-md border bg-muted/35 px-2.5 py-2 text-xs text-muted-foreground">
-                            缺少论文 ID，无法跳转
-                          </div>
-                        );
-                      }
-                      return (
-                        <Link
-                          href={`/reader?id=${encodeURIComponent(paperID)}`}
-                          className={cn(buttonVariants({ variant: "default", size: "sm" }), "w-full")}
-                          onClick={() => onPaperRead?.(paperID)}
-                        >
-                          <FileText className="size-3.5" />
-                          进入论文精读
-                        </Link>
-                      );
-                    })()}
-                  {selected.node.type === "reference" && referenceSearchText(selected.node) && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => void searchReferenceInPioneer(selected.node)}
-                    >
-                      <Search className="size-3.5" />
-                      小云雀检索
-                    </Button>
+
+          {(selected.kind === "node" || selectedQuestionContext) && (
+            <div className="flex shrink-0 flex-wrap gap-2 border-b bg-muted/20 px-4 py-3">
+              {selected.kind === "node" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={togglePinnedSelection}
+                >
+                  {selectionIsPinned ? (
+                    <PinOff className="size-3.5" />
+                  ) : (
+                    <Pin className="size-3.5" />
                   )}
-                  {Object.entries(selected.node.details || {})
-                    .filter(([k, v]) => {
-                      if (!v) return false;
-                      if (k === "name" && v === selected.node.label) return false;
-                      if (k === "type") return false;
-                      return true;
-                    })
-                    .map(([k, v]) => (
-                      <div key={k}>
-                        <div className="mb-1 text-xs text-muted-foreground">{k}</div>
-                        <div className="whitespace-pre-wrap break-words text-sm">{v}</div>
-                      </div>
-                    ))}
-                </>
-              ) : (
-                <>
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">关系</div>
-                    <div className="whitespace-pre-wrap break-words text-sm">{edgeTypeLabel(selected.edge)}</div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">起点实体</div>
-                    <div className="whitespace-pre-wrap break-words text-sm">{selected.source?.label || selected.edge.source}</div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">连接实体</div>
-                    <div className="whitespace-pre-wrap break-words text-sm">{selected.target?.label || selected.edge.target}</div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">关系类型</div>
-                    <div className="whitespace-pre-wrap break-words text-sm">{selected.edge.type}</div>
-                  </div>
-                  {Object.entries(selected.edge.details || {})
-                    .filter(([, value]) => Boolean(value))
-                    .map(([key, value]) => (
-                      <div key={key}>
-                        <div className="mb-1 text-xs text-muted-foreground">{key}</div>
-                        <div className="whitespace-pre-wrap break-words text-sm">{value}</div>
-                      </div>
-                    ))}
-                </>
+                  {selectionIsPinned ? "取消固定" : "固定节点"}
+                </Button>
               )}
+              {selected.kind === "node" &&
+                selected.node.type === "paper" &&
+                (() => {
+                  const paperID = paperIDForNode(selected.node);
+                  if (!paperID) {
+                    return (
+                      <span className="self-center text-xs text-muted-foreground">
+                        缺少论文 ID
+                      </span>
+                    );
+                  }
+                  return (
+                    <>
+                      <Link
+                        href={`/reader?id=${encodeURIComponent(paperID)}`}
+                        className={buttonVariants({
+                          variant: "outline",
+                          size: "sm",
+                        })}
+                        onClick={() => onPaperRead?.(paperID)}
+                      >
+                        <FileText className="size-3.5" />
+                        进入精读
+                      </Link>
+                      <Link
+                        href={`/reports?paper_id=${encodeURIComponent(paperID)}`}
+                        className={buttonVariants({
+                          variant: "default",
+                          size: "sm",
+                        })}
+                        onClick={() => onPaperRead?.(paperID)}
+                      >
+                        <BookOpenText className="size-3.5" />
+                        查看研读报告
+                      </Link>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => openPaperChat(paperID)}
+                      >
+                        <MessageCircle className="size-3.5" />
+                        对话问答
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          searchRelatedPapersInPioneer(selected.node)
+                        }
+                      >
+                        <Search className="size-3.5" />
+                        检索相关论文
+                      </Button>
+                    </>
+                  );
+                })()}
+              {selected.kind === "node" &&
+                selected.node.type === "reference" &&
+                referenceSearchText(selected.node) && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() =>
+                      void searchReferenceInPioneer(selected.node)
+                    }
+                  >
+                    <Search className="size-3.5" />
+                    小云雀检索
+                  </Button>
+                )}
+              {selected.kind === "edge" &&
+                selectedQuestionContext &&
+                selectedQuestionPaperID && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() =>
+                      openPaperChat(
+                        selectedQuestionPaperID,
+                        `请结合论文《${selectedQuestionContext.paper.label}》的原文，具体解释以下${
+                          QUESTION_CONTEXT_LABELS[
+                            selectedQuestionContext.entity.type
+                          ] || "实体"
+                        }，并说明它在论文中的作用、依据和结论：\n${selectedQuestionContext.entity.label}`,
+                      )
+                    }
+                  >
+                    <MessageCircle className="size-3.5" />
+                    对话问答
+                  </Button>
+                )}
             </div>
+          )}
+
+          <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-1">
+            {selectedDetailFields.map((field) => (
+              <GraphDetailField
+                key={field.key}
+                label={field.label}
+                value={field.value}
+                copyKey={`${selected.kind}:${selected.kind === "node" ? selected.node.id : edgeKey(selected.edge)}:${field.key}`}
+                copiedKey={copiedDetailKey}
+                onCopy={(key, value) => void copyDetailValue(key, value)}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -1403,29 +2336,20 @@ function normalizeEntityGraph(graph: EntityGraph | null | undefined): EntityGrap
   };
 }
 
-function mergeEntityGraphs(base: EntityGraph, addition: EntityGraph): EntityGraph {
-  const baseNodes = dedupeEntityNodes(Array.isArray(base.nodes) ? base.nodes : []);
-  const additionNodes = dedupeEntityNodes(Array.isArray(addition.nodes) ? addition.nodes : []);
-  const baseEdges = dedupeEntityEdges(Array.isArray(base.edges) ? base.edges : []);
-  const additionEdges = dedupeEntityEdges(Array.isArray(addition.edges) ? addition.edges : []);
-  const nodes = new Map(baseNodes.map((node) => [node.id, node]));
-  for (const node of additionNodes) {
-    const current = nodes.get(node.id);
-    nodes.set(
-      node.id,
-      current ? { ...current, details: { ...(current.details || {}), ...(node.details || {}) } } : node,
-    );
-  }
-
-  const edges = new Map<string, EntityGraphEdge>();
-  for (const edge of [...baseEdges, ...additionEdges]) {
-    const key = edgeKey(edge);
-    if (!edges.has(key)) edges.set(key, edge);
-  }
-
+function normalizeGraphRebuildJob(job: GraphRebuildJob): GraphRebuildJob {
+  const total = Number.isFinite(job.total) ? job.total : 0;
+  const completed = Number.isFinite(job.completed) ? job.completed : 0;
   return {
-    nodes: [...nodes.values()],
-    edges: [...edges.values()],
+    ...job,
+    total,
+    completed,
+    succeeded: Number.isFinite(job.succeeded) ? job.succeeded : 0,
+    failed: Number.isFinite(job.failed) ? job.failed : 0,
+    work_total: Number.isFinite(job.work_total) ? job.work_total : total * 2,
+    work_done: Number.isFinite(job.work_done)
+      ? job.work_done
+      : completed * 2,
+    errors: Array.isArray(job.errors) ? job.errors : [],
   };
 }
 
@@ -1437,6 +2361,7 @@ export function GraphView() {
   const [overviewGraph, setOverviewGraph] = useState<EntityGraph | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
   const [rebuildingGraph, setRebuildingGraph] = useState(false);
+  const [rebuildJob, setRebuildJob] = useState<GraphRebuildJob | null>(null);
   const [graphError, setGraphError] = useState("");
   const [graphNotice, setGraphNotice] = useState("");
 
@@ -1456,20 +2381,16 @@ export function GraphView() {
     };
   }, [authed]);
 
-  const loadFullOverviewGraph = useCallback(
-    async (base: EntityGraph | null) => {
-      let combined = normalizeEntityGraph(base) || { nodes: [], edges: [] };
-      const detailResults = await Promise.allSettled(
-        papers.map(async (paper) => normalizeEntityGraph(await api.paperEntityGraph(paper.id))),
-      );
-      for (const result of detailResults) {
-        if (result.status !== "fulfilled" || !result.value) continue;
-        combined = mergeEntityGraphs(combined, result.value);
-      }
-      return combined.nodes.length > 0 ? combined : null;
-    },
-    [papers],
-  );
+  const loadGraphData = useCallback(async () => {
+    const [overview, full] = await Promise.all([
+      api.graphNetwork(),
+      api.graphNetworkEntities(),
+    ]);
+    const normalizedOverview = normalizeEntityGraph(overview);
+    const normalizedFull = normalizeEntityGraph(full);
+    setOverviewGraph(normalizedOverview);
+    setEntityGraph(normalizedFull || normalizedOverview);
+  }, []);
 
   useEffect(() => {
     if (!authed) {
@@ -1481,18 +2402,8 @@ export function GraphView() {
     setGraphError("");
     setGraphNotice("");
     setLoadingGraph(true);
-    api
-      .graphNetwork()
-      .then(async (g) => {
-        if (!cancelled) {
-          const normalized = normalizeEntityGraph(g);
-          const fullGraph = await loadFullOverviewGraph(normalized);
-          if (!cancelled) {
-            setOverviewGraph(normalized);
-            setEntityGraph(fullGraph || normalized);
-          }
-        }
-      })
+    loadGraphData()
+      .then(() => {})
       .catch((err) => {
         if (!cancelled) {
           setEntityGraph(null);
@@ -1505,34 +2416,43 @@ export function GraphView() {
     return () => {
       cancelled = true;
     };
-  }, [authed, loadFullOverviewGraph]);
+  }, [authed, loadGraphData]);
 
-  const rebuildCurrentGraph = () => {
+  const rebuildCurrentGraph = async () => {
     if (rebuildingGraph) return;
     setGraphError("");
     setGraphNotice("");
     setRebuildingGraph(true);
-    const refreshStats = () => {
-      api.graphKeywords(GRAPH_KEYWORD_LIMIT).then(setKeywords).catch(() => setKeywords([]));
-    };
-    setLoadingGraph(true);
-    api
-      .rebuildGraphNetwork()
-      .then(async (g) => {
-        const normalized = normalizeEntityGraph(g);
-        const fullGraph = await loadFullOverviewGraph(normalized);
-        setOverviewGraph(normalized);
-        setEntityGraph(fullGraph || normalized);
-        setGraphNotice("总览图谱已更新");
-        refreshStats();
-      })
-      .catch((err) => {
-        setGraphError(graphRequestErrorMessage(err, "总览知识图谱更新失败"));
-      })
-      .finally(() => {
-        setLoadingGraph(false);
-        setRebuildingGraph(false);
-      });
+    try {
+      let job = normalizeGraphRebuildJob(await api.rebuildGraphNetwork());
+      setRebuildJob(job);
+      while (job.status === "queued" || job.status === "running") {
+        await new Promise((resolve) => window.setTimeout(resolve, 900));
+        job = normalizeGraphRebuildJob(await api.graphRebuildJob(job.id));
+        setRebuildJob(job);
+      }
+      if (job.status === "failed") {
+        throw new api.ApiError("知识图谱更新任务执行失败", 500);
+      }
+      await Promise.all([
+        loadGraphData(),
+        api
+          .graphKeywords(GRAPH_KEYWORD_LIMIT)
+          .then(setKeywords)
+          .catch(() => setKeywords([])),
+      ]);
+      setGraphNotice(
+        job.failed > 0
+          ? `图谱更新完成：成功 ${job.succeeded} 篇，失败 ${job.failed} 篇`
+          : `图谱更新完成：成功同步 ${job.succeeded} 篇论文`,
+      );
+    } catch (err) {
+      setGraphError(
+        graphRequestErrorMessage(err, "总览知识图谱更新失败"),
+      );
+    } finally {
+      setRebuildingGraph(false);
+    }
   };
 
   const graphKeywordItems = useMemo<GraphKeywordItem[]>(() => {
@@ -1589,6 +2509,9 @@ export function GraphView() {
           <ArrowLeft className="size-4" />
         </Link>
         <AgentIntro kind="graph" />
+        <span className="rounded-full border bg-muted/40 px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+          论文 {papers.length}
+        </span>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <Button
             variant="outline"
@@ -1603,16 +2526,8 @@ export function GraphView() {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-hidden bg-background p-5">
-        <section className="flex h-full min-h-0 min-w-0 flex-col rounded-lg border bg-card p-4 shadow-sm">
-            <div className="mb-3 flex shrink-0 items-center gap-2 text-sm font-medium">
-              <Network className="size-4 text-primary" />
-              总览知识图谱
-              <span className="rounded-full border bg-muted/45 px-2 py-0.5 text-xs font-normal text-muted-foreground">
-                论文 {papers.length}
-              </span>
-            </div>
-
+      <div className="min-h-0 flex-1 overflow-hidden bg-background p-3">
+        <section className="flex h-full min-h-0 min-w-0 flex-col">
             {graphError && (
               <div className="mb-3 shrink-0 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 {graphError}
@@ -1623,6 +2538,58 @@ export function GraphView() {
                 {graphNotice}
               </div>
             )}
+            {rebuildJob &&
+              (rebuildingGraph || rebuildJob.failed > 0) && (
+                <div className="mb-3 shrink-0 rounded-md border bg-background px-3 py-2.5 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">
+                      {rebuildingGraph ? "正在增量同步知识图谱" : "图谱同步已完成"}
+                      {rebuildingGraph && rebuildJob.phase
+                        ? ` · ${
+                            rebuildJob.phase === "metadata"
+                              ? "同步论文实体"
+                              : "更新语义关系"
+                          }`
+                        : ""}
+                    </span>
+                    <span className="tabular-nums text-muted-foreground">
+                      已处理 {rebuildJob.completed}/{rebuildJob.total} · 成功{" "}
+                      {rebuildJob.succeeded} · 失败 {rebuildJob.failed}
+                    </span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width] duration-300"
+                      style={{
+                        width: `${
+                          (rebuildJob.work_total ||
+                            rebuildJob.total * 2) > 0
+                            ? Math.round(
+                                ((rebuildJob.work_done ??
+                                  rebuildJob.completed * 2) /
+                                  (rebuildJob.work_total ||
+                                    rebuildJob.total * 2)) *
+                                  100,
+                              )
+                            : rebuildJob.status === "queued"
+                              ? 4
+                              : 10
+                        }%`,
+                      }}
+                    />
+                  </div>
+                  {(rebuildJob.errors ?? []).length > 0 && (
+                    <div className="mt-2 max-h-20 space-y-1 overflow-y-auto text-destructive">
+                      {(rebuildJob.errors ?? []).map((item, index) => (
+                        <div key={`${item.paper_id || "global"}:${item.stage}:${index}`}>
+                          {item.paper_id ? `${item.paper_id}：` : ""}
+                          {item.message}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
             {loadingGraph ? (
               <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">

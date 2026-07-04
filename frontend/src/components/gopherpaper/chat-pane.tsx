@@ -13,6 +13,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { figureUrl } from "@/lib/gopherpaper/api";
+import { PAPER_CHAT_DRAFT_KEY } from "@/lib/gopherpaper/navigation-drafts";
 import {
   referenceReaderHref,
   referencesUsedBySourceTags,
@@ -307,6 +308,17 @@ export function ChatPane() {
     () => (papers.length > 0 ? new Set(papers.map((paper) => paper.id)) : undefined),
     [papers],
   );
+
+  useEffect(() => {
+    try {
+      const draft = sessionStorage.getItem(PAPER_CHAT_DRAFT_KEY);
+      if (!draft) return;
+      sessionStorage.removeItem(PAPER_CHAT_DRAFT_KEY);
+      setInput(draft);
+    } catch {
+      // 严格隐私模式下 sessionStorage 可能不可用。
+    }
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" });

@@ -112,9 +112,6 @@ func PaperGraph(c *gin.Context) {
 		response.Fail(c, http.StatusBadRequest, "缺少论文 id")
 		return
 	}
-	if repairErr := repairPaperGraphFromMeta(c.Request.Context(), owner, paperID); repairErr != nil {
-		zlog.Error("从 MySQL 元信息同步论文图谱失败", "owner", owner, "paper_id", paperID, "err", repairErr)
-	}
 	g, err := graphstore.PaperEntityGraph(c.Request.Context(), owner, paperID)
 	if err != nil {
 		zlog.Error("查询论文知识图谱失败", "owner", owner, "paper_id", paperID, "err", err)
@@ -128,7 +125,6 @@ func PaperGraph(c *gin.Context) {
 // GET /api/v1/graph/network
 func Network(c *gin.Context) {
 	owner := tenant.MustStudentID(c.Request.Context())
-	repairOwnerGraphsFromMeta(c.Request.Context(), owner)
 	g, err := graphstore.OverviewEntityGraph(c.Request.Context(), owner)
 	if err != nil {
 		zlog.Error("查询总览知识图谱失败", "owner", owner, "err", err)
@@ -138,22 +134,42 @@ func Network(c *gin.Context) {
 	response.OK(c, g)
 }
 
-// RebuildNetwork 从 MySQL 元信息重建当前用户全部论文图谱，并返回刷新后的总览图谱。
-// POST /api/v1/graph/network/rebuild
-func RebuildNetwork(c *gin.Context) {
+// NetworkEntities 返回当前用户完整的论文实体图谱，仅执行只读查询。
+// GET /api/v1/graph/network/entities
+func NetworkEntities(c *gin.Context) {
 	owner := tenant.MustStudentID(c.Request.Context())
-	if err := rebuildOwnerSemanticGraphsFromMeta(owner); err != nil {
-		zlog.Error("手动重建总览知识图谱失败", "owner", owner, "err", err)
-		response.Fail(c, http.StatusInternalServerError, "重建总览知识图谱失败")
-		return
-	}
-	g, err := graphstore.OverviewEntityGraph(c.Request.Context(), owner)
+	g, err := graphstore.AllEntityGraph(c.Request.Context(), owner)
 	if err != nil {
-		zlog.Error("查询重建后的总览知识图谱失败", "owner", owner, "err", err)
-		response.Fail(c, http.StatusInternalServerError, "查询总览知识图谱失败")
+		zlog.Error("查询完整知识图谱失败", "owner", owner, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "查询完整知识图谱失败")
 		return
 	}
 	response.OK(c, g)
+}
+
+// RebuildNetwork 启动从 MySQL 增量校准当前用户全部论文图谱的后台任务。
+// POST /api/v1/graph/network/rebuild
+func RebuildNetwork(c *gin.Context) {
+	owner := tenant.MustStudentID(c.Request.Context())
+	job, err := startNetworkRebuildJob(owner)
+	if err != nil {
+		zlog.Error("启动总览知识图谱更新任务失败", "owner", owner, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "启动总览知识图谱更新任务失败")
+		return
+	}
+	response.OK(c, job)
+}
+
+// RebuildNetworkStatus 返回后台更新任务的实时进度。
+// GET /api/v1/graph/network/rebuild/:job_id
+func RebuildNetworkStatus(c *gin.Context) {
+	owner := tenant.MustStudentID(c.Request.Context())
+	job, ok := networkRebuildJob(owner, c.Param("job_id"))
+	if !ok {
+		response.Fail(c, http.StatusNotFound, "图谱更新任务不存在")
+		return
+	}
+	response.OK(c, job)
 }
 
 // RebuildPaper 从 MySQL 元信息重建单篇论文图谱，并返回刷新后的论文中心图谱。
@@ -179,84 +195,49 @@ func RebuildPaper(c *gin.Context) {
 	response.OK(c, g)
 }
 
-func repairOwnerGraphsFromMeta(ctx context.Context, owner string) {
-	papers, err := paperdao.List(ctx, owner)
-	if err != nil {
-		zlog.Error("同步总览图谱前查询论文列表失败", "owner", owner, "err", err)
-		return
-	}
-	for _, p := range papers {
-		if err := repairPaperGraphFromMeta(ctx, owner, p.ID); err != nil {
-			zlog.Error("同步单篇论文图谱失败", "owner", owner, "paper_id", p.ID, "err", err)
-		}
-	}
-}
-
-func repairPaperGraphFromMeta(ctx context.Context, owner, paperID string) error {
-	pg, err := buildPaperGraphFromMeta(ctx, owner, paperID)
-	if err != nil {
-		return err
-	}
-	return graphstore.UpsertPaperMetadata(ctx, pg)
-}
-
-func rebuildOwnerGraphsFromMeta(ctx context.Context, owner string) error {
-	papers, err := paperdao.List(ctx, owner)
-	if err != nil {
-		return err
-	}
-	var firstErr error
-	for _, p := range papers {
-		if err := rebuildPaperGraphFromMeta(ctx, owner, p.ID); err != nil {
-			zlog.Error("从 MySQL 元信息重建论文图谱失败", "owner", owner, "paper_id", p.ID, "err", err)
-			if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errPaperMetaNotFound) {
-				continue
-			}
-			if firstErr == nil {
-				firstErr = err
-			}
-		}
-	}
-	return firstErr
-}
-
-func rebuildOwnerSemanticGraphsFromMeta(owner string) error {
+func rebuildOwnerSemanticGraphsFromMeta(owner string, progress rebuildProgressFunc) error {
 	jobCtx := tenant.With(context.Background(), tenant.Tenant{StudentID: owner})
 	papers, err := paperdao.List(jobCtx, owner)
 	if err != nil {
 		return err
 	}
-	var firstErr error
+	if progress != nil {
+		progress(len(papers), "", "total", nil)
+	}
 	paperIDs := make([]string, 0, len(papers))
 	for _, p := range papers {
 		pg, err := buildPaperGraphFromMeta(jobCtx, owner, p.ID)
 		if err != nil {
 			zlog.Error("rebuild graph metadata failed", "owner", owner, "paper_id", p.ID, "err", err)
-			if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errPaperMetaNotFound) {
-				continue
-			}
-			if firstErr == nil {
-				firstErr = err
+			if progress != nil {
+				progress(0, p.ID, "metadata", err)
 			}
 			continue
 		}
 		pg = graphsemantic.PreparePaperGraph(jobCtx, pg)
 		if err := graphstore.UpsertPaperMetadata(jobCtx, pg); err != nil {
 			zlog.Error("upsert graph metadata failed", "owner", owner, "paper_id", p.ID, "err", err)
-			if firstErr == nil {
-				firstErr = err
+			if progress != nil {
+				progress(0, p.ID, "metadata", err)
 			}
 			continue
 		}
 		paperIDs = append(paperIDs, p.ID)
+		if progress != nil {
+			progress(0, p.ID, "metadata_prepared", nil)
+		}
 	}
 	seenPairs := map[string]bool{}
 	for _, paperID := range paperIDs {
-		if err := graphsemantic.RefreshPaperRelationsUnique(jobCtx, owner, paperID, seenPairs); err != nil {
+		err := graphsemantic.RefreshPaperRelationsUnique(jobCtx, owner, paperID, seenPairs)
+		if err != nil {
 			zlog.Error("refresh semantic graph relations failed, degraded", "owner", owner, "paper_id", paperID, "err", err)
 		}
+		if progress != nil {
+			progress(0, paperID, "relations", err)
+		}
 	}
-	return firstErr
+	return nil
 }
 
 func rebuildPaperGraphFromMeta(ctx context.Context, owner, paperID string) error {
