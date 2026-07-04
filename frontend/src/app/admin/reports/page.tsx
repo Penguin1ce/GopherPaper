@@ -76,8 +76,10 @@ export default function AdminReportsPage() {
 
   const successRate = useMemo(() => {
     if (!basic) return null;
-    const total = basic.trend.reduce((s, p) => s + p.calls, 0);
-    const ok = basic.trend.reduce((s, p) => s + p.success, 0);
+    // 后端空切片序列化成 JSON null,空库时 trend 为 null,兜底成空数组避免 reduce 崩溃
+    const trend = basic.trend ?? [];
+    const total = trend.reduce((s, p) => s + p.calls, 0);
+    const ok = trend.reduce((s, p) => s + p.success, 0);
     return total > 0 ? ok / total : null;
   }, [basic]);
 

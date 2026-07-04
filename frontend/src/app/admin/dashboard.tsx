@@ -72,6 +72,8 @@ export function AdminDashboard({
   const [seeding, setSeeding] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // 演示数据操作默认收起,点「数据管理」才展开,避免演示时直接暴露灌入/清除按钮
+  const [showDataMgmt, setShowDataMgmt] = useState(false);
 
   const loadMain = useCallback(async () => {
     if (!token) return;
@@ -127,8 +129,10 @@ export function AdminDashboard({
 
   const successRate = useMemo(() => {
     if (!analytics) return null;
-    const total = analytics.trend.reduce((s, p) => s + p.calls, 0);
-    const ok = analytics.trend.reduce((s, p) => s + p.success, 0);
+    // 后端空切片序列化成 JSON null,空库时 trend 为 null,兜底成空数组避免 reduce 崩溃
+    const trend = analytics.trend ?? [];
+    const total = trend.reduce((s, p) => s + p.calls, 0);
+    const ok = trend.reduce((s, p) => s + p.success, 0);
     return total > 0 ? ok / total : null;
   }, [analytics]);
 
@@ -150,14 +154,26 @@ export function AdminDashboard({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void clear()} disabled={clearing || seeding}>
-            {clearing ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-            清除演示数据
+          <Button
+            variant={showDataMgmt ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setShowDataMgmt((v) => !v)}
+          >
+            <Database className="size-4" />
+            数据管理
           </Button>
-          <Button size="sm" onClick={() => void seed()} disabled={seeding || clearing}>
-            {seeding ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-            灌入演示数据
-          </Button>
+          {showDataMgmt && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => void clear()} disabled={clearing || seeding}>
+                {clearing ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                清除演示数据
+              </Button>
+              <Button size="sm" onClick={() => void seed()} disabled={seeding || clearing}>
+                {seeding ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                灌入演示数据
+              </Button>
+            </>
+          )}
         </div>
       </div>
 

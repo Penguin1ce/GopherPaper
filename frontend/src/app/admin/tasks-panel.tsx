@@ -65,8 +65,21 @@ export function TasksPanel({ token }: { token: string }) {
         fetchTaskBoard(token, { assignee: assigneeFilter, priority: priorityFilter, query }),
         fetchTaskStats(token),
       ]);
-      setBoard(b);
-      setStats(s);
+      // 后端空切片序列化成 JSON null,空库(全新克隆)时 columns/items/by_* 均为 null,
+      // 需逐层兜底成空数组,否则 forEach/map/slice 直接崩溃。
+      setBoard(
+        b ? { ...b, columns: (b.columns ?? []).map((c) => ({ ...c, items: c.items ?? [] })) } : b,
+      );
+      setStats(
+        s
+          ? {
+              ...s,
+              by_status: s.by_status ?? [],
+              by_priority: s.by_priority ?? [],
+              by_assignee: s.by_assignee ?? [],
+            }
+          : s,
+      );
     } catch {
       setBoard(null);
     } finally {
