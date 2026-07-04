@@ -314,6 +314,13 @@ export function clearAvatar() {
   });
 }
 
+export function userModelConfigRequest<T>(
+  path: string,
+  options: RequestInit = {},
+) {
+  return request<T>(path, options);
+}
+
 // ---- 论文 ----
 
 export function listPapers() {

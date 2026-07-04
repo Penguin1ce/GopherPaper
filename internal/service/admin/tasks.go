@@ -151,6 +151,9 @@ func BoardTasks(ctx context.Context, assignee, priority, query string) (*dto.Adm
 	out := &dto.AdminTaskBoardResponse{Total: len(rows)}
 	for _, s := range taskStatusOrder {
 		items := grouped[s.Status]
+		if items == nil {
+			items = make([]dto.AdminTaskItem, 0)
+		}
 		out.Columns = append(out.Columns, dto.AdminTaskColumn{
 			Status: s.Status,
 			Label:  s.Label,
@@ -448,7 +451,11 @@ func DeleteTaskComment(ctx context.Context, taskID, commentID uint) error {
 // TaskStats 汇总任务看板顶部的统计数据。
 func TaskStats(ctx context.Context) (*dto.AdminTaskStats, error) {
 	db := dao.DB.WithContext(ctx)
-	out := &dto.AdminTaskStats{}
+	out := &dto.AdminTaskStats{
+		ByStatus:   make([]dto.AdminTaskStatusCount, 0, len(taskStatusOrder)),
+		ByPriority: make([]dto.AdminTaskPriorityCount, 0, 4),
+		ByAssignee: make([]dto.AdminTaskAssigneeCount, 0),
+	}
 
 	db.Model(&model.AdminTask{}).Count(&out.Total)
 	db.Model(&model.AdminTask{}).Where("status = ?", "done").Count(&out.Done)

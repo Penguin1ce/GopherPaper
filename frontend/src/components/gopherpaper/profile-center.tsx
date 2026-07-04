@@ -11,6 +11,7 @@ import {
   LogOut,
   Mail,
   ShieldCheck,
+  SlidersHorizontal,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -28,6 +29,7 @@ import {
   SelectTrigger,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { userModelConfigRequest } from "@/lib/gopherpaper/api";
 import { useApp } from "@/lib/gopherpaper/store";
 import type {
   PreferenceAnswerStyle,
@@ -42,8 +44,43 @@ import { WorkspaceFrame, WorkspacePanel } from "./workspace-frame";
 
 type ProfileIcon = typeof UserRound;
 
+type ModelConfigSummary = {
+  loading: boolean;
+  total: number;
+  personal: number;
+  failed: number;
+  error: boolean;
+};
+
+type ModelConfigSummaryItem = {
+  source?: string;
+  last_test_status?: string;
+};
+
+type ModelConfigSummaryResponse = {
+  items?: ModelConfigSummaryItem[];
+};
+
+const EMPTY_MODEL_CONFIG_SUMMARY: ModelConfigSummary = {
+  loading: false,
+  total: 0,
+  personal: 0,
+  failed: 0,
+  error: false,
+};
+
 function fieldFallback(value: string | undefined, fallback = "未设置") {
   return value && value.trim() ? value : fallback;
+}
+
+function summarizeModelConfigs(items: ModelConfigSummaryItem[] = []): ModelConfigSummary {
+  return {
+    loading: false,
+    total: items.length,
+    personal: items.filter((item) => item.source === "user").length,
+    failed: items.filter((item) => item.last_test_status === "failed").length,
+    error: false,
+  };
 }
 
 export function ProfileCenter() {
@@ -80,6 +117,7 @@ export function ProfileCenter() {
   const [saving, setSaving] = useState(false);
   const [preferenceSaving, setPreferenceSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [modelConfigSummary, setModelConfigSummary] = useState<ModelConfigSummary>(EMPTY_MODEL_CONFIG_SUMMARY);
   const [error, setError] = useState("");
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
@@ -121,6 +159,33 @@ export function ProfileCenter() {
       .catch(() => {})
       .finally(() => setRefreshing(false));
   }, [authed, refreshPreferences, refreshUser]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!authed) {
+      setModelConfigSummary(EMPTY_MODEL_CONFIG_SUMMARY);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setModelConfigSummary((current) => ({ ...current, loading: true, error: false }));
+    userModelConfigRequest<ModelConfigSummaryResponse>("/user/model-configs")
+      .then((data) => {
+        if (!cancelled) {
+          setModelConfigSummary(summarizeModelConfigs(data.items));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setModelConfigSummary({ ...EMPTY_MODEL_CONFIG_SUMMARY, error: true });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authed]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -587,6 +652,8 @@ export function ProfileCenter() {
                 )}
 
                 <BindingRow icon={UserRound} label="登录账号" value={studentID} />
+
+                <ModelManagementCard summary={modelConfigSummary} />
               </div>
             </section>
           </div>
@@ -596,33 +663,37 @@ export function ProfileCenter() {
             className="overflow-hidden rounded-[1.75rem] border bg-card shadow-sm"
             onSubmit={submitPreference}
           >
-            <div className="grid lg:grid-cols-[minmax(18rem,0.82fr)_minmax(0,1.35fr)]">
-              <div className="relative overflow-hidden border-b bg-muted/25 p-5 sm:p-6 lg:border-b-0 lg:border-r">
-                <div className="absolute -right-20 -top-20 size-44 rounded-full bg-primary/10 blur-3xl" />
-                <div className="relative">
-                  <div className="flex items-center gap-3">
-                    <div className="grid size-11 place-items-center rounded-2xl bg-primary/10 text-primary">
-                      <MessageSquareText className="size-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-semibold tracking-tight">AI 回答偏好</h2>
-                      <p className="mt-1 text-sm text-muted-foreground">控制回答方式，不改变科研可靠性规则。</p>
-                    </div>
+            <div className="border-b px-5 py-4 sm:px-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <MessageSquareText className="size-5" />
                   </div>
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-semibold tracking-tight">AI 回答偏好</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">控制回答方式，不改变科研可靠性规则。</p>
+                  </div>
+                </div>
+                <Badge variant="outline" className="shrink-0">
+                  个人设置
+                </Badge>
+              </div>
+            </div>
 
-                  <div className="mt-6 space-y-3 rounded-2xl border bg-background/70 p-4 text-xs leading-relaxed text-muted-foreground">
-                    <p>
-                      <span className="font-medium text-foreground">可以自定义：</span>
-                      称呼、回答详略、输出形式、语言习惯和补充表达要求。
-                    </p>
-                    <p>
-                      <span className="font-medium text-foreground">不可覆盖：</span>
-                      论文问答必须基于用户可见知识库，并保留可追溯出处。
-                    </p>
-                    <p>
-                      保存后会在后续默认论文问答和小云雀对话中生效。
-                    </p>
-                  </div>
+            <div className="grid lg:grid-cols-[minmax(16rem,0.7fr)_minmax(0,1.65fr)]">
+              <div className="border-b p-5 sm:p-6 lg:border-b-0 lg:border-r">
+                <div className="space-y-4 text-sm leading-6 text-muted-foreground">
+                  <p className="border-l border-primary/30 pl-3">
+                    <span className="font-medium text-foreground">可以自定义：</span>
+                    称呼、回答详略、输出形式、语言习惯和补充表达要求。
+                  </p>
+                  <p className="border-l border-border pl-3">
+                    <span className="font-medium text-foreground">不可覆盖：</span>
+                    论文问答必须基于用户可见知识库，并保留可追溯出处。
+                  </p>
+                  <p className="border-l border-border pl-3">
+                    保存后会在后续默认论文问答和小云雀对话中生效。
+                  </p>
                 </div>
               </div>
 
@@ -633,6 +704,7 @@ export function ProfileCenter() {
                       <Label htmlFor="preference-nickname">希望 AI 如何称呼你</Label>
                       <Input
                         id="preference-nickname"
+                        className="h-9 rounded-lg"
                         value={prefForm.nickname}
                         maxLength={64}
                         placeholder="例如：同学、小王、Kurumi"
@@ -706,7 +778,7 @@ export function ProfileCenter() {
                       maxLength={500}
                       rows={7}
                       placeholder="例如：解释公式时多给直观例子；回答论文方法时先给整体流程，再展开细节。"
-                      className="min-h-48 resize-none rounded-2xl bg-background"
+                      className="min-h-44 resize-none rounded-lg bg-background"
                       onChange={(event) =>
                         setPrefForm((value) => ({
                           ...value,
@@ -845,7 +917,7 @@ function PreferenceSelect({
     <div className="space-y-2">
       <Label>{label}</Label>
       <Select value={value} onValueChange={(next) => next && onValueChange(next)}>
-        <SelectTrigger className="h-10 w-full rounded-xl bg-background">
+        <SelectTrigger className="h-9 w-full rounded-lg bg-background">
           <span className="truncate">{selectedLabel}</span>
         </SelectTrigger>
         <SelectContent>
@@ -892,5 +964,70 @@ function BindingRow({
         {action}
       </div>
     </div>
+  );
+}
+
+function modelManagementStatus(summary: ModelConfigSummary) {
+  if (summary.loading) {
+    return {
+      badge: "同步中",
+      subtitle: "正在读取配置状态",
+      variant: "secondary" as const,
+    };
+  }
+  if (summary.error) {
+    return {
+      badge: "状态未知",
+      subtitle: "模型配置状态暂不可用",
+      variant: "outline" as const,
+    };
+  }
+  if (summary.failed > 0) {
+    return {
+      badge: `${summary.failed} 项失败`,
+      subtitle:
+        summary.personal > 0
+          ? `已配置 ${summary.personal} 项，${summary.failed} 项测试失败`
+          : `${summary.failed} 项系统默认配置测试失败`,
+      variant: "destructive" as const,
+    };
+  }
+  if (summary.personal > 0) {
+    return {
+      badge: `已配置 ${summary.personal} 项`,
+      subtitle: `当前账号有 ${summary.personal} 项个人模型配置`,
+      variant: "default" as const,
+    };
+  }
+  return {
+    badge: "系统默认",
+    subtitle: summary.total > 0 ? "未配置个人模型，使用系统默认" : "个人模型服务账号",
+    variant: "outline" as const,
+  };
+}
+
+function ModelManagementCard({ summary }: { summary: ModelConfigSummary }) {
+  const status = modelManagementStatus(summary);
+
+  return (
+    <Link
+      href="/profile/model-management"
+      className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/20 px-4 py-3 outline-none transition hover:border-primary/40 hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-ring/60"
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-background text-muted-foreground">
+          <SlidersHorizontal className="size-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-medium">模型管理</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {status.subtitle}
+          </div>
+        </div>
+      </div>
+      <Badge variant={status.variant} className="shrink-0">
+        {status.badge}
+      </Badge>
+    </Link>
   );
 }

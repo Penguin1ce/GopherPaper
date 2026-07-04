@@ -54,7 +54,7 @@ type runnerEntry struct {
 // owner 从 ctx 的 tenant 取;ctx 注入 paperID 让检索工具限定到本篇,挂出处收集器汇 sources。
 func Generate(ctx context.Context, in *core.ReportInput) (*core.Reply, error) {
 	userID := tenant.MustStudentID(ctx)
-	rt, err := runnerForUser(userID)
+	rt, err := runnerForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -89,11 +89,11 @@ func Generate(ctx context.Context, in *core.ReportInput) (*core.Reply, error) {
 
 // runnerForUser 懒建该用户的小囊鼠 runner:模型取 aimodel 的 chat 模型,挂 ragtools 检索工具、
 // React planner 与 gopher 分组 skill,工具迭代预算放到报告级别。
-func runnerForUser(userID string) (runner.Runner, error) {
+func runnerForUser(ctx context.Context, userID string) (runner.Runner, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("gopher: userID 不能为空")
 	}
-	models, err := aimodel.ModelsForUser(userID)
+	models, err := aimodel.ModelsForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +293,7 @@ func fallbackReport(ctx context.Context, in *core.ReportInput, focus string, cau
 	prompt := strings.ReplaceAll(constant.GopherFallbackReportPrompt, "{focus}", focus)
 	prompt = strings.ReplaceAll(prompt, "{context}", retrieval.FormatDocs(docs)+fallbackFigureInstruction(docs))
 
-	models, err := aimodel.ModelsForUser(userID)
+	models, err := aimodel.ModelsForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

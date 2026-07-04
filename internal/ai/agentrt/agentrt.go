@@ -85,7 +85,7 @@ func generateWithImagesFor(
 	images []Image,
 ) (string, error) {
 	userID := tenant.MustStudentID(ctx)
-	rt, err := runnerForUser(userID, agentGroup)
+	rt, err := runnerForUser(ctx, userID, agentGroup)
 	if err != nil {
 		return "", err
 	}
@@ -114,11 +114,11 @@ func userMessage(query string, images []Image) trpcmodel.Message {
 }
 
 // runnerForUser 懒建该用户在指定 agent 分组下的 runner。
-func runnerForUser(userID, agentGroup string) (runner.Runner, error) {
+func runnerForUser(ctx context.Context, userID, agentGroup string) (runner.Runner, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("agentrt: userID 不能为空")
 	}
-	models, err := aimodel.ModelsForUser(userID)
+	models, err := aimodel.ModelsForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

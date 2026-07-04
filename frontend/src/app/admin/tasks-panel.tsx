@@ -79,12 +79,21 @@ export function TasksPanel({ token }: { token: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  // 后端空切片可能被序列化为 null,这里统一归一化为可遍历数组。
+  const columns = useMemo(() => {
+    const rawColumns = Array.isArray(board?.columns) ? board.columns : [];
+    return rawColumns.map((col) => ({
+      ...col,
+      items: Array.isArray(col.items) ? col.items : [],
+    }));
+  }, [board]);
+
   // id → 当前状态,便于左右移动时计算目标列。
   const statusById = useMemo(() => {
     const m = new Map<number, string>();
-    board?.columns.forEach((col) => col.items.forEach((t) => m.set(t.id, col.status)));
+    columns.forEach((col) => col.items.forEach((t) => m.set(t.id, col.status)));
     return m;
-  }, [board]);
+  }, [columns]);
 
   const toggleSelect = (id: number) => {
     setSelected((s) => {
@@ -281,7 +290,7 @@ export function TasksPanel({ token }: { token: string }) {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {board.columns.map((col) => {
+          {columns.map((col) => {
             const meta = statusMeta(col.status);
             const colIdx = TASK_STATUSES.findIndex((s) => s.value === col.status);
             return (
@@ -354,7 +363,9 @@ export function TasksPanel({ token }: { token: string }) {
 // 统计头:关键指标 + 完成率 + 优先级分布 + 负责人负载。
 function StatsHeader({ stats }: { stats: TaskStats }) {
   const pct = Math.round((stats.completed_rate || 0) * 100);
-  const maxPrio = Math.max(1, ...stats.by_priority.map((p) => p.count));
+  const byPriority = Array.isArray(stats.by_priority) ? stats.by_priority : [];
+  const byAssignee = Array.isArray(stats.by_assignee) ? stats.by_assignee : [];
+  const maxPrio = Math.max(1, ...byPriority.map((p) => p.count));
   return (
     <div className="mb-4 grid gap-3 rounded-lg border border-border bg-muted/20 p-3 lg:grid-cols-3">
       {/* 指标 */}
@@ -375,7 +386,7 @@ function StatsHeader({ stats }: { stats: TaskStats }) {
           <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
         </div>
         <div className="mt-2 flex flex-wrap gap-1">
-          {stats.by_assignee.slice(0, 5).map((a) => (
+          {byAssignee.slice(0, 5).map((a) => (
             <span key={a.assignee} className="rounded-full bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
               {a.assignee} · {a.count}
             </span>
@@ -386,7 +397,7 @@ function StatsHeader({ stats }: { stats: TaskStats }) {
       {/* 优先级分布 */}
       <div className="flex flex-col justify-center gap-1">
         <span className="mb-0.5 text-[11px] text-muted-foreground">优先级分布</span>
-        {stats.by_priority.map((p) => {
+        {byPriority.map((p) => {
           const meta = priorityMeta(p.priority);
           return (
             <div key={p.priority} className="flex items-center gap-2 text-[11px]">

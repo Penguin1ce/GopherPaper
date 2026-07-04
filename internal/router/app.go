@@ -70,6 +70,11 @@ func Init(mode string) *gin.Engine {
 			authed.POST("/user/logout", user.Logout)
 			authed.POST("/user/avatar", user.UploadAvatar)
 			authed.DELETE("/user/avatar", user.ClearAvatar)
+			authed.GET("/user/model-configs", user.ListModelConfigs)
+			authed.POST("/user/model-configs/apply", user.ApplyModelConfigs)
+			authed.PUT("/user/model-configs/:role", user.UpdateModelConfig)
+			authed.POST("/user/model-configs/:role/test", user.TestModelConfig)
+			authed.POST("/user/model-configs/:role/restore", user.RestoreModelConfig)
 
 			authed.POST("/papers", paperhandler.Upload)
 			authed.GET("/papers", paperhandler.List)

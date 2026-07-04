@@ -6,6 +6,7 @@
 package aimodel
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
@@ -24,9 +25,24 @@ import (
 // cfg 保存全局配置,须在使用 ModelsForUser / NewEmbedder 前由 Init 注入。
 var cfg *config.Config
 
+// UserConfigResolver 在构建某个用户的模型缓存前叠加该用户自己的模型配置。
+// resolver 只能向下依赖 dao/model 等底层包,避免 aimodel 反向 import service 造成循环。
+type UserConfigResolver func(ctx context.Context, userID string, base *config.Config) (*config.Config, error)
+
+var (
+	resolverMu         sync.RWMutex
+	userConfigResolver UserConfigResolver
+)
+
 // Init 保存全局配置。
 func Init(c *config.Config) {
 	cfg = c
+}
+
+func SetUserConfigResolver(r UserConfigResolver) {
+	resolverMu.Lock()
+	defer resolverMu.Unlock()
+	userConfigResolver = r
 }
 
 // NewChatModel 用 trpc 的 openai 兼容 model 建对话/意图模型。
@@ -109,10 +125,11 @@ var modelSets sync.Map // userID -> *modelSetEntry
 type modelSetEntry struct {
 	once   sync.Once
 	models *ModelSet
+	err    error
 }
 
 // ModelsForUser 返回该用户的 trpc 模型集合,未命中则建并缓存。
-func ModelsForUser(userID string) (*ModelSet, error) {
+func ModelsForUser(ctx context.Context, userID string) (*ModelSet, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("aimodel: 未初始化")
 	}
@@ -122,33 +139,52 @@ func ModelsForUser(userID string) (*ModelSet, error) {
 	e, _ := modelSets.LoadOrStore(userID, &modelSetEntry{})
 	ent := e.(*modelSetEntry)
 	ent.once.Do(func() {
+		effectiveCfg := cfg
+		resolverMu.RLock()
+		resolver := userConfigResolver
+		resolverMu.RUnlock()
+		if resolver != nil {
+			base := *cfg
+			resolved, err := resolver(ctx, userID, &base)
+			if err != nil {
+				ent.err = err
+				return
+			}
+			if resolved != nil {
+				effectiveCfg = resolved
+			}
+		}
 		ent.models = &ModelSet{
-			Intent:      NewChatModel(cfg.Models.Intent),
-			Chat:        NewChatModel(cfg.Models.Chat),
-			Vlm:         NewChatModel(cfg.Models.Vlm),
-			Translate:   NewChatModel(cfg.Models.Translate),
-			IntentMC:    cfg.Models.Intent,
-			ChatMC:      cfg.Models.Chat,
-			VlmMC:       cfg.Models.Vlm,
-			TranslateMC: cfg.Models.Translate,
+			Intent:      NewChatModel(effectiveCfg.Models.Intent),
+			Chat:        NewChatModel(effectiveCfg.Models.Chat),
+			Vlm:         NewChatModel(effectiveCfg.Models.Vlm),
+			Translate:   NewChatModel(effectiveCfg.Models.Translate),
+			IntentMC:    effectiveCfg.Models.Intent,
+			ChatMC:      effectiveCfg.Models.Chat,
+			VlmMC:       effectiveCfg.Models.Vlm,
+			TranslateMC: effectiveCfg.Models.Translate,
 		}
 		// 小云雀模型未配置时回退 Chat,复用同一实例。
-		if cfg.Models.Pioneer.Model != "" {
-			ent.models.Pioneer = NewChatModel(cfg.Models.Pioneer)
-			ent.models.PioneerMC = cfg.Models.Pioneer
+		if effectiveCfg.Models.Pioneer.Model != "" {
+			ent.models.Pioneer = NewChatModel(effectiveCfg.Models.Pioneer)
+			ent.models.PioneerMC = effectiveCfg.Models.Pioneer
 		} else {
 			ent.models.Pioneer = ent.models.Chat
-			ent.models.PioneerMC = cfg.Models.Chat
+			ent.models.PioneerMC = effectiveCfg.Models.Chat
 		}
 		// 小耄耋模型未配置时回退 Chat,避免缺配置影响精读页。
-		if cfg.Models.Maodie.Model != "" {
-			ent.models.Maodie = NewChatModel(cfg.Models.Maodie)
-			ent.models.MaodieMC = cfg.Models.Maodie
+		if effectiveCfg.Models.Maodie.Model != "" {
+			ent.models.Maodie = NewChatModel(effectiveCfg.Models.Maodie)
+			ent.models.MaodieMC = effectiveCfg.Models.Maodie
 		} else {
 			ent.models.Maodie = ent.models.Chat
-			ent.models.MaodieMC = cfg.Models.Chat
+			ent.models.MaodieMC = effectiveCfg.Models.Chat
 		}
 	})
+	if ent.err != nil {
+		modelSets.Delete(userID)
+		return nil, ent.err
+	}
 	return ent.models, nil
 }
 

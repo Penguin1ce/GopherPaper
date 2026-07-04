@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"GopherPaper/internal/aimodel"
 	"GopherPaper/internal/auth"
 	"GopherPaper/internal/config"
 	"GopherPaper/internal/dao"
@@ -45,6 +46,7 @@ func Init(cfg *config.Config) {
 	}
 	registrationCode = strings.TrimSpace(cfg.Admin.RegistrationCode)
 	mqURL = strings.TrimSpace(cfg.MQ.URL)
+	aimodel.SetUserConfigResolver(ConfigForUser)
 	setRuntimeConfig(cfg)
 }
 

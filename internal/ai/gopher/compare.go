@@ -41,7 +41,7 @@ func Compare(ctx context.Context, papers []core.PaperCompareInput) (*core.Reply,
 	}
 
 	userID := tenant.MustStudentID(ctx)
-	rt, err := compareRunnerForUser(userID)
+	rt, err := compareRunnerForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,11 +80,11 @@ func Compare(ctx context.Context, papers []core.PaperCompareInput) (*core.Reply,
 	}, nil
 }
 
-func compareRunnerForUser(userID string) (runner.Runner, error) {
+func compareRunnerForUser(ctx context.Context, userID string) (runner.Runner, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("gopher compare: userID 不能为空")
 	}
-	models, err := aimodel.ModelsForUser(userID)
+	models, err := aimodel.ModelsForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +230,7 @@ func fallbackCompare(
 
 	evidence := fixedCompareEvidence(ctx, userID, papers)
 	prompt := strings.ReplaceAll(constant.CompareFallbackPrompt, "{context}", evidence)
-	models, err := aimodel.ModelsForUser(userID)
+	models, err := aimodel.ModelsForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

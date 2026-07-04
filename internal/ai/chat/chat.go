@@ -43,7 +43,7 @@ func ClassifyIntent(ctx context.Context, query string, history ...[]trpcmodel.Me
 	if intent, ok := paperResourceIntentOverride(ctx, query); ok {
 		return intent
 	}
-	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
+	models, err := aimodel.ModelsForUser(ctx, tenant.MustStudentID(ctx))
 	if err != nil {
 		zlog.Error("意图分类取模型失败,兜底 summary", "err", err)
 		return constant.IntentSummary
@@ -213,7 +213,7 @@ func ChatRAG(ctx context.Context, query string, intent constant.IntentType, hist
 
 // chitchatReply 处理闲聊:不检索论文,用 chat 模型带历史直接对话作答。
 func chitchatReply(ctx context.Context, query string, history []trpcmodel.Message) (*core.Reply, error) {
-	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
+	models, err := aimodel.ModelsForUser(ctx, tenant.MustStudentID(ctx))
 	if err != nil {
 		return nil, err
 	}

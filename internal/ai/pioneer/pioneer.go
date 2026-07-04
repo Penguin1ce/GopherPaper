@@ -95,7 +95,7 @@ func Chat(ctx context.Context, sessionID, query string) (string, error) {
 		return "", fmt.Errorf("pioneer: session 未初始化")
 	}
 	userID := tenant.MustStudentID(ctx)
-	rt, err := runnerForUser(userID)
+	rt, err := runnerForUser(ctx, userID)
 	if err != nil {
 		return "", err
 	}
@@ -117,11 +117,11 @@ func withUserPreference(ctx context.Context, instruction string) string {
 }
 
 // runnerForUser 懒建该用户的 runner,模型取自 aimodel,工具与 skill 取 pioneer 分组。
-func runnerForUser(userID string) (runner.Runner, error) {
+func runnerForUser(ctx context.Context, userID string) (runner.Runner, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("pioneer: userID 不能为空")
 	}
-	models, err := aimodel.ModelsForUser(userID)
+	models, err := aimodel.ModelsForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

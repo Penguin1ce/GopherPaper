@@ -17,7 +17,7 @@ import (
 
 // Rewrite 根据用户首问生成侧边栏展示标题。
 func Rewrite(ctx context.Context, question string) (string, error) {
-	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
+	models, err := aimodel.ModelsForUser(ctx, tenant.MustStudentID(ctx))
 	if err != nil {
 		return "", err
 	}

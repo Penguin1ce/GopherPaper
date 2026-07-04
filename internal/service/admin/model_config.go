@@ -21,6 +21,7 @@ import (
 	"GopherPaper/internal/dao"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/model"
+	"GopherPaper/internal/secret"
 	"GopherPaper/pkg/constant"
 )
 
@@ -63,12 +64,16 @@ var modelRoleSpecs = []modelRoleSpec{
 
 func ApplyStoredModelConfigs(ctx context.Context, cfg *config.Config) error {
 	setBaseConfig(cfg)
+	aimodel.SetUserConfigResolver(ConfigForUser)
 	rows, err := loadModelConfigRows(ctx)
 	if err != nil {
 		return err
 	}
-	_, _, err = overlayModelConfigRows(cfg, rows, true)
-	return err
+	if _, _, err := overlayModelConfigRows(cfg, rows, true); err != nil {
+		return err
+	}
+	setRuntimeConfig(cfg)
+	return nil
 }
 
 func ListModelConfigs(ctx context.Context) (*dto.AdminModelConfigsResponse, error) {
@@ -118,10 +123,20 @@ func UpdateModelConfig(ctx context.Context, role string, req dto.AdminModelConfi
 	}
 	row.Role = role
 	row.UpdatedBy = adminID
+	if isFallbackRole(spec) && isBlankModelConfigRow(row) {
+		if err := dao.DB.WithContext(ctx).Where("role = ?", role).Delete(&model.SystemModelConfig{}).Error; err != nil {
+			return nil, fmt.Errorf("admin model config: restore fallback failed: %w", err)
+		}
+		return ptr(itemFromConfig(cfg, spec, cfg)), nil
+	}
 	if err := validateModelConfigRow(&row, spec); err != nil {
 		return nil, err
 	}
-	if err := dao.DB.WithContext(ctx).Save(&row).Error; err != nil {
+	saveRow := row
+	if err := protectModelConfigAPIKey(ctx, &saveRow); err != nil {
+		return nil, err
+	}
+	if err := dao.DB.WithContext(ctx).Save(&saveRow).Error; err != nil {
 		return nil, fmt.Errorf("admin model config: save failed: %w", err)
 	}
 	return ptr(itemFromRow(row, spec, cfg)), nil
@@ -161,6 +176,19 @@ func TestModelConfig(ctx context.Context, role string) (*dto.AdminModelConfigTes
 	}
 	if !exists {
 		row = rowFromConfig(cfg, spec)
+	}
+	if isFallbackRole(spec) && isBlankModelConfigRow(row) {
+		message := fmt.Sprintf("%s 未配置独立模型，当前会回退主问答模型，不影响使用。", spec.Label)
+		if exists {
+			now := time.Now()
+			_ = dao.DB.WithContext(ctx).Model(&row).Updates(map[string]any{
+				"last_test_status":     modelConfigStatusOK,
+				"last_test_error":      "",
+				"last_test_at":         &now,
+				"last_test_latency_ms": 0,
+			}).Error
+		}
+		return &dto.AdminModelConfigTestResponse{OK: true, Message: message, LatencyMS: 0}, nil
 	}
 	if err := validateModelConfigRow(&row, spec); err != nil {
 		return nil, err
@@ -283,6 +311,13 @@ func loadModelConfigRows(ctx context.Context) ([]model.SystemModelConfig, error)
 	if err := dao.DB.WithContext(ctx).Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("admin model config: query failed: %w", err)
 	}
+	for i := range rows {
+		row, err := prepareModelConfigRow(ctx, rows[i])
+		if err != nil {
+			return nil, err
+		}
+		rows[i] = row
+	}
 	return rows, nil
 }
 
@@ -295,6 +330,10 @@ func getModelConfigRow(ctx context.Context, role string) (model.SystemModelConfi
 	if err != nil {
 		return row, false, fmt.Errorf("admin model config: query role failed: %w", err)
 	}
+	row, err = prepareModelConfigRow(ctx, row)
+	if err != nil {
+		return row, false, err
+	}
 	return row, true, nil
 }
 
@@ -304,6 +343,104 @@ func rowsByRole(rows []model.SystemModelConfig) map[string]model.SystemModelConf
 		out[row.Role] = row
 	}
 	return out
+}
+
+func prepareModelConfigRow(ctx context.Context, row model.SystemModelConfig) (model.SystemModelConfig, error) {
+	if strings.TrimSpace(row.APIKey) != "" {
+		plain := strings.TrimSpace(row.APIKey)
+		saveRow := row
+		saveRow.APIKey = plain
+		if err := protectModelConfigAPIKey(ctx, &saveRow); err != nil {
+			return row, err
+		}
+		now := time.Now()
+		updates := map[string]any{
+			"api_key":             "",
+			"api_key_ciphertext":  saveRow.APIKeyCiphertext,
+			"api_key_nonce":       saveRow.APIKeyNonce,
+			"api_key_key_id":      saveRow.APIKeyKeyID,
+			"api_key_key_version": saveRow.APIKeyKeyVersion,
+			"api_key_algorithm":   saveRow.APIKeyAlgorithm,
+			"api_key_mask":        saveRow.APIKeyMask,
+			"api_key_fingerprint": saveRow.APIKeyFingerprint,
+			"api_key_migrated_at": &now,
+		}
+		if err := dao.DB.WithContext(ctx).Model(&model.SystemModelConfig{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
+			return row, fmt.Errorf("admin model config: migrate api key failed: %w", err)
+		}
+		saveRow.APIKey = plain
+		saveRow.APIKeyMigratedAt = &now
+		return saveRow, nil
+	}
+
+	if strings.TrimSpace(row.APIKeyCiphertext) == "" {
+		return row, nil
+	}
+	m, err := secret.Default()
+	if err != nil {
+		return row, fmt.Errorf("admin model config: secret manager unavailable: %w", err)
+	}
+	plain, err := m.Decrypt(ctx, modelConfigSecretPurpose(row.Role), modelConfigCiphertext(row))
+	if err != nil {
+		return row, fmt.Errorf("admin model config: decrypt api key failed for role %s: %w", row.Role, err)
+	}
+	row.APIKey = plain
+	if row.APIKeyMask == "" {
+		row.APIKeyMask = m.Mask(plain)
+	}
+	if row.APIKeyFingerprint == "" {
+		row.APIKeyFingerprint = m.Fingerprint(plain)
+	}
+	return row, nil
+}
+
+func protectModelConfigAPIKey(ctx context.Context, row *model.SystemModelConfig) error {
+	plain := strings.TrimSpace(row.APIKey)
+	if plain == "" {
+		row.APIKey = ""
+		row.APIKeyCiphertext = ""
+		row.APIKeyNonce = ""
+		row.APIKeyKeyID = ""
+		row.APIKeyKeyVersion = ""
+		row.APIKeyAlgorithm = ""
+		row.APIKeyMask = ""
+		row.APIKeyFingerprint = ""
+		row.APIKeyMigratedAt = nil
+		return nil
+	}
+	m, err := secret.Default()
+	if err != nil {
+		return fmt.Errorf("admin model config: secret manager unavailable: %w", err)
+	}
+	ciphertext, err := m.Encrypt(ctx, modelConfigSecretPurpose(row.Role), plain)
+	if err != nil {
+		return fmt.Errorf("admin model config: encrypt api key failed: %w", err)
+	}
+	row.APIKey = ""
+	row.APIKeyCiphertext = ciphertext.Value
+	row.APIKeyNonce = ciphertext.Nonce
+	row.APIKeyKeyID = ciphertext.KeyID
+	row.APIKeyKeyVersion = ciphertext.KeyVersion
+	row.APIKeyAlgorithm = ciphertext.Algorithm
+	row.APIKeyMask = m.Mask(plain)
+	row.APIKeyFingerprint = m.Fingerprint(plain)
+	now := time.Now()
+	row.APIKeyMigratedAt = &now
+	return nil
+}
+
+func modelConfigCiphertext(row model.SystemModelConfig) secret.Ciphertext {
+	return secret.Ciphertext{
+		Value:      row.APIKeyCiphertext,
+		Nonce:      row.APIKeyNonce,
+		KeyID:      row.APIKeyKeyID,
+		KeyVersion: row.APIKeyKeyVersion,
+		Algorithm:  row.APIKeyAlgorithm,
+	}
+}
+
+func modelConfigSecretPurpose(role string) string {
+	return "admin_model_config:" + strings.TrimSpace(role)
 }
 
 func overlayModelConfigRows(cfg *config.Config, rows []model.SystemModelConfig, includeEmbedding bool) ([]string, []string, error) {
@@ -431,6 +568,15 @@ func applyModelConfigRequest(row *model.SystemModelConfig, req dto.AdminModelCon
 	}
 }
 
+func isFallbackRole(spec modelRoleSpec) bool {
+	return spec.Role == constant.ModelRolePioneer || spec.Role == constant.ModelRoleMaodie
+}
+
+func isBlankModelConfigRow(row model.SystemModelConfig) bool {
+	return strings.TrimSpace(row.BaseURL) == "" &&
+		strings.TrimSpace(row.Model) == ""
+}
+
 func validateModelConfigRow(row *model.SystemModelConfig, spec modelRoleSpec) error {
 	switch spec.Kind {
 	case "chat", "embedding":
@@ -522,8 +668,8 @@ func itemFromRow(row model.SystemModelConfig, spec modelRoleSpec, activeCfg *con
 		Provider:          row.Provider,
 		BaseURL:           row.BaseURL,
 		Model:             row.Model,
-		APIKeyMask:        maskAPIKey(row.APIKey),
-		HasAPIKey:         row.APIKey != "",
+		APIKeyMask:        modelConfigAPIKeyMask(row),
+		HasAPIKey:         modelConfigHasAPIKey(row),
 		Dim:               row.Dim,
 		MaxTokens:         row.MaxTokens,
 		ReasoningEffort:   row.ReasoningEffort,
@@ -579,6 +725,19 @@ func maskAPIKey(key string) string {
 		return "****"
 	}
 	return key[:4] + "****" + key[len(key)-4:]
+}
+
+func modelConfigAPIKeyMask(row model.SystemModelConfig) string {
+	if strings.TrimSpace(row.APIKey) != "" {
+		return maskAPIKey(row.APIKey)
+	}
+	return strings.TrimSpace(row.APIKeyMask)
+}
+
+func modelConfigHasAPIKey(row model.SystemModelConfig) bool {
+	return strings.TrimSpace(row.APIKey) != "" ||
+		strings.TrimSpace(row.APIKeyCiphertext) != "" ||
+		strings.TrimSpace(row.APIKeyMask) != ""
 }
 
 func testModelConfigConnection(ctx context.Context, row model.SystemModelConfig, spec modelRoleSpec) error {

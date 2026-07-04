@@ -8,10 +8,14 @@ import { AppToaster, ToastBridge } from "./app-ui";
 
 const SHARED_APP_PATHS = new Set(["/", "/reader", "/reports", "/graph", "/profile"]);
 
+function usesSharedAppState(pathname: string) {
+  return SHARED_APP_PATHS.has(pathname) || pathname.startsWith("/profile/");
+}
+
 export function AppRouteProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
-  if (!SHARED_APP_PATHS.has(pathname)) return children;
+  if (!usesSharedAppState(pathname)) return children;
 
   return (
     <AppProvider>

@@ -245,7 +245,7 @@ func BuildPaperFlowGraph(ctx context.Context, paperID string) (PaperFlow, error)
 
 // buildSkeleton 让 chat 模型从论文结构化信息抽出图骨架(节点小标题 + 有向边,无 detail)。
 func buildSkeleton(ctx context.Context, meta *model.PaperMeta) (paperFlow, error) {
-	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
+	models, err := aimodel.ModelsForUser(ctx, tenant.MustStudentID(ctx))
 	if err != nil {
 		return paperFlow{}, err
 	}
@@ -286,7 +286,7 @@ func buildNodeDetail(ctx context.Context, paperID, owner string, meta *model.Pap
 	zlog.Info("generate_paper_flow 节点检索返回", "node", n.ID, "docs", len(docs))
 	passages := formatPassages(docs)
 
-	models, err := aimodel.ModelsForUser(owner)
+	models, err := aimodel.ModelsForUser(ctx, owner)
 	if err != nil {
 		return ""
 	}

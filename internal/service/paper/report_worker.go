@@ -83,11 +83,12 @@ func runReportTask(ctx context.Context, task reportTask) {
 			return
 		}
 		zlog.Error("报告生成失败", "paper_id", task.PaperID, "type", string(task.ReportType), "err", err)
-		if pErr := failReportProgress(ctx, task.PaperID, task.ReportType, "生成失败"); pErr != nil {
+		message := ReportErrorMessage(err)
+		if pErr := failReportProgress(ctx, task.PaperID, task.ReportType, message); pErr != nil {
 			zlog.Error("报告失败进度快照写入失败", "paper_id", task.PaperID, "type", string(task.ReportType), "err", pErr)
 		}
 		// 推一条失败阶段,前端把对应报告卡标记为失败态。
-		sse.PushReportProgress(task.OwnerID, task.PaperID, string(task.ReportType), constant.ReportPhaseFailed, "生成失败")
+		sse.PushReportProgress(task.OwnerID, task.PaperID, string(task.ReportType), constant.ReportPhaseFailed, message)
 		return
 	}
 	if err := finishReportProgress(ctx, task.PaperID, task.ReportType); err != nil {

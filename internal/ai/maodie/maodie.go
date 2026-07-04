@@ -41,7 +41,7 @@ func Chat(ctx context.Context, history []trpcmodel.Message, query string, rc cor
 	images := retrieval.LoadImagePayloads(imgDocs)
 	sources := referencesWithSelection(owner, paperID, rc, retrieval.References(docs))
 
-	models, err := aimodel.ModelsForUser(owner)
+	models, err := aimodel.ModelsForUser(ctx, owner)
 	if err != nil {
 		return nil, err
 	}

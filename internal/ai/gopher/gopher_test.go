@@ -138,7 +138,7 @@ func TestAppendUniqueDocsLimitsAndDedupes(t *testing.T) {
 
 // 空 userID 必须报错,不能懒建出无主 runner。
 func TestRunnerForUserRejectsEmpty(t *testing.T) {
-	if _, err := runnerForUser(""); err == nil {
+	if _, err := runnerForUser(context.Background(), ""); err == nil {
 		t.Fatal("runnerForUser(\"\") 应返回错误")
 	}
 }

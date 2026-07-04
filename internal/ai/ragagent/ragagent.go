@@ -53,7 +53,7 @@ type runnerEntry struct {
 // query 为当前输入,policy 限定工具迭代预算。计划/检索/反思阶段经 planstream 推给前端计划面板。
 func Generate(ctx context.Context, instruction string, history []trpcmodel.Message, query string, policy Policy) (string, error) {
 	userID := tenant.MustStudentID(ctx)
-	rt, err := runnerForUser(userID, policy.MaxIter)
+	rt, err := runnerForUser(ctx, userID, policy.MaxIter)
 	if err != nil {
 		return "", err
 	}
@@ -68,11 +68,11 @@ func Generate(ctx context.Context, instruction string, history []trpcmodel.Messa
 }
 
 // runnerForUser 懒建该用户在某迭代预算下的 runner,模型取自 aimodel,工具为本包的检索工具。
-func runnerForUser(userID string, maxIter int) (runner.Runner, error) {
+func runnerForUser(ctx context.Context, userID string, maxIter int) (runner.Runner, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("ragagent: userID 不能为空")
 	}
-	models, err := aimodel.ModelsForUser(userID)
+	models, err := aimodel.ModelsForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

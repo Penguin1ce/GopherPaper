@@ -207,7 +207,7 @@ func nameTopic(ctx context.Context, studentID, text string) string {
 		fallback = "新主题"
 	}
 
-	models, err := aimodel.ModelsForUser(studentID)
+	models, err := aimodel.ModelsForUser(ctx, studentID)
 	if err != nil {
 		return fallback
 	}

@@ -434,7 +434,7 @@ func Report(c *gin.Context) {
 			return
 		}
 		zlog.Error("生成研读报告失败", "paper_id", paperID, "type", req.Type, "err", err)
-		response.Fail(c, http.StatusInternalServerError, "生成失败")
+		response.Fail(c, http.StatusInternalServerError, paperservice.ReportErrorMessage(err))
 		return
 	}
 	response.OK(c, dto.ChatResponse{Intent: string(reply.Intent), Content: reply.Content, Meta: reply.Meta})

@@ -67,7 +67,7 @@ func Translate(ctx context.Context, text string) (string, error) {
 	if cached, ok := cachedTranslation(userID, text, now); ok {
 		return cached, nil
 	}
-	models, err := aimodel.ModelsForUser(userID)
+	models, err := aimodel.ModelsForUser(ctx, userID)
 	if err != nil {
 		return "", err
 	}

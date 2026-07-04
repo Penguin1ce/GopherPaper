@@ -23,7 +23,7 @@ import (
 // 一张一张发(每图一段独立描述对应入库),并发受限;每篇最多描述 MaxFigureDescribe 张,
 // 单图失败只记日志不填 Desc,不阻断整篇入库。ctx 须注入论文 owner。
 func Describe(ctx context.Context, figs []core.Figure) error {
-	models, err := aimodel.ModelsForUser(tenant.MustStudentID(ctx))
+	models, err := aimodel.ModelsForUser(ctx, tenant.MustStudentID(ctx))
 	if err != nil {
 		return err
 	}

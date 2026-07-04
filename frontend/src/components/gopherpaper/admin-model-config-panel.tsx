@@ -92,6 +92,10 @@ type ModelHelp = {
   suggestion: string;
 };
 
+type ModelConfigRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
+
+type ModelConfigScope = "admin" | "user";
+
 type ProviderPreset = {
   id: string;
   label: string;
@@ -220,7 +224,49 @@ function modelHelp(role: string): ModelHelp {
   );
 }
 
-export function AdminModelConfigPanel({ token }: { token: string }) {
+function isFallbackModelRole(role: string) {
+  return role === "pioneer" || role === "maodie";
+}
+
+function isBlankFallbackDraft(item: ModelConfigItem, draft?: Draft) {
+  return isFallbackModelRole(item.role) && Boolean(draft) && !normalize(draft?.base_url ?? "") && !normalize(draft?.model ?? "");
+}
+
+function fallbackModelMessage(item: ModelConfigItem) {
+  return `${item.label} 未配置独立模型，当前会回退主问答模型，不影响使用。`;
+}
+
+function isSavedSource(item: ModelConfigItem) {
+  return item.source === "database" || item.source === "user";
+}
+
+function sourceLabel(item: ModelConfigItem, scope: ModelConfigScope) {
+  if (item.source === "user") return "个人配置";
+  if (item.source === "system") return "系统默认";
+  if (item.source === "database") return "管理员保存";
+  return scope === "user" ? "系统默认" : "config.toml";
+}
+
+function keyStatusLabel(item: ModelConfigItem, scope: ModelConfigScope) {
+  if (scope === "user" && item.source !== "user") return "未配置个人密钥";
+  return item.has_api_key ? "已配置密钥" : "未配置密钥";
+}
+
+export function AdminModelConfigPanel({
+  token = "",
+  basePath = "/admin/model-configs",
+  request,
+  title = "模型配置中心",
+  description = "为不同 AI 链路配置供应商、中转站、模型名和密钥。保存后不会立即影响线上请求，点击应用后普通模型与 rerank 热生效；Embedding 需要重启。",
+  scope = "admin",
+}: {
+  token?: string;
+  basePath?: string;
+  request?: ModelConfigRequest;
+  title?: string;
+  description?: string;
+  scope?: ModelConfigScope;
+}) {
   const [items, setItems] = useState<ModelConfigItem[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [keyEdits, setKeyEdits] = useState<Record<string, string>>({});
@@ -237,11 +283,24 @@ export function AdminModelConfigPanel({ token }: { token: string }) {
   const [activeRole, setActiveRole] = useState("");
   const manualActiveRef = useRef<{ role: string; until: number } | null>(null);
 
+  const requestModelConfig = useCallback(
+    async <T,>(path: string, options?: RequestInit): Promise<T> => {
+      if (request) {
+        return request<T>(path, options);
+      }
+      if (!token) {
+        throw new Error("缺少管理员登录态");
+      }
+      return adminRequest<T>(path, token, options);
+    },
+    [request, token],
+  );
+
   const loadConfigs = useCallback(async () => {
-    if (!token) return;
+    if (!request && !token) return;
     setLoading(true);
     try {
-      const data = await adminRequest<ModelConfigListResponse>("/admin/model-configs", token);
+      const data = await requestModelConfig<ModelConfigListResponse>(basePath);
       const sorted = sortItems(data.items ?? []);
       setItems(sorted);
       setDrafts(Object.fromEntries(sorted.map((item) => [item.role, itemToDraft(item)])));
@@ -252,7 +311,7 @@ export function AdminModelConfigPanel({ token }: { token: string }) {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [basePath, request, requestModelConfig, token]);
 
   useEffect(() => {
     void loadConfigs();
@@ -321,7 +380,13 @@ export function AdminModelConfigPanel({ token }: { token: string }) {
     [items, testStatusByRole],
   );
   const failedTestCount = failedItems.length;
-  const pendingCount = useMemo(() => items.filter((item) => item.source === "database" && !item.active).length, [items]);
+  const pendingCount = useMemo(
+    () =>
+      items.filter((item) =>
+        scope === "user" ? item.source === "user" : item.source === "database" && !item.active,
+      ).length,
+    [items, scope],
+  );
   const canOperate = !loading && !applying && !bulkTesting;
 
   const focusFailedModel = useCallback(
@@ -355,18 +420,55 @@ export function AdminModelConfigPanel({ token }: { token: string }) {
   ): Promise<SaveResult> => {
     const draft = drafts[item.role];
     if (!draft) return { ok: false, message: "表单还没有加载完成" };
+    const dirty = isDraftDirty(item, draft, Boolean(replaceKeys[item.role]));
+    if (!dirty) {
+      const message = "没有需要保存的修改";
+      if (!options.silent) {
+        setNotice({ type: "ok", text: message });
+      }
+      return { ok: true, message };
+    }
     setSavingRole(item.role);
     try {
+      if (isBlankFallbackDraft(item, draft)) {
+        if (isSavedSource(item)) {
+          await requestModelConfig<ModelConfigItem>(`${basePath}/${item.role}/restore`, {
+            method: "POST",
+          });
+        }
+        const message = fallbackModelMessage(item);
+        const result: TestResultState = {
+          ok: true,
+          message,
+          latency_ms: 0,
+          tested_at: new Date().toISOString(),
+        };
+        setTestResults((current) => ({ ...current, [item.role]: result }));
+        if (!options.silent) {
+          setNotice({ type: "ok", text: message });
+        }
+        if (options.reload !== false) {
+          await loadConfigs();
+        }
+        return { ok: true, message };
+      }
+
       const body: Record<string, unknown> = { ...draft };
       if (replaceKeys[item.role]) {
         body.api_key = keyEdits[item.role] ?? "";
       }
-      await adminRequest<ModelConfigItem>(`/admin/model-configs/${item.role}`, token, {
+      await requestModelConfig<ModelConfigItem>(`${basePath}/${item.role}`, {
         method: "PUT",
         body: JSON.stringify(body),
       });
       if (!options.silent) {
-        setNotice({ type: "ok", text: `${item.label} 已保存，点击“应用已保存配置”后生效` });
+        setNotice({
+          type: "ok",
+          text:
+            scope === "user"
+              ? `${item.label} 已保存，只影响当前账号；下一次模型调用会加载新配置`
+              : `${item.label} 已保存，点击“应用已保存配置”后生效`,
+        });
       }
       if (options.reload !== false) {
         await loadConfigs();
@@ -388,20 +490,38 @@ export function AdminModelConfigPanel({ token }: { token: string }) {
     options: { reloadAfter?: boolean } = {},
   ): Promise<TestResultState> => {
     clearTestResult(item.role);
-    const saved = await saveRole(item, { silent: true, reload: false });
-    if (!saved.ok) {
-      const failed: TestResultState = {
-        ok: false,
-        message: `保存失败：${humanizeModelTestMessage(saved.message)}`,
+    const fallbackToChat = isBlankFallbackDraft(item, drafts[item.role]);
+    const draft = drafts[item.role];
+    const dirty = draft ? isDraftDirty(item, draft, Boolean(replaceKeys[item.role])) : false;
+    if (dirty) {
+      const saved = await saveRole(item, { silent: true, reload: false });
+      if (!saved.ok) {
+        const failed: TestResultState = {
+          ok: false,
+          message: `保存失败：${humanizeModelTestMessage(saved.message)}`,
+          tested_at: new Date().toISOString(),
+        };
+        setTestResults((current) => ({ ...current, [item.role]: failed }));
+        return failed;
+      }
+    }
+    if (fallbackToChat) {
+      const result: TestResultState = {
+        ok: true,
+        message: fallbackModelMessage(item),
+        latency_ms: 0,
         tested_at: new Date().toISOString(),
       };
-      setTestResults((current) => ({ ...current, [item.role]: failed }));
-      return failed;
+      setTestResults((current) => ({ ...current, [item.role]: result }));
+      if (options.reloadAfter !== false) {
+        await loadConfigs();
+      }
+      return result;
     }
 
     setTestingRole(item.role);
     try {
-      const res = await adminRequest<ModelConfigTestResponse>(`/admin/model-configs/${item.role}/test`, token, {
+      const res = await requestModelConfig<ModelConfigTestResponse>(`${basePath}/${item.role}/test`, {
         method: "POST",
       });
       const result: TestResultState = {
@@ -460,11 +580,14 @@ export function AdminModelConfigPanel({ token }: { token: string }) {
   const restoreRole = async (item: ModelConfigItem) => {
     setRestoringRole(item.role);
     try {
-      await adminRequest<ModelConfigItem>(`/admin/model-configs/${item.role}/restore`, token, {
+      await requestModelConfig<ModelConfigItem>(`${basePath}/${item.role}/restore`, {
         method: "POST",
       });
       clearTestResult(item.role);
-      setNotice({ type: "ok", text: `${item.label} 已恢复为 config.toml 默认值` });
+      setNotice({
+        type: "ok",
+        text: scope === "user" ? `${item.label} 已恢复为系统默认` : `${item.label} 已恢复为 config.toml 默认值`,
+      });
       await loadConfigs();
     } catch (err) {
       setNotice({ type: "error", text: err instanceof Error ? err.message : "恢复失败" });
@@ -476,12 +599,16 @@ export function AdminModelConfigPanel({ token }: { token: string }) {
   const applyConfigs = async () => {
     setApplying(true);
     try {
-      const res = await adminRequest<ApplyResponse>("/admin/model-configs/apply", token, {
+      const res = await requestModelConfig<ApplyResponse>(`${basePath}/apply`, {
         method: "POST",
       });
       const applied = res.applied_roles.length
-        ? `已应用 ${res.applied_roles.length} 项配置`
-        : "没有需要热应用的配置";
+        ? scope === "user"
+          ? `当前账号已重新加载 ${res.applied_roles.length} 项个人配置`
+          : `已应用 ${res.applied_roles.length} 项配置`
+        : scope === "user"
+          ? "当前账号没有个人覆盖配置，继续使用系统默认"
+          : "没有需要热应用的配置";
       const warnings = res.warnings?.length ? `；${res.warnings.join("；")}` : "";
       setNotice({ type: "ok", text: applied + warnings });
       await loadConfigs();
@@ -498,10 +625,10 @@ export function AdminModelConfigPanel({ token }: { token: string }) {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="size-4 text-primary" />
-            <h1 className="text-base font-semibold">模型配置中心</h1>
+            <h1 className="text-base font-semibold">{title}</h1>
           </div>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-            为不同 AI 链路配置供应商、中转站、模型名和密钥。保存后不会立即影响线上请求，点击应用后普通模型与 rerank 热生效；Embedding 需要重启。
+            {description}
           </p>
         </div>
         <div className="rounded-2xl border border-border/80 bg-background/70 p-2.5 shadow-sm">
@@ -515,7 +642,11 @@ export function AdminModelConfigPanel({ token }: { token: string }) {
               onClick={failedTestCount ? () => focusFailedModel() : undefined}
               title="点击定位到第一个测试失败的模型"
             />
-            <StatusMetric label="待应用" value={pendingCount} tone={pendingCount ? "warning" : "muted"} />
+            <StatusMetric
+              label={scope === "user" ? "个人配置" : "待应用"}
+              value={pendingCount}
+              tone={scope === "user" ? "muted" : pendingCount ? "warning" : "muted"}
+            />
           </div>
           <div className="mt-2.5 rounded-xl border border-border/70 bg-muted/30 p-2">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -527,6 +658,8 @@ export function AdminModelConfigPanel({ token }: { token: string }) {
                   </span>
                 ) : failedTestCount ? (
                   <span className="text-red-700">发现测试失败项，可点击上方红色卡片定位。</span>
+                ) : scope === "user" ? (
+                  <span>个人配置只作用于当前登录账号；未配置的角色继续使用系统默认。</span>
                 ) : (
                   <span>先测试连通性，再应用已保存配置。</span>
                 )}
@@ -626,6 +759,7 @@ export function AdminModelConfigPanel({ token }: { token: string }) {
               onSave={() => void saveRole(item)}
               onTest={() => void testRole(item)}
               onRestore={() => void restoreRole(item)}
+              scope={scope}
             />
           ))}
         </div>
@@ -767,6 +901,7 @@ function ModelConfigCard({
   onSave,
   onTest,
   onRestore,
+  scope,
 }: {
   item: ModelConfigItem;
   draft?: Draft;
@@ -783,6 +918,7 @@ function ModelConfigCard({
   onSave: () => void;
   onTest: () => void;
   onRestore: () => void;
+  scope: ModelConfigScope;
 }) {
   if (!draft) return null;
   const help = modelHelp(item.role);
@@ -811,7 +947,7 @@ function ModelConfigCard({
         </Badge>
       </div>
 
-      <ConfigDifferencePanel item={item} dirty={dirty} />
+      <ConfigDifferencePanel item={item} dirty={dirty} scope={scope} />
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <Field label="供应商预设">
@@ -979,13 +1115,12 @@ function ModelConfigCard({
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
         <span className="text-xs text-muted-foreground">
-          来源：{item.source === "database" ? "管理员保存" : "config.toml"}
-          {item.has_api_key ? "，已配置密钥" : "，未配置密钥"}
+          来源：{sourceLabel(item, scope)}，{keyStatusLabel(item, scope)}
         </span>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={onRestore} disabled={busy || item.source !== "database"}>
+          <Button variant="outline" size="sm" onClick={onRestore} disabled={busy || !isSavedSource(item)}>
             {restoring ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
-            恢复默认
+            {scope === "user" ? "恢复系统默认" : "恢复默认"}
           </Button>
           <Button variant="outline" size="sm" onClick={onTest} disabled={busy}>
             {testing ? <Loader2 className="size-4 animate-spin" /> : <TestTube2 className="size-4" />}
@@ -1039,8 +1174,16 @@ function ProviderPresetSelect({
   );
 }
 
-function ConfigDifferencePanel({ item, dirty }: { item: ModelConfigItem; dirty: boolean }) {
-  if (!dirty && (item.active || item.source !== "database")) return null;
+function ConfigDifferencePanel({
+  item,
+  dirty,
+  scope,
+}: {
+  item: ModelConfigItem;
+  dirty: boolean;
+  scope: ModelConfigScope;
+}) {
+  if (!dirty && (item.active || !isSavedSource(item))) return null;
 
   return (
     <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
@@ -1048,14 +1191,22 @@ function ConfigDifferencePanel({ item, dirty }: { item: ModelConfigItem; dirty: 
         <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
         <div>
           <p className="font-medium">
-            {dirty ? "当前表单有未保存修改" : item.restart_required ? "已保存，但需要重启后端生效" : "已保存，但尚未应用到运行配置"}
+            {dirty
+              ? "当前表单有未保存修改"
+              : item.restart_required
+                ? "已保存，但需要重启后端生效"
+                : scope === "user"
+                  ? "已保存，等待当前账号重新加载"
+                  : "已保存，但尚未应用到运行配置"}
           </p>
           <p className="mt-0.5">
             {dirty
               ? "先点击保存或保存并测试，否则刷新页面后这些输入会丢失。"
               : item.restart_required
                 ? "Embedding 配置会影响向量入库和检索，改动后建议重启并确认向量库维度。"
-                : "点击页面右上角“应用已保存配置”后，普通模型和 rerank 会热生效。"}
+                : scope === "user"
+                  ? "点击页面右上角“应用已保存配置”会清理当前账号的模型缓存，不影响其他用户。"
+                  : "点击页面右上角“应用已保存配置”后，普通模型和 rerank 会热生效。"}
           </p>
         </div>
       </div>
@@ -1125,6 +1276,14 @@ function ConfigStatus({ item, dirty }: { item: ModelConfigItem; dirty: boolean }
       </Badge>
     );
   }
+  if (item.source === "system") {
+    return (
+      <Badge variant="outline" className="gap-1 border-sky-200 text-sky-700">
+        <CheckCircle2 className="size-3" />
+        系统默认
+      </Badge>
+    );
+  }
   if (item.active) {
     return (
       <Badge variant="outline" className="gap-1 border-emerald-200 text-emerald-700">
@@ -1144,8 +1303,9 @@ function ConfigStatus({ item, dirty }: { item: ModelConfigItem; dirty: boolean }
 function navStatusLabel(item: ModelConfigItem) {
   if (hasFailedTest(item)) return "测试失败";
   if (item.restart_required) return "需重启";
+  if (item.source === "system") return "系统默认";
   if (item.active) return "已应用";
-  if (item.source === "database") return "待应用";
+  if (isSavedSource(item)) return item.source === "user" ? "个人配置" : "待应用";
   return "默认配置";
 }
 
