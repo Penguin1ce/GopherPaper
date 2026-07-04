@@ -102,12 +102,20 @@ export const COLOR_KEYS = Object.keys(COLOR_META) as AnnotationColor[];
 export const DEFAULT_COLOR: AnnotationColor = "yellow";
 export const DEFAULT_TEXT_SIZE = 14;
 export const DEFAULT_DRAWING_SIZE = 2;
+export const DRAWING_SIZE_MIN = 1;
+export const DRAWING_SIZE_MAX = 12;
+export const DRAWING_SIZE_STEP = 0.5;
+export const DRAWING_IDLE_SAVE_MS = 700;
 export const FREETEXT_DEFAULT_WIDTH = 104;
 export const FREETEXT_DEFAULT_HEIGHT = 32;
 export const DRAWING_LABEL = "手绘标注";
 export const FREETEXT_LABEL = "文字批注";
 export const FREETEXT_CREATE_TEXT = "新增文字";
 export const FREETEXT_EMPTY_DRAFT = "\u200B";
+
+function finitePositiveNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
 
 export function normalizeFreetextText(text: string) {
   return text.replace(/\u200B/g, "").trim();
@@ -159,12 +167,17 @@ export function colorForeground(color?: string) {
   return COLOR_META[annotationColor(color)].foreground;
 }
 
-export function freetextStyleForColor(color?: string, fontSize = DEFAULT_TEXT_SIZE) {
-  return {
+export function freetextStyleForColor(color?: string, fontSize = DEFAULT_TEXT_SIZE, basePageWidth?: number) {
+  const normalizedBasePageWidth = finitePositiveNumber(basePageWidth);
+  const style: Record<string, string | number> = {
     color: colorSolid(color),
     backgroundColor: "transparent",
     fontSize,
   };
+  if (normalizedBasePageWidth) {
+    style.basePageWidth = normalizedBasePageWidth;
+  }
+  return style;
 }
 
 export function drawingStyleForColor(color?: string, strokeWidth = DEFAULT_DRAWING_SIZE) {
@@ -236,10 +249,12 @@ export function freetextStyle(annotation: PaperAnnotation) {
       : typeof style.fontSize === "number"
         ? style.fontSize
         : DEFAULT_TEXT_SIZE;
+  const basePageWidth = finitePositiveNumber(style.base_page_width) ?? finitePositiveNumber(style.basePageWidth);
   return {
     color: colorSolid(annotation.color),
     backgroundColor: "transparent",
     fontSize,
+    basePageWidth,
   };
 }
 

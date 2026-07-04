@@ -38,6 +38,28 @@ if (source.includes(patchedViewerOptions)) {
   );
 }
 
+// Patch: reduce Ctrl+wheel zoom sensitivity for Windows high-resolution scroll wheels.
+const originalWheelSensitivity = `      const wheelFactor = Math.min(
+        1.025,
+        Math.max(0.975, Math.exp(-e.deltaY * 0.00025))
+      );`;
+const patchedWheelSensitivity = `      const wheelFactor = Math.min(
+        1.015,
+        Math.max(0.985, Math.exp(-e.deltaY * 0.0001))
+      );`;
+
+if (source.includes(patchedWheelSensitivity)) {
+  console.log("react-pdf-highlighter-plus wheel sensitivity patch already applied");
+} else if (source.includes(originalWheelSensitivity)) {
+  source = source.replace(originalWheelSensitivity, patchedWheelSensitivity);
+  patched = true;
+  console.log("patched react-pdf-highlighter-plus wheel sensitivity");
+} else {
+  console.warn(
+    "WARNING: Unable to patch react-pdf-highlighter-plus wheel sensitivity; package layout may have changed.",
+  );
+}
+
 if (patched) {
   writeFileSync(entry, source);
 }

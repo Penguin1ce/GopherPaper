@@ -22,7 +22,6 @@ import {
 import {
   Rnd,
   type DraggableData,
-  type RndDragCallback,
   type RndDragEvent,
   type RndResizeCallback,
 } from "react-rnd";
@@ -53,21 +52,18 @@ import { Button } from "@/components/ui/button";
 import type { PaperAnnotation } from "@/lib/gopherpaper/types";
 import {
   annotationToHighlight,
-  colorSolid,
   colorValue,
+  DRAWING_IDLE_SAVE_MS,
   FREETEXT_DEFAULT_HEIGHT,
   FREETEXT_DEFAULT_WIDTH,
   freetextStyle,
   normalizeFreetextText,
-  type AnnotationColor,
   type ReaderHighlight,
   type ReaderTool,
 } from "@/app/reader/lib/annotations";
 
 const PDF_WORKER = "/pdfjs/pdf.worker.min.mjs";
 const LOCATE_TOP_GAP = 32;
-const SNAPSHOT_PADDING = 24;
-const SNAPSHOT_MAX_SIDE = 560;
 const ANNOTATION_DRAGGING_CLASS = "reader-annotation-dragging";
 const FREETEXT_MIN_WIDTH = 24;
 const FREETEXT_TEXT_MIN_HEIGHT = 18;
@@ -332,8 +328,8 @@ function scaledFromViewportRect(rect: LTWHP, utils: PdfHighlighterUtils) {
   return viewportPositionToScaled({ boundingRect: rect, rects: [] }, viewer);
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
+function finitePositiveNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 function freetextMinWidth(fontSize: string) {
@@ -342,16 +338,14 @@ function freetextMinWidth(fontSize: string) {
   return Math.max(FREETEXT_MIN_WIDTH, Math.ceil(textColumn * 1.25 + 18));
 }
 
-function annotationViewportScale(annotation: PaperAnnotation, rect: LTWHP) {
-  const storedPageWidth = annotation.bounding_rect?.width;
-  if (typeof storedPageWidth !== "number" || !Number.isFinite(storedPageWidth) || storedPageWidth <= 0) {
-    return 1;
-  }
+function annotationViewportScale(annotation: PaperAnnotation, rect: LTWHP, basePageWidth?: number) {
+  const storedPageWidth = finitePositiveNumber(annotation.bounding_rect?.width);
+  if (!storedPageWidth) return 1;
   const scaledRectWidth = annotation.bounding_rect.x2 - annotation.bounding_rect.x1;
   if (!Number.isFinite(scaledRectWidth) || scaledRectWidth <= 0) return 1;
   const currentPageWidth = rect.width * (storedPageWidth / scaledRectWidth);
   if (!Number.isFinite(currentPageWidth) || currentPageWidth <= 0) return 1;
-  return currentPageWidth / storedPageWidth;
+  return currentPageWidth / (finitePositiveNumber(basePageWidth) ?? storedPageWidth);
 }
 
 function drawingPath(points: DrawingStroke["points"]) {
@@ -361,11 +355,19 @@ function drawingPath(points: DrawingStroke["points"]) {
 }
 
 function drawingViewBox(annotation: PaperAnnotation, strokes: DrawingStroke[]) {
-  const rect = annotation.bounding_rect;
-  const rectWidth = Math.max(1, rect.x2 - rect.x1);
-  const rectHeight = Math.max(1, rect.y2 - rect.y1);
-  let maxX = rectWidth;
-  let maxY = rectHeight;
+  const content = annotation.content_json ?? {};
+  const storedWidth =
+    finitePositiveNumber(content.canvasWidth) ??
+    finitePositiveNumber(content.canvas_width) ??
+    finitePositiveNumber(content.imageWidth) ??
+    finitePositiveNumber(content.image_width);
+  const storedHeight =
+    finitePositiveNumber(content.canvasHeight) ??
+    finitePositiveNumber(content.canvas_height) ??
+    finitePositiveNumber(content.imageHeight) ??
+    finitePositiveNumber(content.image_height);
+  let maxX = storedWidth ?? 1;
+  let maxY = storedHeight ?? 1;
 
   for (const stroke of strokes) {
     const padding = Math.max(1, stroke.width || 1) * 2;
@@ -378,50 +380,560 @@ function drawingViewBox(annotation: PaperAnnotation, strokes: DrawingStroke[]) {
   return { width: Math.ceil(maxX), height: Math.ceil(maxY) };
 }
 
-function cropPageSnapshot(
-  utils: PdfHighlighterUtils | null,
-  position: ScaledPosition,
-): string | undefined {
-  try {
-    const viewer = utils?.getViewer();
-    if (!viewer) return undefined;
-    const viewportPosition = scaledPositionToViewport(position, viewer);
-    const rect = viewportPosition.boundingRect;
-    const pageView = viewer.getPageView(rect.pageNumber - 1);
-    const pageElement = pageView?.div as HTMLElement | undefined;
-    const canvas = pageElement?.querySelector<HTMLCanvasElement>("canvas");
-    if (!pageElement || !canvas) return undefined;
+function drawingStrokeBounds(strokes: DrawingStroke[]) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
 
-    const pageRect = pageElement.getBoundingClientRect();
-    const canvasRect = canvas.getBoundingClientRect();
-    if (canvasRect.width <= 0 || canvasRect.height <= 0) return undefined;
-
-    const canvasOffsetX = canvasRect.left - pageRect.left;
-    const canvasOffsetY = canvasRect.top - pageRect.top;
-    const scaleX = canvas.width / canvasRect.width;
-    const scaleY = canvas.height / canvasRect.height;
-    const sourceLeftCss = rect.left - canvasOffsetX - SNAPSHOT_PADDING;
-    const sourceTopCss = rect.top - canvasOffsetY - SNAPSHOT_PADDING;
-    const sourceWidthCss = rect.width + SNAPSHOT_PADDING * 2;
-    const sourceHeightCss = rect.height + SNAPSHOT_PADDING * 2;
-
-    const sx = clamp(Math.round(sourceLeftCss * scaleX), 0, canvas.width);
-    const sy = clamp(Math.round(sourceTopCss * scaleY), 0, canvas.height);
-    const sw = clamp(Math.round(sourceWidthCss * scaleX), 1, canvas.width - sx);
-    const sh = clamp(Math.round(sourceHeightCss * scaleY), 1, canvas.height - sy);
-    if (sw <= 0 || sh <= 0) return undefined;
-
-    const outputScale = Math.min(1, SNAPSHOT_MAX_SIDE / Math.max(sw, sh));
-    const output = document.createElement("canvas");
-    output.width = Math.max(1, Math.round(sw * outputScale));
-    output.height = Math.max(1, Math.round(sh * outputScale));
-    const ctx = output.getContext("2d");
-    if (!ctx) return undefined;
-    ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, output.width, output.height);
-    return output.toDataURL("image/png");
-  } catch {
-    return undefined;
+  for (const stroke of strokes) {
+    for (const point of stroke.points) {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    }
   }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function drawingRenderStrokes(annotation: PaperAnnotation, strokes: DrawingStroke[]) {
+  const bounds = drawingStrokeBounds(strokes);
+  if (!bounds) return strokes;
+
+  const content = annotation.content_json ?? {};
+  const coordinateSpace =
+    typeof content.strokeCoordinateSpace === "string"
+      ? content.strokeCoordinateSpace
+      : typeof content.stroke_coordinate_space === "string"
+        ? content.stroke_coordinate_space
+        : "";
+  if (coordinateSpace === "local") return strokes;
+
+  const localWidth =
+    finitePositiveNumber(content.canvasWidth) ??
+    finitePositiveNumber(content.canvas_width) ??
+    finitePositiveNumber(content.imageWidth) ??
+    finitePositiveNumber(content.image_width) ??
+    finitePositiveNumber(annotation.bounding_rect.x2 - annotation.bounding_rect.x1);
+  const localHeight =
+    finitePositiveNumber(content.canvasHeight) ??
+    finitePositiveNumber(content.canvas_height) ??
+    finitePositiveNumber(content.imageHeight) ??
+    finitePositiveNumber(content.image_height) ??
+    finitePositiveNumber(annotation.bounding_rect.y2 - annotation.bounding_rect.y1);
+  if (!localWidth || !localHeight) return strokes;
+
+  const maxStrokeWidth = Math.max(1, ...strokes.map((stroke) => stroke.width || 1));
+  const tolerance = maxStrokeWidth * 4;
+  const pageBasedX = coordinateSpace === "page" || bounds.maxX > localWidth + tolerance;
+  const pageBasedY = coordinateSpace === "page" || bounds.maxY > localHeight + tolerance;
+  if (!pageBasedX && !pageBasedY) return strokes;
+
+  const offsetX = pageBasedX ? annotation.bounding_rect.x1 : 0;
+  const offsetY = pageBasedY ? annotation.bounding_rect.y1 : 0;
+  return strokes.map((stroke) => ({
+    ...stroke,
+    points: stroke.points.map((point) => ({
+      ...point,
+      x: point.x - offsetX,
+      y: point.y - offsetY,
+    })),
+  }));
+}
+
+type DrawingPoint = DrawingStroke["points"][number];
+
+interface DrawingPageTarget {
+  pageNumber: number;
+  element: HTMLElement;
+  width: number;
+  height: number;
+}
+
+interface DrawingDraftBounds {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface DrawingSaveMeta {
+  width: number;
+  height: number;
+  snapshot?: string;
+}
+
+function clampDrawingValue(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function drawingHasInk(strokes: DrawingStroke[], currentStroke?: DrawingStroke | null) {
+  if (currentStroke?.points.length) return true;
+  return strokes.some((stroke) => stroke.points.length > 0);
+}
+
+function drawDrawingStroke(ctx: CanvasRenderingContext2D, stroke: DrawingStroke) {
+  const points = stroke.points;
+  if (points.length === 0) return;
+
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = stroke.color;
+  ctx.lineWidth = Math.max(1, stroke.width || 1);
+
+  if (points.length === 1) {
+    ctx.fillStyle = stroke.color;
+    ctx.beginPath();
+    ctx.arc(points[0].x, points[0].y, Math.max(1, ctx.lineWidth / 2), 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (const point of points.slice(1)) {
+    ctx.lineTo(point.x, point.y);
+  }
+  ctx.stroke();
+}
+
+function pageTargetAtPoint(container: HTMLElement, clientX: number, clientY: number): DrawingPageTarget | null {
+  const pages = Array.from(container.querySelectorAll<HTMLElement>(".page[data-page-number]"));
+  for (const page of pages) {
+    const rect = page.getBoundingClientRect();
+    if (
+      rect.width <= 0 ||
+      rect.height <= 0 ||
+      clientX < rect.left ||
+      clientX > rect.right ||
+      clientY < rect.top ||
+      clientY > rect.bottom
+    ) {
+      continue;
+    }
+    const pageNumber = Number(page.dataset.pageNumber);
+    if (!Number.isFinite(pageNumber) || pageNumber <= 0) return null;
+    return { pageNumber, element: page, width: rect.width, height: rect.height };
+  }
+  return null;
+}
+
+function pointForPageEvent(page: HTMLElement, event: PointerEvent): DrawingPoint {
+  const rect = page.getBoundingClientRect();
+  return {
+    x: clampDrawingValue(event.clientX - rect.left, 0, Math.max(1, rect.width)),
+    y: clampDrawingValue(event.clientY - rect.top, 0, Math.max(1, rect.height)),
+  };
+}
+
+function setDrawingCanvasRect(
+  canvas: HTMLCanvasElement,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+) {
+  const cssWidth = Math.max(1, Math.ceil(width));
+  const cssHeight = Math.max(1, Math.ceil(height));
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const pixelWidth = Math.max(1, Math.ceil(cssWidth * dpr));
+  const pixelHeight = Math.max(1, Math.ceil(cssHeight * dpr));
+
+  canvas.style.left = `${left}px`;
+  canvas.style.top = `${top}px`;
+  canvas.style.width = `${cssWidth}px`;
+  canvas.style.height = `${cssHeight}px`;
+  if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+  if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+
+  const ctx = canvas.getContext("2d");
+  ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { width: cssWidth, height: cssHeight };
+}
+
+function drawingPageCanvasRect(container: HTMLElement, page: HTMLElement) {
+  const containerRect = container.getBoundingClientRect();
+  const pageRect = page.getBoundingClientRect();
+  return {
+    left: container.scrollLeft + pageRect.left - containerRect.left,
+    top: container.scrollTop + pageRect.top - containerRect.top,
+    width: pageRect.width,
+    height: pageRect.height,
+  };
+}
+
+function drawingBounds(strokes: DrawingStroke[], pageWidth: number, pageHeight: number): DrawingDraftBounds | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const stroke of strokes) {
+    const padding = Math.max(1, stroke.width || 1) * 2;
+    for (const point of stroke.points) {
+      minX = Math.min(minX, point.x - padding);
+      minY = Math.min(minY, point.y - padding);
+      maxX = Math.max(maxX, point.x + padding);
+      maxY = Math.max(maxY, point.y + padding);
+    }
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+
+  const left = clampDrawingValue(Math.floor(minX), 0, Math.max(0, pageWidth - 1));
+  const top = clampDrawingValue(Math.floor(minY), 0, Math.max(0, pageHeight - 1));
+  const right = clampDrawingValue(Math.ceil(maxX), left + 1, pageWidth);
+  const bottom = clampDrawingValue(Math.ceil(maxY), top + 1, pageHeight);
+  return { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+}
+
+function localDrawingStrokes(strokes: DrawingStroke[], bounds: DrawingDraftBounds) {
+  return strokes.map((stroke) => ({
+    ...stroke,
+    points: stroke.points.map((point) => ({
+      x: point.x - bounds.left,
+      y: point.y - bounds.top,
+    })),
+  }));
+}
+
+function drawingStrokesToImage(strokes: DrawingStroke[], width: number, height: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.ceil(width));
+  canvas.height = Math.max(1, Math.ceil(height));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+  for (const stroke of strokes) {
+    drawDrawingStroke(ctx, stroke);
+  }
+  return canvas.toDataURL("image/png");
+}
+
+function drawingSnapshotImage(page: HTMLElement, bounds: DrawingDraftBounds) {
+  const source = page.querySelector<HTMLCanvasElement>(".canvasWrapper canvas, canvas");
+  if (!source || source.width <= 0 || source.height <= 0) return "";
+
+  const pageRect = page.getBoundingClientRect();
+  const sourceRect = source.getBoundingClientRect();
+  if (sourceRect.width <= 0 || sourceRect.height <= 0) return "";
+
+  const scaleX = source.width / sourceRect.width;
+  const scaleY = source.height / sourceRect.height;
+  const sourceOffsetX = sourceRect.left - pageRect.left;
+  const sourceOffsetY = sourceRect.top - pageRect.top;
+  const rawLeft = (bounds.left - sourceOffsetX) * scaleX;
+  const rawTop = (bounds.top - sourceOffsetY) * scaleY;
+  const rawRight = rawLeft + bounds.width * scaleX;
+  const rawBottom = rawTop + bounds.height * scaleY;
+  const sourceLeft = clampDrawingValue(Math.floor(rawLeft), 0, Math.max(0, source.width - 1));
+  const sourceTop = clampDrawingValue(Math.floor(rawTop), 0, Math.max(0, source.height - 1));
+  const sourceRight = clampDrawingValue(Math.ceil(rawRight), sourceLeft + 1, source.width);
+  const sourceBottom = clampDrawingValue(Math.ceil(rawBottom), sourceTop + 1, source.height);
+  const output = document.createElement("canvas");
+  output.width = Math.max(1, Math.ceil(bounds.width));
+  output.height = Math.max(1, Math.ceil(bounds.height));
+  const ctx = output.getContext("2d");
+  if (!ctx) return "";
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, output.width, output.height);
+  ctx.drawImage(
+    source,
+    sourceLeft,
+    sourceTop,
+    sourceRight - sourceLeft,
+    sourceBottom - sourceTop,
+    0,
+    0,
+    output.width,
+    output.height,
+  );
+  return output.toDataURL("image/png");
+}
+
+function ReaderDrawingLayer({
+  active,
+  utils,
+  strokeColor,
+  strokeWidth,
+  onCreateDrawing,
+  onClearReady,
+  onSaveReady,
+}: {
+  active: boolean;
+  utils: PdfHighlighterUtils | null;
+  strokeColor: string;
+  strokeWidth: number;
+  onCreateDrawing: (
+    image: string,
+    position: ScaledPosition,
+    strokes: DrawingStroke[],
+    meta: DrawingSaveMeta,
+  ) => Promise<boolean> | boolean;
+  onClearReady: (clear: () => void) => void;
+  onSaveReady: (save: () => void) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLElement | null>(null);
+  const utilsRef = useRef<PdfHighlighterUtils | null>(utils);
+  const pageRef = useRef<DrawingPageTarget | null>(null);
+  const strokesRef = useRef<DrawingStroke[]>([]);
+  const currentStrokeRef = useRef<DrawingStroke | null>(null);
+  const drawingRef = useRef(false);
+  const canvasSizeRef = useRef({ width: 1, height: 1 });
+  const saveTimerRef = useRef<number | null>(null);
+  const onCreateDrawingRef = useRef(onCreateDrawing);
+  const strokeStyleRef = useRef({ strokeColor, strokeWidth });
+
+  useEffect(() => {
+    utilsRef.current = utils;
+  }, [utils]);
+
+  useEffect(() => {
+    onCreateDrawingRef.current = onCreateDrawing;
+  }, [onCreateDrawing]);
+
+  useEffect(() => {
+    strokeStyleRef.current = { strokeColor, strokeWidth };
+  }, [strokeColor, strokeWidth]);
+
+  const clearSaveTimer = useCallback(() => {
+    if (saveTimerRef.current == null) return;
+    window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = null;
+  }, []);
+
+  const redraw = useCallback(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    const { width, height } = canvasSizeRef.current;
+    ctx.clearRect(0, 0, width, height);
+    for (const stroke of strokesRef.current) {
+      drawDrawingStroke(ctx, stroke);
+    }
+    if (currentStrokeRef.current) {
+      drawDrawingStroke(ctx, currentStrokeRef.current);
+    }
+  }, []);
+
+  const placeCanvasOnViewport = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+    canvasSizeRef.current = setDrawingCanvasRect(
+      canvas,
+      container.scrollLeft,
+      container.scrollTop,
+      container.clientWidth,
+      container.clientHeight,
+    );
+    redraw();
+  }, [redraw]);
+
+  const clearDraft = useCallback(() => {
+    clearSaveTimer();
+    strokesRef.current = [];
+    currentStrokeRef.current = null;
+    drawingRef.current = false;
+    pageRef.current = null;
+    placeCanvasOnViewport();
+  }, [clearSaveTimer, placeCanvasOnViewport]);
+
+  const saveDraft = useCallback(() => {
+    clearSaveTimer();
+    const utils = utilsRef.current;
+    const viewer = utils?.getViewer();
+    const target = pageRef.current;
+    const strokes = [...strokesRef.current];
+    if (currentStrokeRef.current?.points.length) {
+      strokes.push(currentStrokeRef.current);
+    }
+
+    if (!viewer || !target || !drawingHasInk(strokes)) {
+      clearDraft();
+      return;
+    }
+
+    const bounds = drawingBounds(strokes, target.width, target.height);
+    if (!bounds) {
+      clearDraft();
+      return;
+    }
+
+    const localStrokes = localDrawingStrokes(strokes, bounds);
+    const image = drawingStrokesToImage(localStrokes, bounds.width, bounds.height);
+    const snapshot = drawingSnapshotImage(target.element, bounds);
+    if (!image) {
+      clearDraft();
+      return;
+    }
+
+    const position = viewportPositionToScaled(
+      {
+        boundingRect: {
+          pageNumber: target.pageNumber,
+          left: bounds.left,
+          top: bounds.top,
+          width: bounds.width,
+          height: bounds.height,
+        },
+        rects: [],
+      },
+      viewer,
+    );
+
+    clearDraft();
+    void Promise.resolve(
+      onCreateDrawingRef.current(image, position, localStrokes, {
+        width: bounds.width,
+        height: bounds.height,
+        snapshot,
+      }),
+    );
+  }, [clearDraft, clearSaveTimer]);
+
+  const scheduleSave = useCallback(() => {
+    clearSaveTimer();
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      saveDraft();
+    }, DRAWING_IDLE_SAVE_MS);
+  }, [clearSaveTimer, saveDraft]);
+
+  useEffect(() => {
+    onClearReady(clearDraft);
+    onSaveReady(saveDraft);
+    return () => {
+      onClearReady(() => {});
+      onSaveReady(() => {});
+    };
+  }, [clearDraft, onClearReady, onSaveReady, saveDraft]);
+
+  useEffect(() => {
+    if (!active || !utils) return;
+    const viewer = utils.getViewer();
+    const container = viewer?.container;
+    if (!container) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.className = "ReaderDrawingCanvas";
+    canvas.setAttribute("aria-hidden", "true");
+    canvasRef.current = canvas;
+    containerRef.current = container;
+
+    const previousPosition = container.style.position;
+    const shouldRestorePosition = getComputedStyle(container).position === "static";
+    if (shouldRestorePosition) {
+      container.style.position = "relative";
+    }
+    container.appendChild(canvas);
+    placeCanvasOnViewport();
+
+    const placeCanvasOnPage = (target: DrawingPageTarget) => {
+      const rect = drawingPageCanvasRect(container, target.element);
+      target.width = rect.width;
+      target.height = rect.height;
+      canvasSizeRef.current = setDrawingCanvasRect(canvas, rect.left, rect.top, rect.width, rect.height);
+      redraw();
+    };
+
+    const startStroke = (event: PointerEvent) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      const target = pageTargetAtPoint(container, event.clientX, event.clientY);
+      if (!target) return;
+      if (pageRef.current && pageRef.current.pageNumber !== target.pageNumber && drawingHasInk(strokesRef.current)) {
+        saveDraft();
+      }
+
+      pageRef.current = target;
+      placeCanvasOnPage(target);
+      const point = pointForPageEvent(target.element, event);
+      const style = strokeStyleRef.current;
+      currentStrokeRef.current = {
+        points: [point],
+        color: style.strokeColor,
+        width: style.strokeWidth,
+      };
+      drawingRef.current = true;
+      clearSaveTimer();
+      canvas.setPointerCapture(event.pointerId);
+      redraw();
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const moveStroke = (event: PointerEvent) => {
+      const target = pageRef.current;
+      const stroke = currentStrokeRef.current;
+      if (!drawingRef.current || !target || !stroke) return;
+      const point = pointForPageEvent(target.element, event);
+      const last = stroke.points[stroke.points.length - 1];
+      if (!last || Math.abs(last.x - point.x) > 0.25 || Math.abs(last.y - point.y) > 0.25) {
+        stroke.points.push(point);
+        redraw();
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const finishStroke = (event: PointerEvent) => {
+      if (!drawingRef.current) return;
+      const stroke = currentStrokeRef.current;
+      if (stroke?.points.length) {
+        strokesRef.current = [...strokesRef.current, stroke];
+      }
+      currentStrokeRef.current = null;
+      drawingRef.current = false;
+      try {
+        canvas.releasePointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture can already be released by the browser.
+      }
+      redraw();
+      scheduleSave();
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const saveForScroll = () => {
+      if (drawingHasInk(strokesRef.current, currentStrokeRef.current)) {
+        saveDraft();
+        return;
+      }
+      placeCanvasOnViewport();
+    };
+
+    canvas.addEventListener("pointerdown", startStroke);
+    canvas.addEventListener("pointermove", moveStroke);
+    canvas.addEventListener("pointerup", finishStroke);
+    canvas.addEventListener("pointercancel", finishStroke);
+    container.addEventListener("scroll", saveForScroll, { passive: true });
+    container.addEventListener("wheel", saveForScroll, { passive: true });
+    window.addEventListener("resize", saveForScroll);
+
+    return () => {
+      saveDraft();
+      canvas.removeEventListener("pointerdown", startStroke);
+      canvas.removeEventListener("pointermove", moveStroke);
+      canvas.removeEventListener("pointerup", finishStroke);
+      canvas.removeEventListener("pointercancel", finishStroke);
+      container.removeEventListener("scroll", saveForScroll);
+      container.removeEventListener("wheel", saveForScroll);
+      window.removeEventListener("resize", saveForScroll);
+      canvas.remove();
+      canvasRef.current = null;
+      containerRef.current = null;
+      if (shouldRestorePosition) {
+        container.style.position = previousPosition;
+      }
+    };
+  }, [active, clearSaveTimer, placeCanvasOnViewport, redraw, saveDraft, scheduleSave, utils]);
+
+  return null;
 }
 
 function ReaderFreetextHighlight({
@@ -617,6 +1129,7 @@ function ReaderFreetextHighlight({
 
   const handleDragStop = useCallback(
     (_event: RndDragEvent, data: DraggableData) => {
+      setInteracting(false);
       unlockAnnotationTextSelection();
       onChange(rectWith({ left: data.x, top: data.y }));
     },
@@ -626,6 +1139,7 @@ function ReaderFreetextHighlight({
   const handleDragStart = useCallback(
     (event: RndDragEvent) => {
       event.preventDefault();
+      setInteracting(true);
       lockAnnotationTextSelection();
       onSelect();
       onEditStart();
@@ -637,6 +1151,7 @@ function ReaderFreetextHighlight({
 
   const handleResizeStop: RndResizeCallback = useCallback(
     (_event, _direction, ref, _delta, position) => {
+      setInteracting(false);
       const nextWidth = Math.max(minWidth, ref.offsetWidth);
       setDraftWidth(nextWidth);
       const nextHeight = measuredHeight();
@@ -690,7 +1205,12 @@ function ReaderFreetextHighlight({
   };
 
   const displayText = normalizeFreetextText(text) ? text : "";
-  const rndKey = `${rect.left}:${rect.top}`;
+
+  // 受控模式：缩放时直接更新 position/size，避免 key 变化导致的卸载/重挂载闪烁
+  const [interacting, setInteracting] = useState(false);
+  const [dragPos, setDragPos] = useState({ x: rect.left, y: rect.top });
+
+  const pos = interacting ? dragPos : { x: rect.left, y: rect.top };
 
   return (
     <div
@@ -700,7 +1220,6 @@ function ReaderFreetextHighlight({
       data-reader-freetext-editing={isEditing ? "true" : "false"}
     >
       <Rnd
-        key={rndKey}
         className="FreetextHighlight__rnd"
         style={{
           backgroundColor,
@@ -711,12 +1230,7 @@ function ReaderFreetextHighlight({
           boxShadow: "none",
           overflow: "visible",
         }}
-        default={{
-          x: rect.left,
-          y: rect.top,
-          width: draftWidth,
-          height,
-        }}
+        position={pos}
         size={{ width: draftWidth, height }}
         minWidth={minWidth}
         minHeight={FREETEXT_DEFAULT_HEIGHT}
@@ -725,8 +1239,14 @@ function ReaderFreetextHighlight({
         resizeHandleClasses={FREETEXT_RESIZE_HANDLE_CLASSES}
         resizeHandleStyles={FREETEXT_RESIZE_HANDLE_STYLES}
         onDragStart={handleDragStart}
+        onDrag={(_event, data) => {
+          setDragPos({ x: data.x, y: data.y });
+        }}
         onDragStop={handleDragStop}
-        onResizeStart={() => onEditStart()}
+        onResizeStart={() => {
+          setInteracting(true);
+          onEditStart();
+        }}
         onResize={(_event, _direction, ref) => {
           setDraftWidth(ref.offsetWidth);
           window.requestAnimationFrame(syncVisualHeight);
@@ -804,126 +1324,69 @@ function ReaderFreetextHighlight({
 function ReaderDrawingHighlight({
   highlight,
   isScrolledTo,
-  onChange,
-  onEditStart,
-  onEditEnd,
 }: {
   highlight: ViewportHighlight<ReaderHighlight>;
   isScrolledTo: boolean;
-  onChange: (rect: LTWHP) => void;
-  onEditStart: () => void;
-  onEditEnd: () => void;
 }) {
   const rect = highlight.position.boundingRect;
-  const strokes = highlight.content?.strokes ?? [];
+  const rawStrokes = highlight.content?.strokes ?? [];
+  const strokes = drawingRenderStrokes(highlight.annotation, rawStrokes);
   const imageUrl = highlight.content?.image;
   const viewBox = drawingViewBox(highlight.annotation, strokes);
   const className = ["DrawingHighlight", isScrolledTo ? "DrawingHighlight--scrolledTo" : ""]
     .filter(Boolean)
     .join(" ");
-
-  // 使用受控模式：缩放时直接更新 position/size，避免 key 变化导致的卸载/重挂载闪烁
-  const [interacting, setInteracting] = useState(false);
-  const [dragPos, setDragPos] = useState({ x: rect.left, y: rect.top });
-  const [dragSize, setDragSize] = useState({ width: rect.width || 150, height: rect.height || 100 });
-
-  // 非交互时跟随 viewport rect 更新（缩放/翻页等场景）
-  const pos = interacting ? dragPos : { x: rect.left, y: rect.top };
-  const size = interacting ? dragSize : { width: rect.width || 150, height: rect.height || 100 };
-
-  const handleDragStart = useCallback(() => {
-    setInteracting(true);
-    onEditStart();
-  }, [onEditStart]);
-
-  const handleDrag: RndDragCallback = useCallback((_event, data) => {
-    setDragPos({ x: data.x, y: data.y });
-  }, []);
-
-  const handleDragStop = useCallback(
-    (_event: RndDragEvent, data: DraggableData) => {
-      setInteracting(false);
-      onChange({ ...rect, left: data.x, top: data.y });
-      onEditEnd();
-    },
-    [onChange, onEditEnd, rect],
-  );
-
-  const handleResizeStart = useCallback(() => {
-    setInteracting(true);
-    onEditStart();
-  }, [onEditStart]);
-
-  const handleResizeStop: RndResizeCallback = useCallback(
-    (_event, _direction, ref, _delta, position) => {
-      setInteracting(false);
-      onChange({
-        pageNumber: rect.pageNumber,
-        left: position.x,
-        top: position.y,
-        width: ref.offsetWidth,
-        height: ref.offsetHeight,
-      });
-      onEditEnd();
-    },
-    [onChange, onEditEnd, rect.pageNumber],
-  );
+  const width = Math.max(1, rect.width || 150);
+  const height = Math.max(1, rect.height || 100);
 
   return (
-    <div className={className} data-reader-drawing-id={highlight.annotation.id}>
-      <Rnd
-        className="DrawingHighlight__rnd"
-        position={pos}
-        size={size}
-        minWidth={30}
-        minHeight={30}
-        onDragStart={handleDragStart}
-        onDrag={handleDrag}
-        onDragStop={handleDragStop}
-        onResizeStart={handleResizeStart}
-        onResize={(_e, _dir, ref, _delta, pos) => {
-          setDragPos({ x: pos.x, y: pos.y });
-          setDragSize({ width: ref.offsetWidth, height: ref.offsetHeight });
-        }}
-        onResizeStop={handleResizeStop}
-      >
-        <div className="DrawingHighlight__container">
-          <div className="DrawingHighlight__content">
-            {strokes.length > 0 ? (
-              <svg
-                className="DrawingHighlight__svg"
-                viewBox={`0 0 ${viewBox.width} ${viewBox.height}`}
-                preserveAspectRatio="xMidYMid meet"
-                aria-hidden="true"
-              >
-                {strokes.map((stroke, index) =>
-                  stroke.points.length === 1 ? (
-                    <circle
-                      key={index}
-                      cx={stroke.points[0].x}
-                      cy={stroke.points[0].y}
-                      r={Math.max(1, stroke.width / 2)}
-                      fill={stroke.color}
-                    />
-                  ) : (
-                    <path
-                      key={index}
-                      d={drawingPath(stroke.points)}
-                      fill="none"
-                      stroke={stroke.color}
-                      strokeWidth={stroke.width}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  ),
-                )}
-              </svg>
-            ) : imageUrl ? (
-              <img src={imageUrl} alt="Drawing" className="DrawingHighlight__image" draggable={false} />
-            ) : null}
-          </div>
+    <div
+      className={className}
+      data-reader-drawing-id={highlight.annotation.id}
+      style={{
+        position: "absolute",
+        left: rect.left,
+        top: rect.top,
+        width,
+        height,
+      }}
+    >
+      <div className="DrawingHighlight__container">
+        <div className="DrawingHighlight__content">
+          {strokes.length > 0 ? (
+            <svg
+              className="DrawingHighlight__svg"
+              viewBox={`0 0 ${viewBox.width} ${viewBox.height}`}
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              {strokes.map((stroke, index) =>
+                stroke.points.length === 1 ? (
+                  <circle
+                    key={index}
+                    cx={stroke.points[0].x}
+                    cy={stroke.points[0].y}
+                    r={Math.max(1, stroke.width / 2)}
+                    fill={stroke.color}
+                  />
+                ) : (
+                  <path
+                    key={index}
+                    d={drawingPath(stroke.points)}
+                    fill="none"
+                    stroke={stroke.color}
+                    strokeWidth={stroke.width}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                ),
+              )}
+            </svg>
+          ) : imageUrl ? (
+            <img src={imageUrl} alt="Drawing" className="DrawingHighlight__image" draggable={false} />
+          ) : null}
         </div>
-      </Rnd>
+      </div>
     </div>
   );
 }
@@ -966,7 +1429,7 @@ function HighlightContainer({
   };
 
   const prepareMovableAnnotationDrag = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (highlight.type !== "freetext" && highlight.type !== "drawing") return;
+    if (highlight.type !== "freetext") return;
     if (shouldIgnoreAnnotationClick(event.target)) return;
     event.preventDefault();
     lockAnnotationTextSelection();
@@ -976,17 +1439,13 @@ function HighlightContainer({
   const handleChange = (rect: LTWHP) => {
     const position = scaledFromViewportRect(rect, utils);
     if (!position) return;
-    onUpdatePosition(
-      annotation,
-      position,
-      highlight.type === "drawing" ? cropPageSnapshot(utils, position) : undefined,
-    );
+    onUpdatePosition(annotation, position);
   };
 
   let content: ReactNode;
   if (highlight.type === "freetext") {
     const style = freetextStyle(annotation);
-    const scale = annotationViewportScale(annotation, highlight.position.boundingRect);
+    const scale = annotationViewportScale(annotation, highlight.position.boundingRect, style.basePageWidth);
     content = (
       <ReaderFreetextHighlight
         highlight={highlight}
@@ -1008,9 +1467,6 @@ function HighlightContainer({
       <ReaderDrawingHighlight
         highlight={highlight}
         isScrolledTo={active}
-        onEditStart={lockAnnotationTextSelection}
-        onEditEnd={unlockAnnotationTextSelection}
-        onChange={handleChange}
       />
     );
   } else {
@@ -1061,8 +1517,6 @@ export function ReaderPdf({
   initialPage,
   scaleValue,
   activeTool,
-  color,
-  drawingSize,
   onPageChange,
   onPageCount,
   onTranslateSelection,
@@ -1070,8 +1524,11 @@ export function ReaderPdf({
   onAnnotateSelection,
   onAskSelection,
   onCreateFreetext,
+  drawingColor,
+  drawingSize,
   onCreateDrawing,
-  onDrawingCancel,
+  onDrawingDraftClearReady,
+  onDrawingDraftSaveReady,
   onUpdateAnnotationPosition,
   onUpdateAnnotationText,
   onDeleteAnnotation,
@@ -1088,8 +1545,6 @@ export function ReaderPdf({
   initialPage: number;
   scaleValue: PdfScaleValue;
   activeTool: ReaderTool;
-  color: AnnotationColor;
-  drawingSize: number;
   onPageChange: (page: number) => void;
   onPageCount: (pages: number) => void;
   onTranslateSelection: (selection: PdfSelection) => void;
@@ -1097,13 +1552,16 @@ export function ReaderPdf({
   onAnnotateSelection: (selection: PdfSelection) => void;
   onAskSelection: (selection: PdfSelection) => void;
   onCreateFreetext: (position: ScaledPosition) => void;
+  drawingColor: string;
+  drawingSize: number;
   onCreateDrawing: (
-    dataUrl: string,
+    image: string,
     position: ScaledPosition,
     strokes: DrawingStroke[],
-    snapshot?: string,
-  ) => void;
-  onDrawingCancel: () => void;
+    meta: DrawingSaveMeta,
+  ) => Promise<boolean> | boolean;
+  onDrawingDraftClearReady: (clear: () => void) => void;
+  onDrawingDraftSaveReady: (save: () => void) => void;
   onUpdateAnnotationPosition: (
     annotation: PaperAnnotation,
     position: ScaledPosition,
@@ -1196,52 +1654,6 @@ export function ReaderPdf({
     viewer.currentScaleValue = scaleValue.toString();
   }, [pagesReady, scaleValue, utilsVersion]);
 
-  useEffect(() => {
-    if (activeTool !== "drawing") return;
-    const viewer = utilsRef.current?.getViewer();
-    const scrollElement = viewer?.container;
-    if (!scrollElement) return;
-
-    let canvas: HTMLCanvasElement | null = null;
-    const handleWheel = (event: WheelEvent) => {
-      if (event.ctrlKey || event.metaKey) return;
-      if (event.deltaX === 0 && event.deltaY === 0) return;
-
-      const deltaScale =
-        event.deltaMode === WheelEvent.DOM_DELTA_LINE
-          ? 16
-          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
-            ? scrollElement.clientHeight
-            : 1;
-
-      event.preventDefault();
-      event.stopPropagation();
-      scrollElement.scrollBy({
-        left: event.deltaX * deltaScale,
-        top: event.deltaY * deltaScale,
-      });
-    };
-
-    const frame = window.requestAnimationFrame(() => {
-      canvas =
-        scrollElement.querySelector<HTMLCanvasElement>(".DrawingCanvas") ??
-        document.querySelector<HTMLCanvasElement>(".DrawingCanvas");
-      canvas?.addEventListener("wheel", handleWheel, { passive: false });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      canvas?.removeEventListener("wheel", handleWheel);
-    };
-  }, [activeTool, utilsVersion]);
-
-  const handleDrawingComplete = useCallback(
-    (dataUrl: string, position: ScaledPosition, strokes: DrawingStroke[]) => {
-      onCreateDrawing(dataUrl, position, strokes, cropPageSnapshot(utilsRef.current, position));
-    },
-    [onCreateDrawing],
-  );
-
   return (
     <ReaderPdfLoader
       document={pdfDocument}
@@ -1271,11 +1683,6 @@ export function ReaderPdf({
             enableAreaSelection={() => false}
             enableFreetextCreation={() => activeTool === "freetext"}
             onFreetextClick={onCreateFreetext}
-            enableDrawingMode={activeTool === "drawing"}
-            onDrawingComplete={handleDrawingComplete}
-            onDrawingCancel={onDrawingCancel}
-            drawingStrokeColor={colorSolid(color)}
-            drawingStrokeWidth={drawingSize}
             textSelectionColor="rgba(14, 165, 233, 0.22)"
             selectionTip={
               activeTool === "select" ? (
@@ -1307,6 +1714,15 @@ export function ReaderPdf({
               onFreetextFocusHandled={onFreetextFocusHandled}
             />
           </PdfHighlighter>
+          <ReaderDrawingLayer
+            active={activeTool === "drawing" && pagesReady}
+            utils={utilsRef.current}
+            strokeColor={drawingColor}
+            strokeWidth={drawingSize}
+            onCreateDrawing={onCreateDrawing}
+            onClearReady={onDrawingDraftClearReady}
+            onSaveReady={onDrawingDraftSaveReady}
+          />
         </>
       )}
     </ReaderPdfLoader>
