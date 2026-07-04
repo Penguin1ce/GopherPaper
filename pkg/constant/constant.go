@@ -318,6 +318,8 @@ const (
 	AgenticMaxIterSummary = 5  // summary 类 agentic 循环的工具迭代硬上限,留出一轮给 find_figures 配图
 	AgenticMaxIterMethod  = 6  // method 类工具迭代硬上限,方法/流程常需逐步检索故放宽
 	AgenticMaxIterReport  = 20 // 研读报告要覆盖全文、按报告结构逐方面检索,迭代预算给得最宽
+	// 多论文对比最多覆盖 6 篇，每篇至少检索问题、方法、实验与结论四个主题。
+	AgenticMaxIterCompare = 32
 )
 
 // 小囊鼠长输出采样参数:端点默认温度易在长上下文下采样退化(吐垃圾串、重写第二份)。

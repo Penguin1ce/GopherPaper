@@ -110,13 +110,18 @@ type PaperCompareInput struct {
 	Title             string   `json:"title"`
 	FileName          string   `json:"file_name"`
 	Authors           []string `json:"authors"`
+	Affiliations      []string `json:"affiliations"`
 	PublishYear       int      `json:"publish_year"`
 	Venue             string   `json:"venue"`
+	Abstract          string   `json:"abstract"`
 	Keywords          []string `json:"keywords"`
 	ResearchQuestions []string `json:"research_questions"`
 	Methods           string   `json:"methods"`
 	Experiments       string   `json:"experiments"`
 	Results           string   `json:"results"`
+	Innovations       []string `json:"innovations"`
+	Limitations       []string `json:"limitations"`
+	FutureWork        []string `json:"future_work"`
 }
 
 // ReportInput 是研读报告输入：围绕某篇论文按类型生成。论文 owner 从 ctx 的 tenant 取。

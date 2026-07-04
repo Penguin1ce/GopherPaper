@@ -31,8 +31,14 @@ const (
 	sessionID = "default" // noop session 不落库,固定即可
 )
 
-// runners 按 userID 缓存 runner,与 aimodel 的模型缓存一一对应。
-var runners sync.Map // userID -> *runnerEntry
+// runners 按用户和 agent 分组缓存 runner。默认论文助教与小囊鼠等分组使用同一模型缓存,
+// 但各自挂载隔离的工具和 skill 仓库。
+var runners sync.Map // runnerKey -> *runnerEntry
+
+type runnerKey struct {
+	userID string
+	agent  string
+}
 
 type runnerEntry struct {
 	once sync.Once
@@ -46,6 +52,18 @@ func Generate(ctx context.Context, instruction string, history []trpcmodel.Messa
 	return GenerateWithImages(ctx, instruction, history, query, nil)
 }
 
+// GenerateFor 使用指定 agent 分组的工具和 skill 生成文本。
+// 适合需要复用统一运行时、但必须隔离能力集合的下游链路。
+func GenerateFor(
+	ctx context.Context,
+	agentGroup string,
+	instruction string,
+	history []trpcmodel.Message,
+	query string,
+) (string, error) {
+	return generateWithImagesFor(ctx, agentGroup, instruction, history, query, nil)
+}
+
 // Image 是带图问答的一张图片,Data 为原始字节,Format 为不带点的扩展名(png/jpeg/...)。
 type Image struct {
 	Data   []byte
@@ -55,8 +73,19 @@ type Image struct {
 // GenerateWithImages 同 Generate,额外把 images 作为当前 user 轮次的图片随 query 一起发给模型。
 // 多张图塞进同一条 user message 做一次综合推理;chat 模型须支持视觉(本项目 doubao-seed-2-0-pro-260215 多模态)。
 func GenerateWithImages(ctx context.Context, instruction string, history []trpcmodel.Message, query string, images []Image) (string, error) {
+	return generateWithImagesFor(ctx, "", instruction, history, query, images)
+}
+
+func generateWithImagesFor(
+	ctx context.Context,
+	agentGroup string,
+	instruction string,
+	history []trpcmodel.Message,
+	query string,
+	images []Image,
+) (string, error) {
 	userID := tenant.MustStudentID(ctx)
-	rt, err := runnerForUser(userID)
+	rt, err := runnerForUser(userID, agentGroup)
 	if err != nil {
 		return "", err
 	}
@@ -84,8 +113,8 @@ func userMessage(query string, images []Image) trpcmodel.Message {
 	return msg
 }
 
-// runnerForUser 懒建该用户的 runner,模型取自 aimodel,工具取自 toolkit。
-func runnerForUser(userID string) (runner.Runner, error) {
+// runnerForUser 懒建该用户在指定 agent 分组下的 runner。
+func runnerForUser(userID, agentGroup string) (runner.Runner, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("agentrt: userID 不能为空")
 	}
@@ -93,7 +122,8 @@ func runnerForUser(userID string) (runner.Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	e, _ := runners.LoadOrStore(userID, &runnerEntry{})
+	key := runnerKey{userID: userID, agent: agentGroup}
+	e, _ := runners.LoadOrStore(key, &runnerEntry{})
 	ent := e.(*runnerEntry)
 	ent.once.Do(func() {
 		gc := core.GenConfig(models.ChatMC)
@@ -101,6 +131,11 @@ func runnerForUser(userID string) (runner.Runner, error) {
 		// 无 handler 的链路(抽取/报告)仍由 CollectEvents 聚合,行为不变。
 		gc.Stream = true
 		sets := toolkit.ToolSets()
+		repo := toolkit.SkillRepo()
+		if agentGroup != "" {
+			sets = toolkit.ToolSetsFor(agentGroup)
+			repo = toolkit.SkillRepoFor(agentGroup)
+		}
 		// 兼容兜底:部分 openai 兼容端点在 chat/completions 下 function tools 与
 		// reasoning_effort 不能同用(400),配了工具就剥离推理强度走端点默认。
 		if len(sets) > 0 {
@@ -113,10 +148,14 @@ func runnerForUser(userID string) (runner.Runner, error) {
 		if len(sets) > 0 {
 			opts = append(opts, llmagent.WithToolSets(sets))
 		}
-		if repo := toolkit.SkillRepo(); repo != nil {
+		if repo != nil {
 			opts = append(opts, llmagent.WithSkills(repo))
 		}
-		ent.rt = runner.NewRunner(appName, llmagent.New(agentName, opts...),
+		name := agentName
+		if agentGroup != "" {
+			name += "-" + agentGroup
+		}
+		ent.rt = runner.NewRunner(appName, llmagent.New(name, opts...),
 			runner.WithSessionService(sessnoop.NewService()))
 	})
 	return ent.rt, ent.err
@@ -125,7 +164,12 @@ func runnerForUser(userID string) (runner.Runner, error) {
 // EvictUser 清除该用户缓存的 runner,登出时调用。下次访问 runnerForUser 重建。
 // runner 持有的 toolkit 工具集是包级共享引用,不随条目删除关闭;noop session 无持久态。
 func EvictUser(userID string) {
-	runners.Delete(userID)
+	runners.Range(func(key, _ any) bool {
+		if key.(runnerKey).userID == userID {
+			runners.Delete(key)
+		}
+		return true
+	})
 }
 
 func EvictAll() {

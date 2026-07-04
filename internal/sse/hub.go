@@ -57,6 +57,14 @@ type ReportProgressMessage struct {
 	Detail     string `json:"detail,omitempty"`
 }
 
+// CompareProgressMessage 是多论文对比流水线的阶段进度。
+type CompareProgressMessage struct {
+	Type     string   `json:"type"` // 固定 "compare_progress"
+	PaperIDs []string `json:"paper_ids"`
+	Phase    string   `json:"phase"`
+	Detail   string   `json:"detail,omitempty"`
+}
+
 // Add 登记某用户的一条订阅并返回它,handler 退出时须 Remove。
 func Add(userID string) *Subscriber {
 	s := &Subscriber{userID: userID, ch: make(chan []byte, subEventBuffer)}
@@ -107,6 +115,17 @@ func PushReport(userID, paperID, reportType string) {
 func PushReportProgress(userID, paperID, reportType, phase, detail string) {
 	broadcast(userID, paperID, ReportProgressMessage{
 		Type: "report_progress", PaperID: paperID, ReportType: reportType, Phase: phase, Detail: detail,
+	})
+}
+
+// PushCompareProgress 向用户广播多论文对比的检索、写作与审校进度。
+func PushCompareProgress(userID string, paperIDs []string, phase, detail string) {
+	scope := ""
+	if len(paperIDs) > 0 {
+		scope = paperIDs[0]
+	}
+	broadcast(userID, scope, CompareProgressMessage{
+		Type: "compare_progress", PaperIDs: append([]string(nil), paperIDs...), Phase: phase, Detail: detail,
 	})
 }
 

@@ -225,6 +225,9 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) applyDefaults() {
+	if c.Tools.GopherSkills == nil {
+		c.Tools.GopherSkills = []string{"skills/gopher"}
+	}
 	if c.Server.Addr == "" {
 		c.Server.Addr = ":8080"
 	}
