@@ -8,6 +8,7 @@ import (
 
 	"GopherPaper/internal/ai"
 	"GopherPaper/internal/ai/core"
+	"GopherPaper/internal/ai/toolkit"
 	"GopherPaper/internal/ai/topic"
 	chatdao "GopherPaper/internal/dao/chat"
 	paperdao "GopherPaper/internal/dao/paper"
@@ -19,10 +20,17 @@ import (
 	"GopherPaper/pkg/errs"
 )
 
+type SendMessageInput struct {
+	Query                string
+	DisplayContent       string
+	ConfirmDeletePaperID string
+	ReaderContext        *core.ReaderContext
+}
+
 // SendMessage 在会话内发一轮对话，返回助教消息与本轮引用出处。
 // 多轮上下文与历史均由 trpc MySQL Session 承载，读最近若干条喂模型，应答后同步追加事件。
 // 返回的助教消息 ID 为空，CreatedAt 为应答时刻，落 Session 后真实事件 ID 由 ListMessages 还原。
-func SendMessage(ctx context.Context, studentID, sessionID, query string, readerCtx *core.ReaderContext) (*model.Message, map[string]any, error) {
+func SendMessage(ctx context.Context, studentID, sessionID string, in SendMessageInput) (*model.Message, map[string]any, error) {
 	start := time.Now()
 	metricSuccess := false
 	var metricErr error
@@ -35,6 +43,11 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string, reader
 	if err != nil {
 		metricErr = err
 		return nil, nil, err
+	}
+	query := strings.TrimSpace(in.Query)
+	displayContent := strings.TrimSpace(in.DisplayContent)
+	if displayContent == "" {
+		displayContent = query
 	}
 	if sess.AgentType == constant.AgentMaodie && strings.TrimSpace(sess.PaperID) == "" {
 		metricErr = errs.ErrPaperRequired
@@ -62,13 +75,15 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string, reader
 	step = time.Now()
 	// 小云雀/小耄耋会话各走独立 agent;其余走默认论文问答链路。
 	var reply *core.Reply
-	if sess.AgentType == constant.AgentPioneer {
+	if sess.AgentType == constant.AgentPioneer && strings.TrimSpace(in.ConfirmDeletePaperID) != "" {
+		reply, err = confirmPioneerPaperDelete(ctx, in.ConfirmDeletePaperID)
+	} else if sess.AgentType == constant.AgentPioneer {
 		// 小云雀跨轮记忆由 runner 的 Redis session 承载,传 sessionID 即可,无需注入文本历史。
 		reply, err = ai.PioneerChat(ctx, sessionID, query)
 	} else if sess.AgentType == constant.AgentMaodie {
 		rc := core.ReaderContext{}
-		if readerCtx != nil {
-			rc = *readerCtx
+		if in.ReaderContext != nil {
+			rc = *in.ReaderContext
 		}
 		reply, err = ai.MaodieChat(ctx, hist, query, rc)
 	} else {
@@ -88,12 +103,20 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string, reader
 
 	step = time.Now()
 	now := time.Now()
-	userMsg := &model.Message{SessionID: sessionID, Role: model.RoleUser, Content: query, CreatedAt: now}
+	userMsg := &model.Message{SessionID: sessionID, Role: model.RoleUser, Content: displayContent, CreatedAt: now}
 	aiMsg := &model.Message{SessionID: sessionID, Role: model.RoleAssistant, Content: reply.Content, Intent: reply.Intent, Meta: reply.Meta, CreatedAt: now}
 
-	// 追加进 Session，失败不阻断应答，仅丢失本轮历史。
+	// 默认问答历史追加失败时沿用 best-effort;小云雀另有 Redis 工作记忆,
+	// 持久化失败必须清掉本会话工作记忆并报错,避免出现用户看不见的隐形上下文。
 	if err := history.Append(ctx, studentID, sessionID, userMsg, aiMsg); err != nil {
 		zlog.Error("追加会话历史失败", "session_id", sessionID, "err", err)
+		if sess.AgentType == constant.AgentPioneer {
+			if clearErr := ai.DeletePioneerSessionMemory(ctx, studentID, sessionID); clearErr != nil {
+				zlog.Warn("清理小云雀工作记忆失败", "session_id", sessionID, "err", clearErr)
+			}
+			metricErr = fmt.Errorf("service: 追加会话历史失败: %w", err)
+			return nil, nil, metricErr
+		}
 	}
 	_ = chatdao.TouchSession(ctx, sessionID) // 刷新列表排序，失败不影响应答
 	persistMS := time.Since(step).Milliseconds()
@@ -101,7 +124,7 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string, reader
 	titleMS := int64(0)
 	if shouldRewriteTitle {
 		titleStep := time.Now()
-		rewriteAndSaveSessionTitle(ctx, studentID, sessionID, query)
+		rewriteAndSaveSessionTitle(ctx, studentID, sessionID, displayContent)
 		titleMS = time.Since(titleStep).Milliseconds()
 	}
 
@@ -133,6 +156,17 @@ func SendMessage(ctx context.Context, studentID, sessionID, query string, reader
 	)
 	metricSuccess = true
 	return aiMsg, reply.Meta, nil
+}
+
+func confirmPioneerPaperDelete(ctx context.Context, paperID string) (*core.Reply, error) {
+	title, message, err := toolkit.ConfirmPaperDelete(ctx, paperID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(message) == "" {
+		message = fmt.Sprintf("已删除《%s》。", title)
+	}
+	return &core.Reply{Intent: constant.IntentPioneer, Content: message}, nil
 }
 
 // boundPaperTitle 查会话绑定论文的标题,抽取未完成时退回文件名,查库失败只降级不阻断问答。

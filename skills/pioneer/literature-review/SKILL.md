@@ -17,6 +17,7 @@ description: 当用户明确要写成篇文献综述、研究综述、survey、�
 - `get_paper_citations`:追踪核心论文的后续引用,用于写方法演进和最新改进。
 - `get_paper_references`:回溯核心论文的参考文献,用于补齐奠基工作和前置方法。
 - `search_my_papers` / `list_my_papers`:检索用户自己上传的论文库,把用户已有文献纳入综述。
+- `search_sciverse` / `read_sciverse_content`:若当前环境已启用,用于趋势/进展类综述的片段级正文证据与续读;未启用时按主 prompt 的可用工具降级规则处理,不要声称已调用。
 - `web_search`:模型知识截止后的实时信息或非学术来源,谨慎用、只作补充。
 - `download_paper`:用户明确要把某篇 PDF 直链存进工作台时才用,综述写作本身不需要。
 

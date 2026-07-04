@@ -629,8 +629,18 @@ export async function sendMessage(
   stream?: SendStreamHandlers,
   readerContext?: ReaderContext,
   signal?: AbortSignal,
+  options?: { displayContent?: string; confirmDeletePaperID?: string },
 ): Promise<SendMessageResponse> {
-  const body: { query: string; reader_context?: ReaderContext } = { query };
+  const body: {
+    query: string;
+    display_content?: string;
+    confirm_delete_paper_id?: string;
+    reader_context?: ReaderContext;
+  } = { query };
+  if (options?.displayContent) body.display_content = options.displayContent;
+  if (options?.confirmDeletePaperID) {
+    body.confirm_delete_paper_id = options.confirmDeletePaperID;
+  }
   if (readerContext) body.reader_context = readerContext;
   const res = await fetch(
     `${API_BASE}/sessions/${encodeURIComponent(sessionID)}/messages`,

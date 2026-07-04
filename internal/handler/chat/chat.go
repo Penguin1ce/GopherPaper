@@ -262,7 +262,12 @@ func SendMessage(c *gin.Context) {
 		}
 	})
 
-	msg, meta, err := chatservice.SendMessage(ctx, studentID, c.Param("id"), req.Query, req.ReaderContext)
+	msg, meta, err := chatservice.SendMessage(ctx, studentID, c.Param("id"), chatservice.SendMessageInput{
+		Query:                req.Query,
+		DisplayContent:       req.DisplayContent,
+		ConfirmDeletePaperID: req.ConfirmDeletePaperID,
+		ReaderContext:        req.ReaderContext,
+	})
 	if err != nil {
 		if !started {
 			writeChatErr(c, err, "处理失败")
