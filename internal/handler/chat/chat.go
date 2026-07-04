@@ -3,6 +3,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -22,6 +23,8 @@ import (
 	"GopherPaper/pkg/constant"
 	"GopherPaper/pkg/errs"
 )
+
+const sendMessageStreamBuffer = 256
 
 // CreateSession 新建会话。
 // POST /api/v1/sessions
@@ -233,10 +236,11 @@ func SendMessage(c *gin.Context) {
 		ctx = toolkit.WithPaperDeleteConfirmation(ctx, tok)
 	}
 	studentID := tenant.MustStudentID(ctx)
+	sessionID := c.Param("id")
 
 	// SSE 头在首个事件时才写,此前的错误仍能返回普通 JSON 状态码。
 	started := false
-	emit := func(name string, payload any) {
+	emit := func(name string, payload any) bool {
 		if !started {
 			sse.WriteHeaders(c)
 			c.Writer.WriteHeader(http.StatusOK)
@@ -244,40 +248,82 @@ func SendMessage(c *gin.Context) {
 		}
 		b, err := json.Marshal(payload)
 		if err != nil {
-			return
+			return true
 		}
-		sse.WriteEvent(c.Writer, name, string(b))
+		return sse.WriteEvent(c.Writer, name, string(b)) == nil
 	}
-	ctx = core.WithStream(ctx, func(ev core.StreamEvent) {
-		switch ev.Kind {
-		case constant.StreamEventDelta:
-			emit(ev.Kind, dto.StreamDeltaPayload{Content: ev.Delta, Reset: ev.Reset})
-		case constant.StreamEventPlan:
-			emit(ev.Kind, dto.StreamPlanPayload{Phase: ev.Phase, Content: ev.Delta})
-		case constant.StreamEventConfirmDeletePaper, constant.StreamEventPaperFlow, constant.StreamEventPaperFlowNode:
-			emit(ev.Kind, ev.Payload)
-		default:
-			// 原始工具名换前端显示名,未配置回退原始名。
-			emit(ev.Kind, dto.StreamToolPayload{Tool: toolkit.DisplayName(ev.Tool)})
-		}
-	})
 
-	msg, meta, err := chatservice.SendMessage(ctx, studentID, c.Param("id"), chatservice.SendMessageInput{
-		Query:                req.Query,
-		DisplayContent:       req.DisplayContent,
-		ConfirmDeletePaperID: req.ConfirmDeletePaperID,
-		ReaderContext:        req.ReaderContext,
+	events := make(chan core.StreamEvent, sendMessageStreamBuffer)
+	resultCh := make(chan dto.SendMessageResponse, 1)
+	errCh := make(chan error, 1)
+	clientGone := make(chan struct{})
+	defer close(clientGone)
+
+	// 生成上下文脱离 HTTP 连接生命周期:用户切页、切会话或关闭浏览器时,
+	// 前端流会断开,但本轮 agent 继续跑完并落库;流式事件只在连接仍在时转发。
+	runCtx := context.WithoutCancel(ctx)
+	runCtx = core.WithStream(runCtx, func(ev core.StreamEvent) {
+		select {
+		case events <- ev:
+		case <-clientGone:
+		}
 	})
-	if err != nil {
-		if !started {
-			writeChatErr(c, err, "处理失败")
+	go func() {
+		msg, meta, err := chatservice.SendMessage(runCtx, studentID, sessionID, chatservice.SendMessageInput{
+			Query:                req.Query,
+			DisplayContent:       req.DisplayContent,
+			ConfirmDeletePaperID: req.ConfirmDeletePaperID,
+			ReaderContext:        req.ReaderContext,
+		})
+		close(events)
+		if err != nil {
+			errCh <- err
 			return
 		}
-		zlog.Error("会话流式应答失败", "session_id", c.Param("id"), "err", err)
-		emit(constant.StreamEventError, dto.StreamErrorPayload{Message: "处理失败"})
-		return
+		resultCh <- dto.SendMessageResponse{Message: msg, Meta: meta}
+	}()
+
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case ev, ok := <-events:
+			if !ok {
+				select {
+				case err := <-errCh:
+					if !started {
+						writeChatErr(c, err, "处理失败")
+						return
+					}
+					zlog.Error("会话流式应答失败", "session_id", sessionID, "err", err)
+					emit(constant.StreamEventError, dto.StreamErrorPayload{Message: "处理失败"})
+					return
+				case result := <-resultCh:
+					emit(constant.StreamEventDone, result)
+					return
+				case <-c.Request.Context().Done():
+					return
+				}
+			}
+			if !emitStreamMessage(emit, ev) {
+				return
+			}
+		}
 	}
-	emit(constant.StreamEventDone, dto.SendMessageResponse{Message: msg, Meta: meta})
+}
+
+func emitStreamMessage(emit func(string, any) bool, ev core.StreamEvent) bool {
+	switch ev.Kind {
+	case constant.StreamEventDelta:
+		return emit(ev.Kind, dto.StreamDeltaPayload{Content: ev.Delta, Reset: ev.Reset})
+	case constant.StreamEventPlan:
+		return emit(ev.Kind, dto.StreamPlanPayload{Phase: ev.Phase, Content: ev.Delta})
+	case constant.StreamEventConfirmDeletePaper, constant.StreamEventPaperFlow, constant.StreamEventPaperFlowNode:
+		return emit(ev.Kind, ev.Payload)
+	default:
+		// 原始工具名换前端显示名,未配置回退原始名。
+		return emit(ev.Kind, dto.StreamToolPayload{Tool: toolkit.DisplayName(ev.Tool)})
+	}
 }
 
 // writeChatErr 把会话错误映射为对应 HTTP 状态。
