@@ -379,6 +379,8 @@ export default function PioneerPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<PaperDeleteConfirmPayload | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
+  const activeIDRef = useRef("");
+  const sendingRef = useRef(false);
   const incomingReferenceDraftRef = useRef(false);
 
   useEffect(() => {
@@ -400,6 +402,7 @@ export default function PioneerPage() {
     if (!draft) return;
     incomingReferenceDraftRef.current = true;
     setActiveID("");
+    activeIDRef.current = "";
     setMessages([]);
     setError("");
     setInput(draft);
@@ -408,6 +411,14 @@ export default function PioneerPage() {
   useEffect(() => {
     api.setToken(token ?? "");
   }, [token]);
+
+  useEffect(() => {
+    activeIDRef.current = activeID;
+  }, [activeID]);
+
+  useEffect(() => {
+    sendingRef.current = sending;
+  }, [sending]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" });
@@ -419,11 +430,15 @@ export default function PioneerPage() {
   }, []);
 
   const openSession = useCallback(async (id: string) => {
+    if (sendingRef.current) return;
     setActiveID(id);
+    activeIDRef.current = id;
     setError("");
     try {
       const msgs = await api.listMessages(id);
-      if (mountedRef.current) setMessages(Array.isArray(msgs) ? msgs : []);
+      if (mountedRef.current && activeIDRef.current === id) {
+        setMessages(Array.isArray(msgs) ? msgs : []);
+      }
     } catch (e) {
       fail(e);
     }
@@ -460,7 +475,9 @@ export default function PioneerPage() {
   }, [token, reloadSidebar]);
 
   const startNewSession = () => {
+    if (sending) return;
     setActiveID("");
+    activeIDRef.current = "";
     setMessages([]);
     setError("");
     setInput("");
@@ -493,11 +510,13 @@ export default function PioneerPage() {
   };
 
   const removeSession = async (id: string) => {
+    if (sending) return;
     try {
       await api.deleteSession(id);
       setSessions((list) => list.filter((s) => s.id !== id));
       if (activeID === id) {
         setActiveID("");
+        activeIDRef.current = "";
         setMessages([]);
       }
     } catch (e) {
@@ -507,7 +526,11 @@ export default function PioneerPage() {
 
   const sendMessageText = async (
     query: string,
-    options: { displayText?: string; extraHeaders?: Record<string, string> } = {},
+    options: {
+      displayText?: string;
+      extraHeaders?: Record<string, string>;
+      confirmDeletePaperID?: string;
+    } = {},
   ) => {
     const q = query.trim();
     if (!q || sending) return;
@@ -521,6 +544,7 @@ export default function PioneerPage() {
         if (!mountedRef.current) return;
         setSessions((list) => [s, ...list]);
         setActiveID(s.id);
+        activeIDRef.current = s.id;
         sid = s.id;
       } catch (e) {
         fail(e);
@@ -529,6 +553,7 @@ export default function PioneerPage() {
     }
     setInput("");
     setSending(true);
+    sendingRef.current = true;
     setMessages((list) => [
       ...list,
       {
@@ -544,6 +569,7 @@ export default function PioneerPage() {
     let shown = false;
     const patch = (fn: (m: Message) => Message) => {
       if (!mountedRef.current) return;
+      if (activeIDRef.current !== sid) return;
       if (!shown) {
         shown = true;
         setMessages((list) => [
@@ -647,32 +673,40 @@ export default function PioneerPage() {
           const flow = capturedFlow;
           patch((m) => ({ ...m, flow }));
         },
+      }, undefined, undefined, {
+        displayContent: visibleText,
+        confirmDeletePaperID: options.confirmDeletePaperID,
       });
       cancelFlush();
       if (!mountedRef.current) return;
       const finalMeta = data.meta ?? data.message.meta;
       const persistedPlan = metaPlanSteps(finalMeta);
       const finalPlan = planSteps.length > 0 ? planSteps : persistedPlan;
-      setMessages((list) => [
-        ...list.filter((m) => m.id !== placeholderID),
-        {
-          ...data.message,
-          id: data.message.id || `local-a-${Date.now()}`,
-          meta: finalMeta,
-          plan: finalPlan.length > 0 ? finalPlan : undefined,
-          flow: capturedFlow,
-        },
-      ]);
+      if (activeIDRef.current === sid) {
+        setMessages((list) => [
+          ...list.filter((m) => m.id !== placeholderID),
+          {
+            ...data.message,
+            id: data.message.id || `local-a-${Date.now()}`,
+            meta: finalMeta,
+            plan: finalPlan.length > 0 ? finalPlan : undefined,
+            flow: capturedFlow,
+          },
+        ]);
+      }
       // 主题归类在后端异步进行,延时重拉一次让侧边栏分组刷新。
       window.setTimeout(() => void reloadSidebar(), 1800);
     } catch (e) {
       cancelFlush();
       if (!mountedRef.current) return;
-      setMessages((list) => list.filter((m) => m.id !== placeholderID));
+      if (activeIDRef.current === sid) {
+        setMessages((list) => list.filter((m) => m.id !== placeholderID));
+      }
       fail(e);
     } finally {
       if (!mountedRef.current) return;
       setSending(false);
+      sendingRef.current = false;
       setToolNote("");
     }
   };
@@ -684,17 +718,13 @@ export default function PioneerPage() {
   const confirmPaperDelete = async () => {
     if (!deleteConfirm || sending) return;
     const title = deleteConfirm.title || deleteConfirm.file_name || deleteConfirm.paper_id;
-    const query = [
-      "用户已在前端删除确认弹窗中确认删除论文。",
-      `paper_id: ${deleteConfirm.paper_id}`,
-      `title: ${title}`,
-      "请立即调用 delete_my_paper 完成删除。",
-    ].join("\n");
+    const query = `已确认删除《${title}》`;
     const token = deleteConfirm.confirmation_token;
+    const paperID = deleteConfirm.paper_id;
     setDeleteConfirm(null);
     await sendMessageText(query, {
-      displayText: `已确认删除《${title}》`,
       extraHeaders: { [DELETE_CONFIRM_HEADER]: token },
+      confirmDeletePaperID: paperID,
     });
   };
 
@@ -759,7 +789,12 @@ export default function PioneerPage() {
             </Link>
             <AgentIntro kind="pioneer" />
           </div>
-          <Button type="button" className="w-full justify-start" onClick={startNewSession}>
+          <Button
+            type="button"
+            className="w-full justify-start"
+            disabled={sending}
+            onClick={startNewSession}
+          >
             <Plus className="size-4" />
             新会话
           </Button>
@@ -850,6 +885,7 @@ export default function PioneerPage() {
                               <button
                                 type="button"
                                 className="min-w-0 flex-1 rounded-md px-2 py-2 text-left"
+                                disabled={sending}
                                 onClick={() => void openSession(s.id)}
                               >
                                 <div className="truncate text-sm font-medium">{sessionTitle(s)}</div>
@@ -862,6 +898,7 @@ export default function PioneerPage() {
                                 variant="ghost"
                                 size="icon-sm"
                                 className="opacity-0 group-hover:opacity-100"
+                                disabled={sending}
                                 onClick={() => void removeSession(s.id)}
                               >
                                 <Trash2 className="size-3.5" />

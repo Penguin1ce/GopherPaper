@@ -105,6 +105,7 @@ func PioneerChat(ctx context.Context, sessionID, query string) (*core.Reply, err
 	// 注入思路图收集器:本轮若调了 generate_paper_flow,工具把成图写入,这里取出塞 reply.Meta 持久化。
 	sink := &core.FlowSink{}
 	ctx = core.WithFlowSink(ctx, sink)
+	ctx = retrieval.WithRefSink(ctx)
 	content, err := pioneerflow.Chat(ctx, sessionID, query)
 	if err != nil {
 		return nil, err
@@ -113,7 +114,17 @@ func PioneerChat(ctx context.Context, sessionID, query string) (*core.Reply, err
 	if flow := sink.Get(); flow != nil {
 		reply.Meta = map[string]any{"flow": flow}
 	}
+	if sources := retrieval.DrainRefs(ctx); len(sources) > 0 {
+		if reply.Meta == nil {
+			reply.Meta = map[string]any{}
+		}
+		reply.Meta["sources"] = sources
+	}
 	return reply, nil
+}
+
+func DeletePioneerSessionMemory(ctx context.Context, userID, sessionID string) error {
+	return pioneerflow.DeleteSessionMemory(ctx, userID, sessionID)
 }
 
 // MaodieChat 是精读页小耄耋入口:围绕当前页/选段做局部问答,不走全量 agentic RAG。

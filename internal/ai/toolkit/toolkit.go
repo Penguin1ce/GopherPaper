@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -268,6 +270,51 @@ func DisplayName(name string) string {
 		return d
 	}
 	return name
+}
+
+func CapabilityInstruction(agent string) string {
+	if agent != constant.AgentPioneer {
+		return ""
+	}
+	names := functionToolNames(agent)
+	missing := []string{}
+	for _, name := range []string{"search_openalex", "search_sciverse", "read_sciverse_content", "web_search"} {
+		if !names[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	sort.Strings(missing)
+	var b strings.Builder
+	b.WriteString("当前运行环境没有启用以下工具:")
+	b.WriteString(strings.Join(missing, "、"))
+	b.WriteString("。不得调用或声称已调用这些工具;遇到原规则要求使用但当前未启用的工具时,必须降级到已启用的替代工具并向用户简要说明限制。")
+	if !names["search_sciverse"] {
+		b.WriteString(" 综述、趋势、进展类问题不再强制使用 search_sciverse,应改用 search_semantic_scholar、search_arxiv、search_conference_proceedings、search_openreview_papers")
+		if names["search_openalex"] {
+			b.WriteString("、search_openalex")
+		}
+		b.WriteString(" 等已启用来源交叉核对;没有片段级正文证据时,明确标注结论基于题录/摘要元数据而非原文。")
+	}
+	if !names["search_openalex"] {
+		b.WriteString(" OpenAlex 未启用时,不要把它作为 Semantic Scholar 的兜底;可改用 arXiv、官方会议源或 SciVerse(若可用)。")
+	}
+	if !names["web_search"] {
+		b.WriteString(" web_search 未启用时,实时网页信息无法联网补充,不要编造网页结果。")
+	}
+	return b.String()
+}
+
+func functionToolNames(agent string) map[string]bool {
+	out := map[string]bool{}
+	for _, t := range funcTools[agent] {
+		if d := t.Declaration(); d != nil && d.Name != "" {
+			out[d.Name] = true
+		}
+	}
+	return out
 }
 
 // ToolSets 返回默认论文助教的 mcp 工具集,未配置返回 nil。

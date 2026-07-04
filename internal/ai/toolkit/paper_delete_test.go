@@ -165,6 +165,58 @@ func TestDeleteMyPaperDeletesOwnedPaperWithPopupToken(t *testing.T) {
 	}
 }
 
+func TestConfirmPaperDeleteDeletesOwnedPaperWithPopupToken(t *testing.T) {
+	clearPendingPaperDeleteConfirmationsForTest(t)
+	var gotOwner, gotPaper string
+	withDeletePaperStubs(t, map[string]*model.Paper{
+		"p1": {
+			ID:       "p1",
+			OwnerID:  "stu-1",
+			Title:    "BERT: Pre-training of Deep Bidirectional Transformers",
+			FileName: "bert-pretraining.pdf",
+			Status:   constant.PaperReady,
+		},
+	}, func(ctx context.Context, ownerID, paperID string) error {
+		gotOwner = ownerID
+		gotPaper = paperID
+		return nil
+	})
+
+	token, err := newPaperDeleteConfirmation("stu-1", "p1")
+	if err != nil {
+		t.Fatalf("newPaperDeleteConfirmation: %v", err)
+	}
+	ctx := WithPaperDeleteConfirmation(paperToolCtx("stu-1"), token)
+	title, message, err := ConfirmPaperDelete(ctx, "p1")
+	if err != nil {
+		t.Fatalf("ConfirmPaperDelete: %v", err)
+	}
+	if gotOwner != "stu-1" || gotPaper != "p1" {
+		t.Fatalf("delete function called with owner=%q paper=%q", gotOwner, gotPaper)
+	}
+	if title == "" || message == "" {
+		t.Fatalf("expected title and message, got title=%q message=%q", title, message)
+	}
+}
+
+func TestConfirmPaperDeleteRejectsMissingPopupToken(t *testing.T) {
+	clearPendingPaperDeleteConfirmationsForTest(t)
+	var calls int
+	withDeletePaperStubs(t, map[string]*model.Paper{
+		"p1": {ID: "p1", OwnerID: "stu-1", FileName: "my-paper.pdf"},
+	}, func(context.Context, string, string) error {
+		calls++
+		return nil
+	})
+
+	if _, _, err := ConfirmPaperDelete(paperToolCtx("stu-1"), "p1"); err == nil {
+		t.Fatal("missing token should be rejected")
+	}
+	if calls != 0 {
+		t.Fatalf("delete function should not be called, got %d", calls)
+	}
+}
+
 func TestDeleteMyPaperConsumesPopupTokenOnce(t *testing.T) {
 	clearPendingPaperDeleteConfirmationsForTest(t)
 	var calls int
