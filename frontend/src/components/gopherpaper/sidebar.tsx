@@ -1,6 +1,14 @@
 "use client";
 
-import { LogOut, Network, NotebookText, PanelLeftClose, Search } from "lucide-react";
+import {
+  Library,
+  LogOut,
+  Network,
+  NotebookText,
+  PanelLeftClose,
+  Search,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -10,7 +18,21 @@ import { useApp } from "@/lib/gopherpaper/store";
 import { cn } from "@/lib/utils";
 import { AGENT_INTROS } from "./agent-intro";
 
-const NAV_ITEMS = [
+interface NavItem {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  desc: string;
+  agent?: string;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    href: "/library",
+    icon: Library,
+    label: "论文库",
+    desc: "浏览与管理全部论文",
+  },
   {
     href: "/reports",
     icon: NotebookText,
@@ -63,9 +85,11 @@ export function Sidebar() {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
                     <span className="truncate text-sm font-semibold leading-5">{item.label}</span>
-                    <span className="shrink-0 rounded border border-border/70 px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground">
-                      {item.agent}
-                    </span>
+                    {item.agent && (
+                      <span className="shrink-0 rounded border border-border/70 px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground">
+                        {item.agent}
+                      </span>
+                    )}
                   </span>
                   <span className="block truncate text-xs leading-4 text-muted-foreground">
                     {item.desc}
