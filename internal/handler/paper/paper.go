@@ -160,6 +160,39 @@ func Compare(c *gin.Context) {
 	response.OK(c, report)
 }
 
+// CompareStatus 查询当前多论文对比任务的后台进度快照。
+// GET /api/v1/papers/compare/status?paper_ids=a,b
+func CompareStatus(c *gin.Context) {
+	rawIDs := c.QueryArray("paper_ids")
+	if len(rawIDs) == 0 {
+		rawIDs = []string{c.Query("paper_ids")}
+	}
+	expandedIDs := make([]string, 0, len(rawIDs))
+	for _, raw := range rawIDs {
+		expandedIDs = append(expandedIDs, strings.Split(raw, ",")...)
+	}
+	ids := normalizeRequestPaperIDs(expandedIDs)
+	if len(ids) < 2 {
+		response.Fail(c, http.StatusBadRequest, "请至少选择两篇论文")
+		return
+	}
+	if len(ids) > constant.ComparePapersMaxCount {
+		response.Fail(c, http.StatusBadRequest, "单次最多对比 "+strconv.Itoa(constant.ComparePapersMaxCount)+" 篇论文")
+		return
+	}
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	run, ok, err := paperservice.CompareOverview(c.Request.Context(), ownerID, ids)
+	if err != nil {
+		writePaperErr(c, err, "查询对比进度失败")
+		return
+	}
+	if !ok {
+		response.OK(c, nil)
+		return
+	}
+	response.OK(c, compareRunToDTO(run))
+}
+
 // CompareReports 列出当前用户的历史多论文对比报告。
 // GET /api/v1/papers/compare/reports
 func CompareReports(c *gin.Context) {
@@ -588,6 +621,23 @@ func reportRunsToDTO(runs []paperservice.ReportRun) []dto.ReportRun {
 		})
 	}
 	return out
+}
+
+func compareRunToDTO(run *paperservice.CompareRun) *dto.CompareRun {
+	if run == nil {
+		return nil
+	}
+	steps := make([]dto.ReportProgressStep, 0, len(run.Steps))
+	for _, step := range run.Steps {
+		steps = append(steps, dto.ReportProgressStep{Phase: step.Phase, Text: step.Text})
+	}
+	return &dto.CompareRun{
+		PaperIDs: append([]string(nil), run.PaperIDs...),
+		Steps:    steps,
+		Live:     run.Live,
+		Failed:   run.Failed,
+		ReportID: run.ReportID,
+	}
 }
 
 // Translate 把精读页选中的英文原文译成中文,前端选区触发,不经分类器、不走 RAG。

@@ -284,6 +284,13 @@ const ReportProgressCacheKeyPrefix = "report:progress:"
 // ReportProgressCacheTTL 是报告进度快照的保留时间。成功/失败后短期保留,便于前端补齐最后状态。
 const ReportProgressCacheTTL = 15 * time.Minute
 
+// CompareProgressCacheKeyPrefix 是多论文对比进度快照在 Redis 的键前缀。
+// SSE 负责实时推送,该快照负责断线、晚订阅和刷新页面后的后台任务恢复。
+const CompareProgressCacheKeyPrefix = "compare:progress:"
+
+// CompareProgressCacheTTL 是对比进度快照的保留时间。成功/失败后短期保留,便于前端补齐最后状态。
+const CompareProgressCacheTTL = ReportProgressCacheTTL
+
 // 知识库相关。
 const (
 	DefaultKnowledgeCollection = "knowledge_chunks"
