@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"GopherPaper/internal/ai"
 	"GopherPaper/internal/ai/core"
@@ -14,6 +15,8 @@ import (
 	"GopherPaper/pkg/constant"
 	"GopherPaper/pkg/errs"
 )
+
+const compareReportSaveTimeout = 30 * time.Second
 
 // Compare 基于用户选中的多篇论文结构化元信息生成横向对比分析并落库。
 func Compare(ctx context.Context, ownerID string, paperIDs []string) (*model.PaperCompareReport, error) {
@@ -65,7 +68,9 @@ func Compare(ctx context.Context, ownerID string, paperIDs []string) (*model.Pap
 		report.Meta = model.JSONMap{}
 	}
 	report.Meta["compare_papers"] = comparePaperMeta(inputs)
-	if err := paperdao.SaveCompareReport(ctx, report); err != nil {
+	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), compareReportSaveTimeout)
+	defer cancel()
+	if err := paperdao.SaveCompareReport(saveCtx, report); err != nil {
 		sse.PushCompareProgress(ownerID, ids, constant.ReportPhaseFailed, "对比报告保存失败")
 		return nil, err
 	}
