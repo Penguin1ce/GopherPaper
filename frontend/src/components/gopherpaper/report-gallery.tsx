@@ -12,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  CompareGenerationPanel,
   CompareReportContent,
   CompareReportsBox,
 } from "@/components/gopherpaper/compare-report-panel";
@@ -138,8 +139,16 @@ function KeywordFilter({
 }
 
 export function ReportGallery() {
-  const { authed, papers, activePaperID, selectPaper, refreshPapers, toast } =
-    useApp();
+  const {
+    authed,
+    papers,
+    activePaperID,
+    selectPaper,
+    refreshPapers,
+    compareProgress,
+    beginCompare,
+    toast,
+  } = useApp();
   const [query, setQuery] = useState("");
   const [activeKw, setActiveKw] = useState<string[]>([]);
   const [compareMode, setCompareMode] = useState(false);
@@ -149,6 +158,24 @@ export function ReportGallery() {
     useState<PaperCompareReport | null>(null);
   const [activeCompareReport, setActiveCompareReport] =
     useState<PaperCompareReport | null>(null);
+  const routedPaperRef = useRef("");
+
+  useEffect(() => {
+    const paperID = new URLSearchParams(window.location.search)
+      .get("paper_id")
+      ?.trim();
+    if (
+      !paperID ||
+      routedPaperRef.current === paperID ||
+      activePaperID === paperID ||
+      !papers.some((paper) => paper.id === paperID)
+    ) {
+      return;
+    }
+    routedPaperRef.current = paperID;
+    setActiveCompareReport(null);
+    selectPaper(paperID);
+  }, [activePaperID, papers, selectPaper]);
 
   const keywords = useMemo(() => {
     const counts = new Map<string, number>();
@@ -168,6 +195,10 @@ export function ReportGallery() {
       paper.keywords?.some((keyword) => activeKw.includes(keyword)),
     );
   }, [papers, activeKw]);
+  const selectedComparePapers = useMemo(
+    () => papers.filter((paper) => compareIDs.includes(paper.id)),
+    [compareIDs, papers],
+  );
 
   const toggleKw = (name: string) =>
     setActiveKw((prev) =>
@@ -196,9 +227,12 @@ export function ReportGallery() {
 
   const generateCompare = async () => {
     if (compareIDs.length < 2 || compareLoading) return;
+    const selectedIDs = [...compareIDs];
     setCompareLoading(true);
+    setActiveCompareReport(null);
+    beginCompare(selectedIDs);
     try {
-      const report = await api.comparePapers(compareIDs);
+      const report = await api.comparePapers(selectedIDs);
       setLatestCompareReport(report);
       setActiveCompareReport(report);
       setCompareMode(false);
@@ -338,7 +372,7 @@ export function ReportGallery() {
                     {compareLoading && (
                       <Loader2 className="size-3 animate-spin" />
                     )}
-                    生成报告
+                    {compareLoading ? "小囊鼠分析中" : "生成报告"}
                   </Button>
                 </div>
               </div>
@@ -433,7 +467,13 @@ export function ReportGallery() {
 
       <WorkspacePanel className="flex min-w-0 flex-1 flex-col">
         <section className="min-h-0 flex-1 overflow-hidden">
-          {activeCompareReport ? (
+          {compareLoading ? (
+            <CompareGenerationPanel
+              papers={selectedComparePapers}
+              paperIDs={compareIDs}
+              progress={compareProgress}
+            />
+          ) : activeCompareReport ? (
             <CompareReportContent
               report={activeCompareReport}
               papers={papers}

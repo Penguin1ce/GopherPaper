@@ -75,7 +75,10 @@ function sourceTagLabels(markdown: string): string[] {
   return labels;
 }
 
-function sourceRefForLabel(label: string, refs: Reference[]): Reference | null {
+export function sourceReferenceForLabel(
+  label: string,
+  refs: Reference[],
+): Reference | null {
   const pageNo = sourcePageNo(label);
   if (!pageNo) return null;
 
@@ -108,7 +111,7 @@ export function sourceTagReaderHref(
   const pageNo = sourcePageNo(label);
   if (!pageNo) return null;
 
-  const ref = sourceRefForLabel(label, refs);
+  const ref = sourceReferenceForLabel(label, refs);
   if (ref) return referenceReaderHref(ref, fallbackDocID, allowedDocIDs);
   if (!fallbackDocID || (allowedDocIDs && !allowedDocIDs.has(fallbackDocID))) return null;
   return readerHref(fallbackDocID, pageNo);
@@ -119,7 +122,7 @@ export function referencesUsedBySourceTags(markdown: string, refs: Reference[]):
   const out: Reference[] = [];
   const seen = new Set<string>();
   for (const label of sourceTagLabels(markdown)) {
-    const ref = sourceRefForLabel(label, refs);
+    const ref = sourceReferenceForLabel(label, refs);
     if (!ref) continue;
     const key = sourceRefKey(ref);
     if (seen.has(key)) continue;

@@ -3,9 +3,23 @@
 // 不引第三方库;中文/分页交给浏览器,语义标签由下面的打印样式负责排版。
 
 const PRINT_CSS = `
-  @page { margin: 18mm 16mm; }
+  @page { margin: 14mm; }
   * { box-sizing: border-box; }
-  body { margin: 0; }
+  body { margin: 0; background: white; }
+  [data-print-hidden] { display: none !important; }
+  .print-report-root { width: 100%; max-width: none !important; }
+  [data-compare-report] .overflow-x-auto { overflow: visible !important; }
+  [data-compare-report] table {
+    width: 100% !important;
+    min-width: 100% !important;
+    table-layout: fixed;
+  }
+  [data-compare-report] th,
+  [data-compare-report] td {
+    min-width: 0 !important;
+    max-width: none !important;
+    overflow-wrap: anywhere;
+  }
   .report {
     font-family: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", Georgia, serif;
     color: #1a1a1a;
@@ -32,6 +46,11 @@ const PRINT_CSS = `
   .report h1, .report h2, .report h3, .report h4 { page-break-after: avoid; }
 `;
 
+interface PrintReportOptions {
+  mirrorStyles?: boolean;
+  landscape?: boolean;
+}
+
 function escapeHTML(s: string): string {
   return s.replace(/[&<>"]/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string,
@@ -39,7 +58,11 @@ function escapeHTML(s: string): string {
 }
 
 // printReport 把报告标题与正文 HTML 写进隐藏 iframe 并触发打印;打印结束后清理 iframe。
-export function printReport(title: string, bodyHTML: string): void {
+export function printReport(
+  title: string,
+  bodyHTML: string,
+  options: PrintReportOptions = {},
+): void {
   if (typeof document === "undefined") return;
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
@@ -53,12 +76,24 @@ export function printReport(title: string, bodyHTML: string): void {
     return;
   }
 
+  const mirroredStyles = options.mirrorStyles
+    ? Array.from(
+        document.head.querySelectorAll<HTMLLinkElement | HTMLStyleElement>(
+          'link[rel="stylesheet"], style',
+        ),
+      )
+        .map((node) => node.outerHTML)
+        .join("")
+    : "";
+  const pageCSS = options.landscape
+    ? "@page { size: A4 landscape; margin: 12mm; }"
+    : "";
+
   doc.open();
   doc.write(
     `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHTML(title)}</title>` +
-      `<style>${PRINT_CSS}</style></head>` +
-      `<body><h1 class="report" style="margin-bottom:14pt">${escapeHTML(title)}</h1>` +
-      `<main class="report">${bodyHTML}</main></body></html>`,
+      `${mirroredStyles}<style>${PRINT_CSS}${pageCSS}</style></head>` +
+      `<body><main class="report print-report-root">${bodyHTML}</main></body></html>`,
   );
   doc.close();
 

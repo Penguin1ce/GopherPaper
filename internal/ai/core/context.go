@@ -9,6 +9,8 @@ type paperCtxKey struct{}
 
 type paperTitleCtxKey struct{}
 
+type comparePapersCtxKey struct{}
+
 type streamCtxKey struct{}
 
 type flowSinkKey struct{}
@@ -113,4 +115,32 @@ func PaperTitleFrom(ctx context.Context) string {
 		return v
 	}
 	return ""
+}
+
+// ComparePaperScope 是一次多论文对比允许检索的论文白名单项。
+type ComparePaperScope struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// WithComparePapers 注入多论文对比允许访问的论文集合。
+func WithComparePapers(ctx context.Context, papers []ComparePaperScope) context.Context {
+	copied := append([]ComparePaperScope(nil), papers...)
+	return context.WithValue(ctx, comparePapersCtxKey{}, copied)
+}
+
+// ComparePapersFrom 返回本次对比的论文白名单副本。
+func ComparePapersFrom(ctx context.Context) []ComparePaperScope {
+	papers, _ := ctx.Value(comparePapersCtxKey{}).([]ComparePaperScope)
+	return append([]ComparePaperScope(nil), papers...)
+}
+
+// ComparePaperFrom 校验 paperID 是否属于本次对比并返回其展示信息。
+func ComparePaperFrom(ctx context.Context, paperID string) (ComparePaperScope, bool) {
+	for _, paper := range ComparePapersFrom(ctx) {
+		if paper.ID == paperID {
+			return paper, true
+		}
+	}
+	return ComparePaperScope{}, false
 }

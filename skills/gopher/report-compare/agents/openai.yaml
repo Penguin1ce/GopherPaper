@@ -1,0 +1,4 @@
+interface:
+  display_name: "论文对比报告"
+  short_description: "逐篇检索正文证据并生成经写作与审校的多论文对比报告"
+  default_prompt: "使用 $report-compare 逐篇检索所选论文正文并生成证据可追溯的中文对比报告。"

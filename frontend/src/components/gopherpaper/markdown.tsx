@@ -311,12 +311,18 @@ export function Markdown({
   children,
   figures,
   sourceHref,
+  sourceLink,
   richLinks = false,
   compact = false,
 }: {
   children: string;
   figures?: Record<string, string>;
   sourceHref?: (label: string) => string | null | undefined;
+  sourceLink?: (label: string) => {
+    href?: string | null;
+    label?: string;
+    className?: string;
+  } | null;
   richLinks?: boolean;
   compact?: boolean;
 }) {
@@ -333,28 +339,33 @@ export function Markdown({
       if (url.startsWith(SOURCE_SCHEME)) {
         const raw = url.slice(SOURCE_SCHEME.length);
         const title = decodeSourceTag(raw || "");
-        const href = sourceHref?.(title);
+        const resolved = sourceLink?.(title);
+        const href = resolved?.href ?? sourceHref?.(title);
         const className =
           "mx-0.5 inline-flex h-5 translate-y-[-1px] items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-1.5 align-middle text-[11px] font-medium leading-none text-primary";
         if (href) {
           return (
             <a
-              className={cn(className, "no-underline hover:border-primary/35 hover:bg-primary/15")}
+              className={cn(
+                className,
+                "no-underline hover:brightness-95",
+                resolved?.className,
+              )}
               href={href}
               target="_blank"
               rel="noopener noreferrer"
               title={`${title} · 点击打开精读页`}
             >
-              {children}
+              {resolved?.label || children}
             </a>
           );
         }
         return (
           <span
-            className={className}
+            className={cn(className, resolved?.className)}
             title={title}
           >
-            {children}
+            {resolved?.label || children}
           </span>
         );
       }
