@@ -72,6 +72,19 @@ func SendMessage(ctx context.Context, studentID, sessionID string, in SendMessag
 	shouldRewriteTitle := shouldRewriteSessionTitle(sess, hist)
 	historyMS := time.Since(step).Milliseconds()
 
+	now := time.Now()
+	userMsg := &model.Message{SessionID: sessionID, Role: model.RoleUser, Content: displayContent, CreatedAt: now}
+	userPersisted := false
+	if err := history.Append(context.WithoutCancel(ctx), studentID, sessionID, userMsg); err != nil {
+		zlog.Error("追加用户消息失败", "session_id", sessionID, "err", err)
+		if sess.AgentType == constant.AgentPioneer {
+			metricErr = fmt.Errorf("service: 追加用户消息失败: %w", err)
+			return nil, nil, metricErr
+		}
+	} else {
+		userPersisted = true
+	}
+
 	step = time.Now()
 	// 小云雀/小耄耋会话各走独立 agent;其余走默认论文问答链路。
 	var reply *core.Reply
@@ -102,13 +115,15 @@ func SendMessage(ctx context.Context, studentID, sessionID string, in SendMessag
 	aiMS := time.Since(step).Milliseconds()
 
 	step = time.Now()
-	now := time.Now()
-	userMsg := &model.Message{SessionID: sessionID, Role: model.RoleUser, Content: displayContent, CreatedAt: now}
-	aiMsg := &model.Message{SessionID: sessionID, Role: model.RoleAssistant, Content: reply.Content, Intent: reply.Intent, Meta: reply.Meta, CreatedAt: now}
+	aiMsg := &model.Message{SessionID: sessionID, Role: model.RoleAssistant, Content: reply.Content, Intent: reply.Intent, Meta: reply.Meta, CreatedAt: time.Now()}
 
 	// 默认问答历史追加失败时沿用 best-effort;小云雀另有 Redis 工作记忆,
 	// 持久化失败必须清掉本会话工作记忆并报错,避免出现用户看不见的隐形上下文。
-	if err := history.Append(ctx, studentID, sessionID, userMsg, aiMsg); err != nil {
+	toAppend := []*model.Message{aiMsg}
+	if !userPersisted {
+		toAppend = []*model.Message{userMsg, aiMsg}
+	}
+	if err := history.Append(context.WithoutCancel(ctx), studentID, sessionID, toAppend...); err != nil {
 		zlog.Error("追加会话历史失败", "session_id", sessionID, "err", err)
 		if sess.AgentType == constant.AgentPioneer {
 			if clearErr := ai.DeletePioneerSessionMemory(ctx, studentID, sessionID); clearErr != nil {

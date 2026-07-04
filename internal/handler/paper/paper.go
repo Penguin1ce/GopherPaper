@@ -3,6 +3,7 @@
 package paper
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -146,7 +147,7 @@ func Compare(c *gin.Context) {
 		return
 	}
 	ownerID := tenant.MustStudentID(c.Request.Context())
-	report, err := paperservice.Compare(c.Request.Context(), ownerID, ids)
+	report, err := paperservice.Compare(context.WithoutCancel(c.Request.Context()), ownerID, ids)
 	if err != nil {
 		if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errs.ErrPaperForbidden) {
 			writePaperErr(c, err, "对比失败")
@@ -422,7 +423,7 @@ func Report(c *gin.Context) {
 	ownerID := tenant.MustStudentID(c.Request.Context())
 	paperID := c.Param("id")
 	// 校验归属 + 命中缓存复用,未命中才生成并落库。
-	reply, err := paperservice.Report(c.Request.Context(), ownerID, paperID, reportType)
+	reply, err := paperservice.Report(context.WithoutCancel(c.Request.Context()), ownerID, paperID, reportType)
 	if err != nil {
 		if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errs.ErrPaperForbidden) {
 			writePaperErr(c, err, "生成失败")
@@ -462,7 +463,7 @@ func Flow(c *gin.Context) {
 	}
 	ownerID := tenant.MustStudentID(c.Request.Context())
 	paperID := c.Param("id")
-	reply, err := paperservice.PaperFlow(c.Request.Context(), ownerID, paperID)
+	reply, err := paperservice.PaperFlow(context.WithoutCancel(c.Request.Context()), ownerID, paperID)
 	if err != nil {
 		if errors.Is(err, errs.ErrPaperNotFound) || errors.Is(err, errs.ErrPaperForbidden) ||
 			errors.Is(err, errs.ErrPaperNotReady) {
