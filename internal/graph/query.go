@@ -250,6 +250,41 @@ RETURN p.id AS paperID, 'Reference:' + coalesce(n.key, toString(id(n))) AS nodeI
 	return g, nil
 }
 
+// AllEntityGraph returns the complete owner-visible graph in one read. The
+// overview endpoint stays compact while the client can still expand any node
+// without issuing one request per paper.
+func AllEntityGraph(ctx context.Context, owner string) (EntityGraph, error) {
+	const cypher = `
+MATCH (p:Paper {owner:$owner})
+CALL {
+  WITH p
+  OPTIONAL MATCH (p)-[r:AUTHORED_BY|HAS_KEYWORD|FROM_AFFILIATION|PUBLISHED_IN|HAS_RESEARCH_QUESTION|USES_METHOD|HAS_EXPERIMENT|HAS_RESULT|HAS_INNOVATION|HAS_LIMITATION|HAS_FUTURE_WORK|CITES]->(n)
+  WITH collect(CASE WHEN n IS NULL THEN null ELSE {
+    node_id: CASE WHEN n:Paper THEN 'Paper:' + n.id ELSE head(labels(n)) + ':' + coalesce(n.norm, n.key, elementId(n)) END,
+    node_type: head(labels(n)),
+    node_label: coalesce(n.name, n.raw, n.title, ''),
+    rel_type: type(r)
+  } END) AS rows
+  RETURN [x IN rows WHERE x IS NOT NULL] AS items
+}
+RETURN p.id AS paperID, coalesce(p.title, p.id) AS title, p.year AS year, p.venue AS venue, items
+ORDER BY title`
+	res, err := exec(ctx, cypher, map[string]any{"owner": owner})
+	if err != nil {
+		return EntityGraph{}, err
+	}
+	g := emptyEntityGraph()
+	seenNodes := map[string]bool{}
+	seenEdges := map[string]bool{}
+	for _, record := range res.Records {
+		appendPaperEntityRecord(record, &g, seenNodes, seenEdges)
+	}
+	if err := appendSemanticOverviewEdges(ctx, owner, &g, seenEdges); err != nil {
+		return EntityGraph{}, err
+	}
+	return g, nil
+}
+
 func appendCitationOverviewEdges(ctx context.Context, owner string, g *EntityGraph, seenEdges map[string]bool) error {
 	const cypher = `
 MATCH (p:Paper {owner:$owner})-[c:CITES]->(q:Paper {owner:$owner})
@@ -359,27 +394,33 @@ RETURN p.id AS paperID, coalesce(p.title, p.id) AS title, p.year AS year, p.venu
 		return emptyEntityGraph(), nil
 	}
 
-	r := res.Records[0]
-	paperID = asStr(r, "paperID")
+	g := emptyEntityGraph()
+	appendPaperEntityRecord(res.Records[0], &g, map[string]bool{}, map[string]bool{})
+	return g, nil
+}
+
+func appendPaperEntityRecord(r recordGetter, g *EntityGraph, seenNodes, seenEdges map[string]bool) {
+	paperID := recordStr(r, "paperID")
+	if paperID == "" {
+		return
+	}
 	paperNodeID := "paper:" + paperID
-	g := EntityGraph{
-		Nodes: []EntityNode{{
+	if !seenNodes[paperNodeID] {
+		g.Nodes = append(g.Nodes, EntityNode{
 			ID:    paperNodeID,
 			Type:  "paper",
-			Label: asStr(r, "title"),
+			Label: recordStr(r, "title"),
 			Details: map[string]string{
 				"paper_id": paperID,
-				"year":     intString(asInt(r, "year")),
-				"venue":    asStr(r, "venue"),
+				"year":     intString(recordInt(r, "year")),
+				"venue":    recordStr(r, "venue"),
 			},
-		}},
-		Edges: []EntityEdge{},
+		})
+		seenNodes[paperNodeID] = true
 	}
 
 	items, _ := r.Get("items")
 	rawItems, _ := items.([]any)
-	seenNodes := map[string]bool{paperNodeID: true}
-	seenEdges := map[string]bool{}
 	for _, raw := range rawItems {
 		item, ok := raw.(map[string]any)
 		if !ok {
@@ -421,7 +462,6 @@ RETURN p.id AS paperID, coalesce(p.title, p.id) AS title, p.year AS year, p.venu
 		})
 		seenEdges[edgeID] = true
 	}
-	return g, nil
 }
 
 func emptyEntityGraph() EntityGraph {
@@ -520,6 +560,30 @@ func asFloat(rec recordGetter, key string) float64 {
 
 type recordGetter interface {
 	Get(string) (any, bool)
+}
+
+func recordStr(rec recordGetter, key string) string {
+	value, ok := rec.Get(key)
+	if !ok {
+		return ""
+	}
+	text, _ := value.(string)
+	return text
+}
+
+func recordInt(rec recordGetter, key string) int {
+	value, ok := rec.Get(key)
+	if !ok {
+		return 0
+	}
+	switch number := value.(type) {
+	case int64:
+		return int(number)
+	case int:
+		return number
+	default:
+		return 0
+	}
 }
 
 func compactDetails(in map[string]string) map[string]string {

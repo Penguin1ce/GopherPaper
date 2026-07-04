@@ -5,6 +5,7 @@ import type {
   ChatResponse,
   EntityGraph,
   Envelope,
+  GraphRebuildJob,
   GraphStats,
   GraphTrends,
   LoginResponse,
@@ -505,8 +506,18 @@ export function graphNetwork() {
   return request<EntityGraph>("/graph/network");
 }
 
+export function graphNetworkEntities() {
+  return request<EntityGraph>("/graph/network/entities");
+}
+
 export function rebuildGraphNetwork() {
-  return request<EntityGraph>("/graph/network/rebuild", { method: "POST" });
+  return request<GraphRebuildJob>("/graph/network/rebuild", { method: "POST" });
+}
+
+export function graphRebuildJob(id: string) {
+  return request<GraphRebuildJob>(
+    `/graph/network/rebuild/${encodeURIComponent(id)}`,
+  );
 }
 
 export function paperEntityGraph(id: string) {
