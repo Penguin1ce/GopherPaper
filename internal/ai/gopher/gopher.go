@@ -259,6 +259,7 @@ func responseContent(ev *event.Event) string {
 // EvictUser 清除该用户缓存的小囊鼠 runner,登出时调用。下次访问自动重建。
 func EvictUser(userID string) {
 	runners.Delete(userID)
+	compareRunners.Delete(userID)
 }
 
 func EvictAll() {

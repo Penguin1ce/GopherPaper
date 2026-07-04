@@ -752,7 +752,18 @@ export interface ReportProgressEvent {
   detail?: string;
 }
 
-type WsMessage = PaperStatusEvent | ReportReadyEvent | ReportProgressEvent;
+export interface CompareProgressEvent {
+  type: string;
+  paper_ids: string[];
+  phase: string;
+  detail?: string;
+}
+
+type WsMessage =
+  | PaperStatusEvent
+  | ReportReadyEvent
+  | ReportProgressEvent
+  | CompareProgressEvent;
 
 // sseBase 给长连 SSE 选基址:开发期固定直连 Go 后端,绕开 Next/Nginx 所在页面源。
 // EventSource 长期占用 HTTP/1.1 连接;如果和页面路由、HMR、普通 API 同源,快速切页时容易顶满
@@ -774,6 +785,7 @@ export function openStatusStream(
   onEvent: (e: PaperStatusEvent) => void,
   onReport?: (e: ReportReadyEvent) => void,
   onProgress?: (e: ReportProgressEvent) => void,
+  onCompareProgress?: (e: CompareProgressEvent) => void,
 ): EventSource | null {
   if (!jwt || typeof EventSource === "undefined") return null;
   const url = `${sseBase()}/events?token=${encodeURIComponent(jwt)}`;
@@ -790,7 +802,12 @@ export function openStatusStream(
     } catch {
       return;
     }
-    if (!msg || !msg.paper_id) return;
+    if (!msg) return;
+    if (msg.type === "compare_progress") {
+      onCompareProgress?.(msg as CompareProgressEvent);
+      return;
+    }
+    if (!("paper_id" in msg) || !msg.paper_id) return;
     if (msg.type === "paper_status") onEvent(msg as PaperStatusEvent);
     else if (msg.type === "report_ready") onReport?.(msg as ReportReadyEvent);
     else if (msg.type === "report_progress")

@@ -10,6 +10,7 @@ import (
 	"GopherPaper/internal/ai/core"
 	paperdao "GopherPaper/internal/dao/paper"
 	"GopherPaper/internal/model"
+	"GopherPaper/internal/sse"
 	"GopherPaper/pkg/constant"
 	"GopherPaper/pkg/errs"
 )
@@ -37,8 +38,20 @@ func Compare(ctx context.Context, ownerID string, paperIDs []string) (*model.Pap
 		inputs = append(inputs, compareInput(p, meta))
 	}
 
+	sse.PushCompareProgress(ownerID, ids, constant.ReportPhasePreparing, "小囊鼠已接收对比任务，正在建立逐篇检索计划。")
+	upstreamStream := core.StreamFrom(ctx)
+	ctx = core.WithStream(ctx, func(event core.StreamEvent) {
+		if upstreamStream != nil {
+			upstreamStream(event)
+		}
+		if event.Kind == constant.StreamEventPlan {
+			sse.PushCompareProgress(ownerID, ids, event.Phase, event.Delta)
+		}
+	})
+
 	reply, err := ai.ComparePapers(ctx, inputs)
 	if err != nil {
+		sse.PushCompareProgress(ownerID, ids, constant.ReportPhaseFailed, "对比报告生成失败")
 		return nil, err
 	}
 	report := &model.PaperCompareReport{
@@ -53,8 +66,10 @@ func Compare(ctx context.Context, ownerID string, paperIDs []string) (*model.Pap
 	}
 	report.Meta["compare_papers"] = comparePaperMeta(inputs)
 	if err := paperdao.SaveCompareReport(ctx, report); err != nil {
+		sse.PushCompareProgress(ownerID, ids, constant.ReportPhaseFailed, "对比报告保存失败")
 		return nil, err
 	}
+	sse.PushCompareProgress(ownerID, ids, "completed", "对比报告已完成")
 	return report, nil
 }
 
@@ -142,12 +157,17 @@ func compareInput(p *model.Paper, meta *model.PaperMeta) core.PaperCompareInput 
 		return in
 	}
 	in.Authors = []string(meta.Authors)
+	in.Affiliations = []string(meta.Affiliations)
 	in.PublishYear = meta.PublishYear
 	in.Venue = meta.Venue
+	in.Abstract = meta.Abstract
 	in.Keywords = []string(meta.Keywords)
 	in.ResearchQuestions = []string(meta.ResearchQuestions)
 	in.Methods = meta.Methods
 	in.Experiments = meta.Experiments
 	in.Results = meta.Results
+	in.Innovations = []string(meta.Innovations)
+	in.Limitations = []string(meta.Limitations)
+	in.FutureWork = []string(meta.FutureWork)
 	return in
 }

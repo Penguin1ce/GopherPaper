@@ -20,6 +20,7 @@ import {
 import * as api from "./api";
 import type {
   AuthUser,
+  CompareRun,
   Message,
   Paper,
   PaperFlow,
@@ -95,6 +96,8 @@ interface AppContextValue {
   paperFlowReady: Record<string, boolean>;
   // 各论文各类报告一次生成的实时进度(执行计划/进行中/失败),由 report_progress 事件累积
   reportProgress: Record<string, Partial<Record<ReportType, ReportRun>>>;
+  // 当前多论文对比的逐篇检索、写作和审校进度。
+  compareProgress: CompareRun | null;
   // 动作
   toast: (message: string, type?: "ok" | "error") => void;
   dismissToast: (id: number) => void;
@@ -123,6 +126,7 @@ interface AppContextValue {
   sendMessage: (query: string) => Promise<void>;
   // 后端确认报告进入生成队列后调用,把该报告的进度置为「进行中」,后续阶段由 SSE 累积。
   beginReport: (paperID: string, type: ReportType) => void;
+  beginCompare: (paperIDs: string[]) => void;
   markPaperFlowReady: (paperID: string, ready?: boolean) => void;
 }
 
@@ -211,6 +215,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   const [reportProgress, setReportProgress] = useState<
     Record<string, Partial<Record<ReportType, ReportRun>>>
   >({});
+  const [compareProgress, setCompareProgress] = useState<CompareRun | null>(null);
 
   const wsRef = useRef<EventSource | null>(null);
   const toastSeq = useRef(0);
@@ -300,6 +305,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       setReportReady({});
       setPaperFlowReady({});
       setReportProgress({});
+      setCompareProgress(null);
       setPreference(DEFAULT_PREFERENCE);
     },
     [disconnectWs, persist, queryClient],
@@ -424,6 +430,60 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     setPaperFlowReady((prev) => ({ ...prev, [paperID]: ready }));
   }, []);
 
+  const beginCompare = useCallback((paperIDs: string[]) => {
+    setCompareProgress({
+      paper_ids: [...paperIDs],
+      steps: [
+        {
+          phase: "preparing",
+          text: "小囊鼠已接收对比任务，正在建立逐篇检索计划。",
+        },
+      ],
+      live: true,
+      failed: false,
+    });
+  }, []);
+
+  const applyCompareProgress = useCallback(
+    (event: api.CompareProgressEvent) => {
+      setCompareProgress((current) => {
+        const sameRun =
+          current &&
+          current.paper_ids.length === event.paper_ids.length &&
+          current.paper_ids.every((id, index) => id === event.paper_ids[index]);
+        const base: CompareRun = sameRun
+          ? current
+          : {
+              paper_ids: [...event.paper_ids],
+              steps: [],
+              live: true,
+              failed: false,
+            };
+        const steps = base.steps.slice();
+        const last = steps[steps.length - 1];
+        if (event.detail) {
+          if (last?.phase === event.phase) {
+            steps[steps.length - 1] = {
+              ...last,
+              text: last.text.endsWith(event.detail)
+                ? last.text
+                : last.text + event.detail,
+            };
+          } else {
+            steps.push({ phase: event.phase, text: event.detail });
+          }
+        }
+        return {
+          ...base,
+          steps,
+          live: event.phase !== "completed" && event.phase !== "failed",
+          failed: event.phase === "failed",
+        };
+      });
+    },
+    [],
+  );
+
   // 报告生成阶段进度:failed 标记失败并停 live;其余阶段按 phase 续接/新建执行计划步。
   const applyReportProgress = useCallback(
     (paperID: string, type: ReportType, phase: string, detail?: string) => {
@@ -532,12 +592,19 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         (e) => applyReportReady(e.paper_id, e.report_type),
         (e) =>
           applyReportProgress(e.paper_id, e.report_type, e.phase, e.detail),
+        applyCompareProgress,
       );
       if (!source) return;
       wsRef.current = source;
       // EventSource 自带断线重连,无需手动重试;登出时经 disconnectWs 关闭即止。
     },
-    [applyStatusEvent, applyReportReady, applyReportProgress, disconnectWs],
+    [
+      applyStatusEvent,
+      applyReportReady,
+      applyReportProgress,
+      applyCompareProgress,
+      disconnectWs,
+    ],
   );
 
   // ---- 轮询兜底(Query refetchInterval 接管手写 setInterval) ----
@@ -1187,6 +1254,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       reportReady,
       paperFlowReady,
       reportProgress,
+      compareProgress,
       toast,
       dismissToast,
       login,
@@ -1213,6 +1281,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       removeSession,
       sendMessage,
       beginReport,
+      beginCompare,
       markPaperFlowReady,
     }),
     [
@@ -1233,6 +1302,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       reportReady,
       paperFlowReady,
       reportProgress,
+      compareProgress,
       toast,
       dismissToast,
       login,
@@ -1259,6 +1329,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       removeSession,
       sendMessage,
       beginReport,
+      beginCompare,
       markPaperFlowReady,
     ],
   );

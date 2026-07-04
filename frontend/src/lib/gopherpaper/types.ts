@@ -165,6 +165,10 @@ export interface ReportRun {
   failed: boolean;
 }
 
+export interface CompareRun extends ReportRun {
+  paper_ids: string[];
+}
+
 export interface ReportRunStatus extends ReportRun {
   type: ReportType;
 }
