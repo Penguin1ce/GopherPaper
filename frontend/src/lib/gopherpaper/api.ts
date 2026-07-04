@@ -3,6 +3,7 @@
 
 import type {
   ChatResponse,
+  CompareRun,
   EntityGraph,
   Envelope,
   GraphRebuildJob,
@@ -329,6 +330,11 @@ export function comparePapers(paperIDs: string[]) {
     method: "POST",
     body: JSON.stringify({ paper_ids: paperIDs }),
   });
+}
+
+export function compareStatus(paperIDs: string[]) {
+  const q = paperIDs.map((id) => encodeURIComponent(id)).join(",");
+  return request<CompareRun | null>(`/papers/compare/status?paper_ids=${q}`);
 }
 
 export function listCompareReports() {
