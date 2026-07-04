@@ -155,7 +155,7 @@ export function ProcessTrace({
               {activeLabel}
             </span>
           </span>
-          {activeText && (
+          {!open && activeText && (
             <span className="mt-0.5 block truncate text-[11px] font-normal text-muted-foreground">
               {activeText}
             </span>
