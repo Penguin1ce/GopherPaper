@@ -75,6 +75,7 @@ func Init(mode string) *gin.Engine {
 			authed.GET("/papers", paperhandler.List)
 			authed.GET("/papers/search", paperhandler.Search)
 			authed.POST("/papers/compare", paperhandler.Compare)
+			authed.GET("/papers/compare/status", paperhandler.CompareStatus)
 			authed.GET("/papers/compare/reports", paperhandler.CompareReports)
 			authed.DELETE("/papers/compare/reports/:report_id", paperhandler.DeleteCompareReport)
 			authed.GET("/papers/:id", paperhandler.Detail)
