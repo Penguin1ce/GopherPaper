@@ -146,13 +146,7 @@ function InlinePaperStatus({ status }: { status: Paper["status"] }) {
   );
 }
 
-function PipelineStepDot({
-  active,
-  done,
-}: {
-  active: boolean;
-  done: boolean;
-}) {
+function PipelineStepDot({ active, done }: { active: boolean; done: boolean }) {
   return (
     <span
       className={cn(
@@ -418,10 +412,10 @@ function SessionPopover({
       <PopoverTrigger
         aria-label={`论文会话：${paperSessions.length} 个`}
         title="论文会话"
-        className="inline-flex h-6 min-w-8 shrink-0 items-center justify-center gap-1 rounded-md px-1.5 text-[11px] font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none data-[popup-open]:bg-muted data-[popup-open]:text-foreground"
+        className="inline-flex h-7 min-w-8 shrink-0 items-center justify-center gap-1 rounded-md px-1.5 text-[11px] font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none data-[popup-open]:bg-background/80 data-[popup-open]:text-foreground"
         onClick={(e) => e.stopPropagation()}
       >
-        <MessagesSquare className="size-3" />
+        <MessagesSquare className="size-3.5" />
         <span className="font-mono">{paperSessions.length}</span>
       </PopoverTrigger>
       <PopoverContent
@@ -446,9 +440,7 @@ function SessionPopover({
                 key={s.id}
                 className={cn(
                   "group/s flex min-h-11 items-center gap-1 rounded-lg transition-colors",
-                  s.id === activeSessionID
-                    ? "bg-muted"
-                    : "hover:bg-muted/70",
+                  s.id === activeSessionID ? "bg-muted" : "hover:bg-muted/70",
                 )}
               >
                 <button
@@ -514,7 +506,7 @@ function PaperActionsMenu({
               type="button"
               variant="ghost"
               size="icon-sm"
-              className="text-muted-foreground opacity-70 transition-opacity hover:opacity-100 aria-expanded:opacity-100 sm:opacity-0 sm:group-focus-within/paper:opacity-100 sm:group-hover/paper:opacity-100"
+              className="size-7 text-muted-foreground opacity-70 transition-opacity hover:bg-background/80 hover:opacity-100 aria-expanded:bg-background/80 aria-expanded:opacity-100 sm:opacity-0 sm:group-focus-within/paper:opacity-100 sm:group-hover/paper:opacity-100"
               aria-label={`论文操作：${paperTitle(paper)}`}
               title="论文操作"
             >
@@ -532,7 +524,11 @@ function PaperActionsMenu({
             重新解析
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem disabled={busy} variant="destructive" onClick={onDelete}>
+          <DropdownMenuItem
+            disabled={busy}
+            variant="destructive"
+            onClick={onDelete}
+          >
             <Trash2 className="size-4" />
             删除论文
           </DropdownMenuItem>
@@ -753,9 +749,9 @@ export function PaperPane({
                   tabIndex={0}
                   aria-label={`选择论文：${paperTitle(p)}`}
                   className={cn(
-                    "group/paper relative min-h-[4.75rem] w-full cursor-pointer select-none rounded-lg px-3 py-2.5 transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+                    "group/paper relative min-h-[3.625rem] w-full cursor-pointer select-none rounded-lg px-2.5 py-2 transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
                     active
-                      ? "bg-accent/75 ring-1 ring-primary/25 before:absolute before:inset-y-2.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary dark:bg-accent/35 dark:ring-primary/30"
+                      ? "bg-accent/75 ring-1 ring-primary/25 before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary dark:bg-accent/35 dark:ring-primary/30"
                       : "hover:bg-muted/55",
                   )}
                   onClick={() => selectPaper(p.id)}
@@ -766,29 +762,29 @@ export function PaperPane({
                     }
                   }}
                 >
-                  <div className="relative z-10 min-w-0 pr-8">
+                  <div className="relative z-10 min-w-0">
                     <strong className="pointer-events-none line-clamp-2 min-w-0 text-sm font-medium leading-snug">
                       {paperTitle(p)}
                     </strong>
                   </div>
-                  <div className="pointer-events-none relative z-10 mt-2 flex min-w-0 items-center gap-2 pr-16 text-xs text-muted-foreground">
-                    <InlinePaperStatus status={p.status} />
-                    <span
-                      className="h-3 w-px shrink-0 bg-border/70"
-                      aria-hidden
-                    />
-                    <span
-                      className={cn(
-                        "pointer-events-none line-clamp-1 min-w-0",
-                        p.status === "failed" && "text-destructive",
-                      )}
-                    >
-                      {detailText}
-                    </span>
-                  </div>
-                  <div className="absolute bottom-2.5 right-2 z-10 flex items-center gap-0.5">
-                    {active && (
-                      <div className="pointer-events-auto">
+                  <div className="relative z-10 mt-1.5 flex min-w-0 items-center gap-2">
+                    <div className="pointer-events-none flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
+                      <InlinePaperStatus status={p.status} />
+                      <span
+                        className="h-3 w-px shrink-0 bg-border/70"
+                        aria-hidden
+                      />
+                      <span
+                        className={cn(
+                          "line-clamp-1 min-w-0",
+                          p.status === "failed" && "text-destructive",
+                        )}
+                      >
+                        {detailText}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      {active && (
                         <SessionPopover
                           paperSessions={paperSessions}
                           activeSessionID={activeSessionID}
@@ -797,15 +793,15 @@ export function PaperPane({
                             guard(() => removeSession(id))
                           }
                         />
-                      </div>
-                    )}
-                    <PaperActionsMenu
-                      paper={p}
-                      canReparse={canReparse}
-                      busy={reparsing || deletingID === p.id}
-                      onReparse={() => setReparseTarget(p)}
-                      onDelete={() => setDeleteTarget(p)}
-                    />
+                      )}
+                      <PaperActionsMenu
+                        paper={p}
+                        canReparse={canReparse}
+                        busy={reparsing || deletingID === p.id}
+                        onReparse={() => setReparseTarget(p)}
+                        onDelete={() => setDeleteTarget(p)}
+                      />
+                    </div>
                   </div>
                 </div>
               );
@@ -885,7 +881,8 @@ export function PaperPane({
             {reparseTarget ? paperTitle(reparseTarget) : ""}
           </DialogDescription>
           <div className="rounded-lg bg-muted/35 px-3 py-2 text-xs leading-5 text-muted-foreground">
-            适合在解析失败、元数据异常或 PDF 更新后使用。已经就绪的论文不建议频繁重解析。
+            适合在解析失败、元数据异常或 PDF
+            更新后使用。已经就绪的论文不建议频繁重解析。
           </div>
           <DialogFooter className="sm:flex-nowrap">
             <Button

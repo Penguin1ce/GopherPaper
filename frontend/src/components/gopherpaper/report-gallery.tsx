@@ -4,7 +4,7 @@ import {
   ArrowLeft,
   BarChart3,
   CheckSquare2,
-  FileText,
+  FileUp,
   ListFilter,
   Loader2,
   Search,
@@ -98,10 +98,10 @@ function KeywordFilter({
     <Popover>
       <PopoverTrigger
         className={cn(
-          "inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+          "inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
           activeKw.length > 0
-            ? "border-sienna/40 bg-sienna/10 text-sienna hover:bg-sienna/15"
-            : "border-border bg-card text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+            ? "bg-sienna/10 text-sienna hover:bg-sienna/15"
+            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
         )}
       >
         <ListFilter className="size-3.5" />
@@ -284,22 +284,20 @@ export function ReportGallery() {
   return (
     <WorkspaceFrame>
       <WorkspacePanel as="aside" className="hidden w-96 flex-col lg:flex">
-        <div className="space-y-3 border-b p-4">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className={buttonVariants({ variant: "ghost", size: "icon" })}
-              title="返回工作台"
-              aria-label="返回工作台"
-            >
-              <ArrowLeft className="size-4" />
-            </Link>
-            <AgentIntro kind="reports" />
-          </div>
+        <div className="flex items-center gap-2 border-b px-3 py-3">
+          <Link
+            href="/"
+            className={buttonVariants({ variant: "ghost", size: "icon-sm" })}
+            title="返回工作台"
+            aria-label="返回工作台"
+          >
+            <ArrowLeft className="size-4" />
+          </Link>
+          <AgentIntro kind="reports" />
         </div>
 
         <ScrollArea className="min-h-0 flex-1">
-          <div className="space-y-3 px-3 pb-3 pt-3">
+          <div className="space-y-4 px-2.5 pb-4 pt-2">
             <CompareReportsBox
               activeReportID={activeCompareReport?.id}
               latestReport={latestCompareReport}
@@ -311,175 +309,192 @@ export function ReportGallery() {
               }}
             />
 
-            <section className="overflow-hidden rounded-lg border bg-background">
-              <div className="p-3">
-            <div className="flex items-center justify-between gap-2 px-1 pb-2">
-              <div className="flex min-w-0 items-baseline gap-2">
-                <div className="text-sm font-medium">论文库</div>
-                <div className="font-mono text-xs text-muted-foreground">
-                  {papers.length > 0 ? `${papers.length}` : "等待上传"}
+            <section>
+              <div className="flex items-center justify-between gap-2 px-2.5 pb-1.5">
+                <div className="flex min-w-0 items-baseline gap-1.5">
+                  <h3 className="text-xs font-semibold text-muted-foreground">
+                    论文库
+                  </h3>
+                  {papers.length > 0 && (
+                    <span className="font-mono text-[11px] text-muted-foreground/60">
+                      {papers.length}
+                    </span>
+                  )}
                 </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <Button
-                  type="button"
-                  variant={compareMode ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={toggleCompareMode}
-                  title="对比分析"
-                >
-                  <BarChart3 className="size-3.5" />
-                  对比分析
-                </Button>
-                <KeywordFilter
-                  keywords={keywords}
-                  activeKw={activeKw}
-                  onToggle={toggleKw}
-                  onClear={() => setActiveKw([])}
-                />
-              </div>
-            </div>
-
-            <form
-              className="relative mb-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                refreshPapers(query);
-              }}
-            >
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                className="h-8 rounded-full border-border/70 bg-card px-8 shadow-none hover:border-border focus-visible:border-primary/60 focus-visible:ring-1 focus-visible:ring-primary/20"
-                placeholder="搜索标题、关键词、作者"
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              {query && (
-                <button
-                  type="button"
-                  aria-label="清除搜索"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-                  onClick={() => {
-                    setQuery("");
-                    refreshPapers();
-                  }}
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
-            </form>
-
-            {compareMode && (
-              <div className="mb-2 flex items-center justify-between gap-2 rounded-md border bg-card px-3 py-2">
-                <span className="text-xs text-muted-foreground">
-                  已选择 {compareIDs.length} 篇论文
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    disabled={compareIDs.length === 0 || compareLoading}
-                    onClick={() => setCompareIDs([])}
-                  >
-                    清空
-                  </Button>
-                  <Button
-                    type="button"
-                    size="xs"
-                    disabled={compareIDs.length < 2 || compareLoading}
-                    onClick={generateCompare}
-                  >
-                    {compareLoading && (
-                      <Loader2 className="size-3 animate-spin" />
-                    )}
-                    {compareLoading ? "小囊鼠分析中" : "生成报告"}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-1">
-              {papers.length === 0 ? (
-                <Empty
-                  title="还没有论文"
-                  text="先在工作台上传并解析论文。"
-                  compact
-                />
-              ) : shownPapers.length === 0 ? (
-                <Empty
-                  title="没有匹配的论文"
-                  text="换一个关键词或清除筛选。"
-                  compact
-                />
-              ) : (
-                shownPapers.map((paper) => {
-                  const selectedForCompare = compareIDs.includes(paper.id);
-                  const active = paper.id === activePaperID && !activeCompareReport;
-                  return (
-                    <div
-                      key={paper.id}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`${compareMode ? "选择对比" : "选择论文"} ${paperTitle(paper)}`}
+                {papers.length > 0 && (
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      aria-pressed={compareMode}
+                      title="选择多篇论文生成对比报告"
+                      onClick={toggleCompareMode}
                       className={cn(
-                        "relative flex w-full cursor-pointer select-none items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-                        active
-                          ? "bg-card shadow-sm before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sienna"
-                          : "hover:bg-accent/60",
-                        selectedForCompare && "ring-1 ring-sienna/35",
+                        "inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                        compareMode
+                          ? "bg-sienna/10 text-sienna"
+                          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                       )}
-                      onClick={() => {
-                        if (compareMode) {
-                          toggleComparePaper(paper.id);
-                          return;
-                        }
-                        setActiveCompareReport(null);
-                        selectPaper(paper.id);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
+                    >
+                      <BarChart3 className="size-3.5" />
+                      对比分析
+                    </button>
+                    <KeywordFilter
+                      keywords={keywords}
+                      activeKw={activeKw}
+                      onToggle={toggleKw}
+                      onClear={() => setActiveKw([])}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {papers.length > 0 && (
+              <form
+                className="relative mb-1.5"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  refreshPapers(query);
+                }}
+              >
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  className="h-8 rounded-lg border-transparent bg-muted/60 px-8 shadow-none transition-colors hover:bg-muted/80 focus-visible:border-ring/40 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/25 dark:bg-muted/40 dark:hover:bg-muted/50 dark:focus-visible:bg-background"
+                  placeholder="搜索标题、关键词、作者"
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                {query && (
+                  <button
+                    type="button"
+                    aria-label="清除搜索"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => {
+                      setQuery("");
+                      refreshPapers();
+                    }}
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </form>
+              )}
+
+              {compareMode && (
+                <div className="mb-1.5 flex items-center justify-between gap-2 rounded-md bg-sienna/[0.07] px-2.5 py-1.5">
+                  <span className="text-xs text-sienna">
+                    已选 {compareIDs.length} 篇论文
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      disabled={compareIDs.length === 0 || compareLoading}
+                      onClick={() => setCompareIDs([])}
+                    >
+                      清空
+                    </Button>
+                    <Button
+                      type="button"
+                      size="xs"
+                      disabled={compareIDs.length < 2 || compareLoading}
+                      onClick={generateCompare}
+                    >
+                      {compareLoading && (
+                        <Loader2 className="size-3 animate-spin" />
+                      )}
+                      {compareLoading ? "小囊鼠分析中" : "生成报告"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-px">
+                {papers.length === 0 ? (
+                  <div className="flex flex-col items-center rounded-lg border border-dashed bg-muted/30 px-4 py-6 text-center">
+                    <span className="flex size-9 items-center justify-center rounded-lg bg-sienna/10 text-sienna">
+                      <FileUp className="size-4" />
+                    </span>
+                    <h4 className="mt-3 text-sm font-medium">还没有论文</h4>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      在小文鸮工作台上传 PDF，解析完成后
+                      <br />
+                      小囊鼠就能生成研读报告。
+                    </p>
+                    <Link
+                      href="/"
+                      className={cn(
+                        buttonVariants({ variant: "outline", size: "sm" }),
+                        "mt-3",
+                      )}
+                    >
+                      去工作台上传
+                    </Link>
+                  </div>
+                ) : shownPapers.length === 0 ? (
+                  <Empty
+                    title="没有匹配的论文"
+                    text="换一个关键词或清除筛选。"
+                    compact
+                  />
+                ) : (
+                  shownPapers.map((paper) => {
+                    const selectedForCompare = compareIDs.includes(paper.id);
+                    const active = paper.id === activePaperID && !activeCompareReport;
+                    return (
+                      <div
+                        key={paper.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`${compareMode ? "选择对比" : "选择论文"} ${paperTitle(paper)}`}
+                        className={cn(
+                          "flex w-full cursor-pointer select-none items-start gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                          active ? "bg-accent" : "hover:bg-accent/50",
+                          selectedForCompare && "bg-sienna/[0.08]",
+                        )}
+                        onClick={() => {
                           if (compareMode) {
                             toggleComparePaper(paper.id);
                             return;
                           }
                           setActiveCompareReport(null);
                           selectPaper(paper.id);
-                        }
-                      }}
-                    >
-                      {compareMode ? (
-                        <span className="relative z-10 mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-md text-sienna">
-                          {selectedForCompare ? (
-                            <CheckSquare2 className="size-4" />
-                          ) : (
-                            <Square className="size-4" />
-                          )}
-                        </span>
-                      ) : (
-                        <FileText
-                          className={cn(
-                            "relative z-10 mt-0.5 size-3.5 shrink-0",
-                            active ? "text-sienna" : "text-muted-foreground",
-                          )}
-                        />
-                      )}
-                      <span className="pointer-events-none relative z-10 min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">
-                          {paperTitle(paper)}
-                        </span>
-                        {paper.status !== "ready" && (
-                          <span className="text-xs text-muted-foreground">
-                            {paper.status}
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            if (compareMode) {
+                              toggleComparePaper(paper.id);
+                              return;
+                            }
+                            setActiveCompareReport(null);
+                            selectPaper(paper.id);
+                          }
+                        }}
+                      >
+                        {compareMode && (
+                          <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center">
+                            {selectedForCompare ? (
+                              <CheckSquare2 className="size-4 text-sienna" />
+                            ) : (
+                              <Square className="size-4 text-muted-foreground/60" />
+                            )}
                           </span>
                         )}
-                      </span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm leading-6">
+                            {paperTitle(paper)}
+                          </span>
+                          {paper.status !== "ready" && (
+                            <span className="block text-[11px] text-muted-foreground">
+                              {paper.status}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </section>
           </div>
@@ -499,6 +514,29 @@ export function ReportGallery() {
               report={activeCompareReport}
               papers={papers}
             />
+          ) : papers.length === 0 ? (
+            <div className="flex h-full items-center justify-center p-8">
+              <div className="flex max-w-md flex-col items-center text-center">
+                <span className="flex size-12 items-center justify-center rounded-xl bg-sienna/10 text-sienna">
+                  <FileUp className="size-5" />
+                </span>
+                <h2 className="mt-4 font-serif text-lg font-semibold tracking-tight">
+                  先上传一篇论文
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  小囊鼠基于已解析的论文生成速读、方法、结果等研读报告。
+                  论文的上传入口在小文鸮工作台，上传后会自动解析入库，
+                  完成后回到这里即可生成报告。
+                </p>
+                <Link
+                  href="/"
+                  className={cn(buttonVariants({ size: "sm" }), "mt-5")}
+                >
+                  <FileUp className="size-3.5" />
+                  去工作台上传
+                </Link>
+              </div>
+            </div>
           ) : (
             <ReportPanel />
           )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenText, PanelLeftOpen, Plus } from "lucide-react";
+import { BookOpenText, PanelLeftOpen, SquarePen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/lib/gopherpaper/store";
@@ -24,7 +24,7 @@ export function RightPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-background">
       <div className="flex h-14 shrink-0 items-center justify-between gap-4 border-b px-5">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
           {onExpandSidebar && (
             <Button
               type="button"
@@ -37,6 +37,18 @@ export function RightPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
               <PanelLeftOpen className="size-4" />
             </Button>
           )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={createNewSession}
+            title="新建会话"
+            aria-label="新建会话"
+            className="h-8 shrink-0 gap-1.5 rounded-md bg-sienna/10 px-2.5 text-sm font-medium text-sienna ring-1 ring-sienna/15 transition-colors hover:bg-sienna/15 hover:text-sienna"
+          >
+            <SquarePen className="size-4" />
+            新建会话
+          </Button>
           <div className="min-w-0 truncate text-[15px] font-semibold tracking-tight">
             {activePaper ? paperTitle(activePaper) : "未选择论文"}
           </div>
@@ -53,16 +65,6 @@ export function RightPane({ onExpandSidebar }: { onExpandSidebar?: () => void })
           >
             <BookOpenText className="size-3.5" />
             精读
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            className="h-8 gap-1.5 px-3 text-sm"
-            onClick={createNewSession}
-            title="新建对话"
-          >
-            <Plus className="size-3.5" />
-            新建对话
           </Button>
         </div>
       </div>
