@@ -140,6 +140,7 @@ func newPaperSearchTool() tool.Tool {
 		if err != nil {
 			return paperSearchOutput{}, fmt.Errorf("search_my_papers: 检索失败: %w", err)
 		}
+		retrieval.AddRefs(ctx, retrieval.References(docs))
 		hits := make([]paperHit, 0, len(docs))
 		for _, d := range docs {
 			ref := retrieval.ReferenceFromDocument(d)

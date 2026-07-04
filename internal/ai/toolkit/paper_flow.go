@@ -161,13 +161,13 @@ func generatePaperFlow(ctx context.Context, in paperFlowInput) (paperFlowOutput,
 		zlog.Info("generate_paper_flow 节点补细节开始", "node", n.ID, "label", n.Label, "idx", i)
 		nodeCtx, cancel := context.WithTimeout(ctx, paperFlowNodeTimeout)
 		detail := buildNodeDetail(nodeCtx, paperID, owner, meta, n)
-		cancel()
 		if detail == "" {
 			detail = metaFallback(meta, n.Type)
 		}
 		n.Detail = detail
 		// 给该节点配一张论文真实插图(图片检索召回最相关的一张),作为旁注缩略图。
-		fig := nodeFigure(ctx, paperID, owner, n, usedFigs)
+		fig := nodeFigure(nodeCtx, paperID, owner, n, usedFigs)
+		cancel()
 		if fig != nil {
 			flow.Figures = append(flow.Figures, *fig)
 		}
@@ -229,12 +229,12 @@ func BuildPaperFlowGraph(ctx context.Context, paperID string) (PaperFlow, error)
 		n := &flow.Nodes[i]
 		nodeCtx, cancel := context.WithTimeout(ctx, paperFlowNodeTimeout)
 		detail := buildNodeDetail(nodeCtx, paperID, owner, meta, n)
-		cancel()
 		if detail == "" {
 			detail = metaFallback(meta, n.Type)
 		}
 		n.Detail = detail
-		fig := nodeFigure(ctx, paperID, owner, n, usedFigs)
+		fig := nodeFigure(nodeCtx, paperID, owner, n, usedFigs)
+		cancel()
 		if fig != nil {
 			flow.Figures = append(flow.Figures, *fig)
 		}
@@ -266,10 +266,79 @@ func buildSkeleton(ctx context.Context, meta *model.PaperMeta) (paperFlow, error
 	if err := json.Unmarshal([]byte(stripJSONFence(content)), &flow); err != nil {
 		return paperFlow{}, fmt.Errorf("generate_paper_flow: 解析思路图骨架失败: %w", err)
 	}
-	if len(flow.Nodes) == 0 {
-		return paperFlow{}, fmt.Errorf("generate_paper_flow: 模型未产出有效节点")
+	flow, err = normalizePaperFlow(flow)
+	if err != nil {
+		return paperFlow{}, err
 	}
 	return flow, nil
+}
+
+const (
+	paperFlowMinNodes       = 6
+	paperFlowMaxNodes       = 12
+	paperFlowMaxLabelRunes  = 14
+	paperFlowMaxEdgeRunes   = 6
+	paperFlowDefaultEdgeLbl = "推进"
+)
+
+var validFlowNodeTypes = map[string]bool{
+	"problem":    true,
+	"gap":        true,
+	"idea":       true,
+	"method":     true,
+	"experiment": true,
+	"result":     true,
+	"conclusion": true,
+}
+
+func normalizePaperFlow(flow paperFlow) (paperFlow, error) {
+	flow.Title = strings.TrimSpace(flow.Title)
+	nodes := make([]flowNode, 0, min(len(flow.Nodes), paperFlowMaxNodes))
+	seen := map[string]bool{}
+	for _, n := range flow.Nodes {
+		n.ID = strings.TrimSpace(n.ID)
+		n.Type = strings.TrimSpace(n.Type)
+		n.Label = clipRunes(strings.TrimSpace(n.Label), paperFlowMaxLabelRunes)
+		n.Detail = ""
+		if n.ID == "" || seen[n.ID] || !validFlowNodeTypes[n.Type] || n.Label == "" {
+			continue
+		}
+		seen[n.ID] = true
+		nodes = append(nodes, n)
+		if len(nodes) == paperFlowMaxNodes {
+			break
+		}
+	}
+	if len(nodes) < paperFlowMinNodes {
+		return paperFlow{}, fmt.Errorf("generate_paper_flow: 模型产出节点数无效,有效节点 %d 个", len(nodes))
+	}
+
+	edges := make([]flowEdge, 0, len(flow.Edges))
+	edgeSeen := map[string]bool{}
+	for _, e := range flow.Edges {
+		e.From = strings.TrimSpace(e.From)
+		e.To = strings.TrimSpace(e.To)
+		e.Label = clipRunes(strings.TrimSpace(e.Label), paperFlowMaxEdgeRunes)
+		if e.From == "" || e.To == "" || e.From == e.To || !seen[e.From] || !seen[e.To] {
+			continue
+		}
+		key := e.From + "->" + e.To
+		if edgeSeen[key] {
+			continue
+		}
+		edgeSeen[key] = true
+		edges = append(edges, e)
+	}
+	if len(edges) == 0 {
+		for i := 1; i < len(nodes); i++ {
+			edges = append(edges, flowEdge{
+				From:  nodes[i-1].ID,
+				To:    nodes[i].ID,
+				Label: paperFlowDefaultEdgeLbl,
+			})
+		}
+	}
+	return paperFlow{Title: flow.Title, Nodes: nodes, Edges: edges}, nil
 }
 
 // paperFlowNodeTimeout 单节点补细节(检索+模型)的上限,卡住即超时跳过。
@@ -284,6 +353,7 @@ func buildNodeDetail(ctx context.Context, paperID, owner string, meta *model.Pap
 		zlog.Warn("generate_paper_flow 节点检索失败,回退简述", "node", n.ID, "err", err)
 	}
 	zlog.Info("generate_paper_flow 节点检索返回", "node", n.ID, "docs", len(docs))
+	retrieval.AddRefs(ctx, retrieval.References(docs))
 	passages := formatPassages(docs)
 
 	models, err := aimodel.ModelsForUser(owner)
@@ -388,6 +458,7 @@ func nodeFigure(ctx context.Context, paperID, owner string, n *flowNode, used ma
 			used["sig:"+sig] = true
 		}
 		used[key] = true
+		retrieval.AddRefs(ctx, []retrieval.Reference{ref})
 		return &flowFigure{
 			ID:      "fig-" + n.ID,
 			Parent:  n.ID,
@@ -465,6 +536,15 @@ func summarize(s string, n int) string {
 	r := []rune(s)
 	if len(r) > n {
 		return string(r[:n]) + "…"
+	}
+	return s
+}
+
+func clipRunes(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n])
 	}
 	return s
 }
