@@ -467,6 +467,28 @@ export interface EntityGraph {
   edges: EntityGraphEdge[];
 }
 
+export interface GraphRebuildError {
+  paper_id?: string;
+  stage: string;
+  message: string;
+}
+
+export interface GraphRebuildJob {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  total: number;
+  completed: number;
+  succeeded: number;
+  failed: number;
+  work_total: number;
+  work_done: number;
+  phase?: "metadata" | "relations";
+  current_paper_id?: string;
+  errors: GraphRebuildError[];
+  started_at: string;
+  finished_at?: string;
+}
+
 // RelatedPaper 是与某篇论文相关的论文,vias 标关系类型 author/keyword/cocitation/cites。
 export interface RelatedPaper {
   id: string;

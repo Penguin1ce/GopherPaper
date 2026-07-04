@@ -186,12 +186,7 @@ func saveStructured(ctx context.Context, paperID string, s *core.PaperStructured
 
 // upsertGraph 把论文及其作者/关键词/机构/会议与参考文献写入知识图谱,best-effort。
 func upsertGraph(ctx context.Context, task parseTask, s *core.PaperStructured, doc *core.ParsedDoc) {
-	defer func() {
-		if err := graphsemantic.RefreshPaper(ctx, task.OwnerID, task.PaperID); err != nil {
-			zlog.Error("semantic graph refresh failed, degraded", "paper_id", task.PaperID, "err", err)
-		}
-	}()
-	if err := graph.UpsertPaper(ctx, graph.PaperGraph{
+	pg := graphsemantic.PreparePaperGraph(ctx, graph.PaperGraph{
 		Owner:             task.OwnerID,
 		ID:                task.PaperID,
 		Title:             graphTitle(ctx, task, s),
@@ -207,12 +202,16 @@ func upsertGraph(ctx context.Context, task parseTask, s *core.PaperStructured, d
 		Innovations:       s.Innovations,
 		Limitations:       s.Limitations,
 		FutureWork:        s.FutureWork,
+		References:        doc.References,
+		ReferencesLoaded:  true,
 		Embedding:         paperEmbedding(ctx, s),
-	}); err != nil {
+	})
+	if err := graph.UpsertPaperMetadata(ctx, pg); err != nil {
 		zlog.Error("图谱写入论文失败,降级", "paper_id", task.PaperID, "err", err)
+		return
 	}
-	if err := graph.UpsertCitations(ctx, task.OwnerID, task.PaperID, doc.References); err != nil {
-		zlog.Error("图谱写入引用失败,降级", "paper_id", task.PaperID, "err", err)
+	if err := graphsemantic.RefreshPaperRelations(ctx, task.OwnerID, task.PaperID); err != nil {
+		zlog.Error("semantic graph refresh failed, degraded", "paper_id", task.PaperID, "err", err)
 	}
 }
 
