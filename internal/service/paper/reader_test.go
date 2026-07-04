@@ -97,6 +97,35 @@ func TestNormalizeAnnotationInputAcceptsDrawingContent(t *testing.T) {
 	}
 }
 
+func TestNormalizeAnnotationInputAcceptsDrawingStrokesOnly(t *testing.T) {
+	in, err := normalizeAnnotationInput(AnnotationInput{
+		PageNo: 1,
+		Kind:   constant.AnnotationKindDrawing,
+		Color:  "blue",
+		BoundingRect: model.AnnotationRect{
+			X1: 1, Y1: 2, X2: 10, Y2: 12, Width: 9, Height: 10, PageNumber: 1,
+		},
+		ContentJSON: model.JSONMap{
+			"strokes": []any{
+				map[string]any{
+					"color": "#38bdf8",
+					"width": 2,
+					"points": []any{
+						map[string]any{"x": 1, "y": 2},
+						map[string]any{"x": 3, "y": 4},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("normalizeAnnotationInput() error = %v", err)
+	}
+	if in.Kind != constant.AnnotationKindDrawing {
+		t.Fatalf("kind = %q, want drawing", in.Kind)
+	}
+}
+
 func TestNormalizeAnnotationInputRejectsDrawingWithoutContent(t *testing.T) {
 	_, err := normalizeAnnotationInput(AnnotationInput{
 		PageNo: 1,
@@ -107,6 +136,22 @@ func TestNormalizeAnnotationInputRejectsDrawingWithoutContent(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected drawing without content to be rejected")
+	}
+}
+
+func TestNormalizeAnnotationInputRejectsOversizedDrawingContent(t *testing.T) {
+	_, err := normalizeAnnotationInput(AnnotationInput{
+		PageNo: 1,
+		Kind:   constant.AnnotationKindDrawing,
+		BoundingRect: model.AnnotationRect{
+			X1: 1, Y1: 2, X2: 10, Y2: 12, Width: 9, Height: 10, PageNumber: 1,
+		},
+		ContentJSON: model.JSONMap{
+			"image": "data:image/png;base64," + strings.Repeat("a", maxAnnotationContentRunes+1),
+		},
+	})
+	if err == nil {
+		t.Fatal("expected oversized drawing content to be rejected")
 	}
 }
 

@@ -72,7 +72,8 @@ import { ReaderSidePanel as SplitReaderSidePanel } from "./components/reader-sid
 import {
   DEFAULT_DRAWING_SIZE,
   DEFAULT_TEXT_SIZE,
-  DRAWING_LABEL,
+  DRAWING_SIZE_MAX,
+  DRAWING_SIZE_MIN,
   FREETEXT_CREATE_TEXT,
   FREETEXT_EMPTY_DRAFT,
   COLOR_KEYS as READER_COLOR_KEYS,
@@ -98,9 +99,11 @@ const MIND_MAP_PANEL_MAX_WIDTH = 860;
 const OUTLINE_PANEL_WIDTH_CLASS = "lg:grid-cols-[20rem_minmax(0,1fr)]";
 const PDF_MIN_SCALE = 0.6;
 const PDF_MAX_SCALE = 2.4;
-const WHEEL_ZOOM_SENSITIVITY = 0.00145;
-const WHEEL_ZOOM_MIN_FACTOR = 0.82;
-const WHEEL_ZOOM_MAX_FACTOR = 1.18;
+const PDF_WHEEL_ZOOM_STEP = 0.1;
+const PDF_WHEEL_ZOOM_DELTA = 96;
+const PDF_WHEEL_ZOOM_LINE_HEIGHT = 32;
+const PDF_WHEEL_ZOOM_MAX_STEPS = 2;
+const PDF_WHEEL_ZOOM_IDLE_MS = 180;
 const LOCATE_TOP_GAP = 32;
 const LOCATED_ANNOTATION_SCROLL_RESUME_MS = 600;
 const QA_SELECTION_PREVIEW_RUNES = 48;
@@ -208,6 +211,12 @@ interface RecentFreetextCreate {
   until: number;
 }
 
+interface DrawingCreateMeta {
+  width: number;
+  height: number;
+  snapshot?: string;
+}
+
 function patchPdfViewerSetDocument() {
   const prototype = PDFViewer.prototype as unknown as PatchablePDFViewer;
   if (prototype[PDF_VIEWER_PATCH_FLAG]) return;
@@ -263,7 +272,7 @@ function loadReaderPreferences(): ReaderPreferences {
         : DEFAULT_PREFS.textSize;
     const drawingSize =
       typeof saved.drawingSize === "number" && Number.isFinite(saved.drawingSize)
-        ? clamp(saved.drawingSize, 1, 8)
+        ? clamp(saved.drawingSize, DRAWING_SIZE_MIN, DRAWING_SIZE_MAX)
         : DEFAULT_PREFS.drawingSize;
     return {
       outlineOpen: saved.outlineOpen ?? DEFAULT_PREFS.outlineOpen,
@@ -292,6 +301,16 @@ function clamp(n: number, min: number, max: number) {
 
 function roundPdfScale(scale: number) {
   return Number(scale.toFixed(3));
+}
+
+function wheelDeltaPixels(event: WheelEvent, pageHeight: number) {
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+    return event.deltaY * PDF_WHEEL_ZOOM_LINE_HEIGHT;
+  }
+  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+    return event.deltaY * pageHeight;
+  }
+  return event.deltaY;
 }
 
 function scaledToRect(rect: Scaled): AnnotationRect {
@@ -1662,6 +1681,8 @@ export function ReaderClient() {
   const positionPatchSeqRef = useRef(new Map<number, number>());
   const freetextCreateInFlightRef = useRef(false);
   const recentFreetextCreateRef = useRef<RecentFreetextCreate | null>(null);
+  const clearDrawingDraftRef = useRef<(() => void) | null>(null);
+  const saveDrawingDraftRef = useRef<(() => void) | null>(null);
   const mindMapGridRef = useRef<HTMLDivElement | null>(null);
   const pdfWheelRef = useRef<HTMLDivElement | null>(null);
   const scaleValueRef = useRef<PdfScaleValue>(scaleValue);
@@ -1672,6 +1693,7 @@ export function ReaderClient() {
     deltaY: 0,
     clientX: 0,
     clientY: 0,
+    idleTimer: 0,
   });
 
   const visibleAnnotations = useMemo(() => visibleReaderAnnotations(annotations), [annotations]);
@@ -1704,15 +1726,12 @@ export function ReaderClient() {
   }, []);
 
   const changeActiveTool = useCallback((tool: ReaderTool) => {
+    saveDrawingDraftRef.current?.();
     setPrefs((cur) => ({
       ...cur,
       activeTool: cur.activeTool === tool && tool !== "select" ? "select" : tool,
     }));
   }, []);
-
-  const exitDrawingMode = useCallback(() => {
-    updatePrefs({ activeTool: "select" });
-  }, [updatePrefs]);
 
   useEffect(() => {
     scaleValueRef.current = scaleValue;
@@ -1725,10 +1744,6 @@ export function ReaderClient() {
   useEffect(() => {
     annotationFocusActiveRef.current = selectedAnnotationId != null || locatedAnnotationId != null;
   }, [locatedAnnotationId, selectedAnnotationId]);
-
-  const clearActiveDrawing = useCallback(() => {
-    document.querySelector<HTMLButtonElement>(".DrawingCanvas__clearButton")?.click();
-  }, []);
 
   const handleFreetextFocusHandled = useCallback((annotationID: number) => {
     setPendingFreetextFocusId((cur) => (cur === annotationID ? null : cur));
@@ -1915,23 +1930,26 @@ export function ReaderClient() {
       event.preventDefault();
       event.stopPropagation();
 
-      const deltaScale =
-        event.deltaMode === WheelEvent.DOM_DELTA_LINE
-          ? 16
-          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
-            ? scrollElement.clientHeight
-            : 1;
       const zoom = wheelZoomRef.current;
-      zoom.deltaY += event.deltaY * deltaScale;
+      zoom.deltaY += wheelDeltaPixels(event, scrollElement.clientHeight);
       zoom.clientX = event.clientX;
       zoom.clientY = event.clientY;
+      if (zoom.idleTimer) window.clearTimeout(zoom.idleTimer);
+      zoom.idleTimer = window.setTimeout(() => {
+        zoom.deltaY = 0;
+        zoom.idleTimer = 0;
+      }, PDF_WHEEL_ZOOM_IDLE_MS);
 
       if (zoom.frame) return;
       zoom.frame = window.requestAnimationFrame(() => {
         zoom.frame = 0;
         const deltaY = zoom.deltaY;
-        zoom.deltaY = 0;
-        if (deltaY === 0) return;
+        const stepCount = Math.min(
+          PDF_WHEEL_ZOOM_MAX_STEPS,
+          Math.trunc(Math.abs(deltaY) / PDF_WHEEL_ZOOM_DELTA),
+        );
+        if (stepCount <= 0) return;
+        zoom.deltaY = deltaY - Math.sign(deltaY) * stepCount * PDF_WHEEL_ZOOM_DELTA;
 
         const currentViewer = pdfViewerWithScale(pdfUtilsRef.current);
         const currentScrollElement = currentViewer?.container || pdfWheelRef.current;
@@ -1945,13 +1963,14 @@ export function ReaderClient() {
             : typeof viewerScale === "number" && Number.isFinite(viewerScale) && viewerScale > 0
               ? viewerScale
               : 1;
-        const factor = clamp(
-          Math.exp(-deltaY * WHEEL_ZOOM_SENSITIVITY),
-          WHEEL_ZOOM_MIN_FACTOR,
-          WHEEL_ZOOM_MAX_FACTOR,
+        const direction = deltaY < 0 ? 1 : -1;
+        const nextScale = roundPdfScale(
+          clamp(baseScale + direction * PDF_WHEEL_ZOOM_STEP * stepCount, PDF_MIN_SCALE, PDF_MAX_SCALE),
         );
-        const nextScale = roundPdfScale(clamp(baseScale * factor, PDF_MIN_SCALE, PDF_MAX_SCALE));
-        if (nextScale === roundPdfScale(baseScale)) return;
+        if (nextScale === roundPdfScale(baseScale)) {
+          zoom.deltaY = 0;
+          return;
+        }
 
         const rect = currentScrollElement.getBoundingClientRect();
         const clientX = zoom.clientX;
@@ -1983,12 +2002,16 @@ export function ReaderClient() {
     const element = pdfWheelRef.current;
     if (!element) return;
     const zoom = wheelZoomRef.current;
-    element.addEventListener("wheel", zoomPdfAtWheel, { passive: false });
+    element.addEventListener("wheel", zoomPdfAtWheel, { passive: false, capture: true });
     return () => {
-      element.removeEventListener("wheel", zoomPdfAtWheel);
+      element.removeEventListener("wheel", zoomPdfAtWheel, { capture: true });
       if (zoom.frame) {
         window.cancelAnimationFrame(zoom.frame);
         zoom.frame = 0;
+      }
+      if (zoom.idleTimer) {
+        window.clearTimeout(zoom.idleTimer);
+        zoom.idleTimer = 0;
       }
     };
   }, [zoomPdfAtWheel]);
@@ -2404,8 +2427,7 @@ export function ReaderClient() {
       if (busy || selectedAnnotationId == null) return;
 
       const annotation = visibleAnnotations.find((item) => item.id === selectedAnnotationId);
-      const kind = annotation ? annotationKind(annotation) : null;
-      if (!annotation || (kind !== "freetext" && kind !== "drawing")) return;
+      if (!annotation) return;
 
       event.preventDefault();
       void deleteAnnotation(annotation);
@@ -2464,7 +2486,7 @@ export function ReaderClient() {
           color: prefs.color,
           bounding_rect: boundingRect,
           rects,
-          style_json: freetextStyleForColor(prefs.color, prefs.textSize),
+          style_json: freetextStyleForColor(prefs.color, prefs.textSize, boundingRect.width),
         });
         setAnnotations((prev) => [{ ...annotation, text: FREETEXT_EMPTY_DRAFT }, ...prev]);
         setSelectedAnnotationId(annotation.id);
@@ -2482,35 +2504,44 @@ export function ReaderClient() {
   );
 
   const createDrawingAnnotation = useCallback(
-    async (dataUrl: string, position: ScaledPosition, strokes: DrawingStroke[], snapshot?: string) => {
-      updatePrefs({ activeTool: "select" });
-      if (!id) return;
+    async (
+      image: string,
+      position: ScaledPosition,
+      strokes: DrawingStroke[],
+      meta: DrawingCreateMeta,
+    ) => {
+      if (!id || !image || strokes.length === 0) return false;
       const { boundingRect, rects } = positionToRects(position);
-      const contentJson: Record<string, unknown> = {
-        image: dataUrl,
-        strokes,
-      };
-      if (snapshot) {
-        contentJson.snapshot = snapshot;
-      }
+      const style = drawingStyleForColor(prefs.color, prefs.drawingSize);
       setBusy("drawing");
       try {
         const annotation = await api.createAnnotation(id, {
           page_no: boundingRect.pageNumber,
           kind: "drawing",
-          text: DRAWING_LABEL,
+          text: "",
           color: prefs.color,
           bounding_rect: boundingRect,
           rects,
-          style_json: drawingStyleForColor(prefs.color, prefs.drawingSize),
-          content_json: contentJson,
+          style_json: style,
+          content_json: {
+            image,
+            strokes,
+            canvasWidth: meta.width,
+            canvasHeight: meta.height,
+            imageWidth: meta.width,
+            imageHeight: meta.height,
+            strokeCoordinateSpace: "local",
+            ...(meta.snapshot ? { snapshot: meta.snapshot } : {}),
+          },
         });
         setAnnotations((prev) => [annotation, ...prev]);
         setSelectedAnnotationId(annotation.id);
-        updatePrefs({ activeTool: "select", annotationsOpen: true, mindMapOpen: false, qaOpen: false });
+        updatePrefs({ annotationsOpen: true, mindMapOpen: false, qaOpen: false });
         scrollSideAnnotationIntoView(annotation.id);
+        return true;
       } catch (err) {
-        setError((err as Error)?.message || "保存手绘标注失败");
+        setError((err as Error)?.message || "保存绘画批注失败");
+        return false;
       } finally {
         setBusy("");
       }
@@ -2647,10 +2678,16 @@ export function ReaderClient() {
   );
 
   const zoomBy = (delta: number) => {
+    saveDrawingDraftRef.current?.();
     setScaleValue((cur) => {
       const base = typeof cur === "number" ? cur : 1;
       return Number((clamp(base + delta, PDF_MIN_SCALE, PDF_MAX_SCALE)).toFixed(2));
     });
+  };
+
+  const setZoomValue = (value: PdfScaleValue) => {
+    saveDrawingDraftRef.current?.();
+    setScaleValue(value);
   };
 
   return (
@@ -2672,8 +2709,8 @@ export function ReaderClient() {
         onPageSubmit={submitPage}
         onZoomIn={() => zoomBy(0.1)}
         onZoomOut={() => zoomBy(-0.1)}
-        onResetZoom={() => setScaleValue(1)}
-        onFitWidth={() => setScaleValue("page-width")}
+        onResetZoom={() => setZoomValue(1)}
+        onFitWidth={() => setZoomValue("page-width")}
         onToggleTranslate={toggleTranslatePanel}
         onToggleAnnotations={toggleAnnotationsPanel}
         onToggleMindMap={toggleMindMapPanel}
@@ -2682,8 +2719,7 @@ export function ReaderClient() {
         onColorChange={(color) => updatePrefs({ color })}
         onTextSizeChange={(textSize) => updatePrefs({ textSize })}
         onDrawingSizeChange={(drawingSize) => updatePrefs({ drawingSize })}
-        onDrawingClear={clearActiveDrawing}
-        onDrawingCancel={exitDrawingMode}
+        onClearDrawingDraft={() => clearDrawingDraftRef.current?.()}
       />
 
       <div ref={mindMapGridRef} className={cn("grid min-h-0 flex-1 grid-cols-1", gridClass)} style={gridStyle}>
@@ -2720,8 +2756,6 @@ export function ReaderClient() {
                 initialPage={initialPage}
                 scaleValue={scaleValue}
                 activeTool={prefs.activeTool}
-                color={prefs.color}
-                drawingSize={prefs.drawingSize}
                 onPageChange={handlePdfPageChange}
                 onPageCount={setPageCount}
                 onTranslateSelection={onTranslateSelection}
@@ -2729,10 +2763,17 @@ export function ReaderClient() {
                 onAnnotateSelection={onAnnotateSelection}
                 onAskSelection={onAskSelection}
                 onCreateFreetext={(position) => void createFreetextAnnotation(position)}
-                onCreateDrawing={(dataUrl, position, strokes, snapshot) =>
-                  void createDrawingAnnotation(dataUrl, position, strokes, snapshot)
+                drawingColor={drawingStyleForColor(prefs.color, prefs.drawingSize).strokeColor}
+                drawingSize={prefs.drawingSize}
+                onCreateDrawing={(image, position, strokes, meta) =>
+                  createDrawingAnnotation(image, position, strokes, meta)
                 }
-                onDrawingCancel={exitDrawingMode}
+                onDrawingDraftClearReady={(clear) => {
+                  clearDrawingDraftRef.current = clear;
+                }}
+                onDrawingDraftSaveReady={(save) => {
+                  saveDrawingDraftRef.current = save;
+                }}
                 onUpdateAnnotationPosition={updateAnnotationPosition}
                 onUpdateAnnotationText={updateAnnotationText}
                 onDeleteAnnotation={deleteAnnotation}
