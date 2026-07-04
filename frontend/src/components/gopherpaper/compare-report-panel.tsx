@@ -187,29 +187,22 @@ export function CompareReportsBox({
   };
 
   return (
-    <section className="overflow-hidden rounded-lg border bg-card shadow-sm">
+    <section>
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/50"
+        className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
       >
-        <span className="flex min-w-0 items-center gap-2">
-          <History className="size-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0">
-            <span className="block text-sm font-medium">对比报告</span>
-            <span className="block truncate text-xs text-muted-foreground">
-              历史报告与检索
-            </span>
-          </span>
+        <span className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+          <History className="size-3.5 shrink-0" />
+          对比报告
         </span>
-        <span className="flex shrink-0 items-center gap-2">
-          <span className="font-mono text-xs text-muted-foreground">
-            {reports.length}
-          </span>
+        <span className="flex shrink-0 items-center gap-1 text-muted-foreground/60">
+          <span className="font-mono text-[11px]">{reports.length}</span>
           <ChevronDown
             className={cn(
-              "size-4 text-muted-foreground transition-transform",
+              "size-3.5 transition-transform duration-200 ease-out",
               open && "rotate-180",
             )}
           />
@@ -217,12 +210,12 @@ export function CompareReportsBox({
       </button>
 
       {open && (
-        <div className="border-t bg-background/60 p-2">
-          <div className="relative mb-2">
+        <div className="mt-1">
+          <div className="relative mb-1.5">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
-              className="h-8 rounded-full bg-background px-8"
+              className="h-8 rounded-lg border-transparent bg-muted/60 px-8 shadow-none transition-colors hover:bg-muted/80 focus-visible:border-ring/40 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/25 dark:bg-muted/40 dark:hover:bg-muted/50 dark:focus-visible:bg-background"
               placeholder="搜索报告或论文"
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -238,64 +231,62 @@ export function CompareReportsBox({
             )}
           </div>
 
-          <ScrollArea className="h-52 rounded-md border bg-background">
-            <div className="space-y-1 p-2 pr-3">
-              {loading ? (
-                <p className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                  正在加载
-                </p>
-              ) : reports.length === 0 ? (
-                <Empty title="还没有对比报告" text="生成后会保存在这里。" compact />
-              ) : filteredReports.length === 0 ? (
-                <Empty title="没有匹配报告" text="换一个关键词试试。" compact />
-              ) : (
-                filteredReports.map((report) => {
-                  const names = comparePaperNames(report, papers);
-                  return (
-                    <div
-                      key={report.id}
-                      className={cn(
-                        "group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/60",
-                        activeReportID === report.id &&
-                          "bg-sienna/[0.06] text-sienna",
-                      )}
+          <div className="max-h-56 space-y-px overflow-y-auto">
+            {loading ? (
+              <p className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                正在加载
+              </p>
+            ) : reports.length === 0 ? (
+              <Empty title="还没有对比报告" text="生成后会保存在这里。" compact />
+            ) : filteredReports.length === 0 ? (
+              <Empty title="没有匹配报告" text="换一个关键词试试。" compact />
+            ) : (
+              filteredReports.map((report) => {
+                const names = comparePaperNames(report, papers);
+                return (
+                  <div
+                    key={report.id}
+                    className={cn(
+                      "group flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors",
+                      activeReportID === report.id
+                        ? "bg-accent"
+                        : "hover:bg-accent/50",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 text-left focus-visible:outline-none"
+                      onClick={() => onOpenReport(report)}
                     >
-                      <button
-                        type="button"
-                        className="min-w-0 flex-1 text-left"
-                        onClick={() => onOpenReport(report)}
-                      >
-                        <span className="block truncate text-sm font-medium">
-                          {report.title}
-                        </span>
-                        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                          {names.join(" / ")}
-                        </span>
-                        <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                          {formatTime(report.updated_at || report.created_at)}
-                        </span>
-                      </button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        title="删除对比报告"
-                        disabled={Boolean(deletingID)}
-                        onClick={() => deleteReport(report)}
-                      >
-                        {deletingID === report.id ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="size-3.5" />
-                        )}
-                      </Button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </ScrollArea>
+                      <span className="block truncate text-sm leading-6">
+                        {report.title}
+                      </span>
+                      <span className="block truncate text-[11px] text-muted-foreground">
+                        {formatTime(report.updated_at || report.created_at)}
+                        {names.length > 0 && ` · ${names.join(" / ")}`}
+                      </span>
+                    </button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground/50 hover:text-destructive"
+                      title="删除对比报告"
+                      disabled={Boolean(deletingID)}
+                      onClick={() => deleteReport(report)}
+                    >
+                      {deletingID === report.id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
     </section>
