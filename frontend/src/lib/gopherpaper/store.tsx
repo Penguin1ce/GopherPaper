@@ -1122,7 +1122,11 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         };
         try {
           const data = await api.sendMessage(sessionID, query, undefined, {
-            onDelta: (text) => {
+            onDelta: (text, reset) => {
+              if (reset) {
+                pending = "";
+                patch((m) => ({ ...m, content: "" }));
+              }
               pending += text;
               if (rafID === null) rafID = requestAnimationFrame(flush);
             },

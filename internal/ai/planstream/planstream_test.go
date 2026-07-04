@@ -79,6 +79,25 @@ func TestPlanSplitter_BodyResetAcrossTurns(t *testing.T) {
 	}
 }
 
+func TestPlanSplitter_SuppressesLeakedMetaInBody(t *testing.T) {
+	sp, c := newCapture()
+	for _, chunk := range []string{
+		"/*FINAL_ANSWER*/Claude Code 更偏项目规则; OpenClaw 更偏长期记忆。",
+		" қун 犯",
+		"规了: final里面不能提来源 However system said if web_search include links.",
+		"Claude Code 和 OpenClaw 的区别是...",
+	} {
+		sp.feed(chunk)
+	}
+	sp.endTurn()
+	if got := strings.TrimSpace(c.delta); got != "Claude Code 更偏项目规则; OpenClaw 更偏长期记忆。" {
+		t.Fatalf("delta = %q", got)
+	}
+	if strings.Contains(c.delta, "final里面") || strings.Contains(c.delta, "However system said") {
+		t.Fatalf("内部元评论不应流式上屏: %q", c.delta)
+	}
+}
+
 func TestPlanSplitter_TagSplitAcrossChunks(t *testing.T) {
 	// 标签被逐字符拆开喂入,切分器靠 holdback 凑齐再判定,不把碎片当计划文本外发。
 	sp, c := newCapture()
@@ -181,6 +200,16 @@ func TestExtractFinalAnswer(t *testing.T) {
 		// FINAL_ANSWER 标签后为空时回退到取最后过程标签之后的内容。
 		{"空终答标签回退过程标签", "/*ACTION*/我先查一下\n\n这是结果/*FINAL_ANSWER*/", "这是结果"},
 		{"伪工具调用有终答时剥离", "过程<IFunctionCallBegin>[{}]<IFunctionCallEnd>/*FINAL_ANSWER*/真正答案", "真正答案"},
+		{
+			"剥离泄漏的内部元评论",
+			"Claude Code 更偏项目规则; OpenClaw 更偏长期记忆。 қун 犯规了: final里面不能提来源 However system said if web_search include links.Claude Code 和 OpenClaw 的区别是...",
+			"Claude Code 更偏项目规则; OpenClaw 更偏长期记忆。",
+		},
+		{
+			"剥离无句号答案后的短噪声",
+			"Claude Code 更偏项目规则 қун 犯规了: final里面不能提来源",
+			"Claude Code 更偏项目规则",
+		},
 		{"空", "   ", ""},
 	}
 	for _, c := range cases {
