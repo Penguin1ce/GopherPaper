@@ -42,7 +42,14 @@ export function StoragePanel({ token }: { token: string }) {
     setLoading(true);
     try {
       const res = await fetchStorageOverview(token, 10);
-      setData(res);
+      // 后端空切片会序列化成 JSON null,空库时兜底成空数组,避免渲染处 .length/.map 崩溃
+      setData({
+        ...res,
+        by_status: res.by_status ?? [],
+        buckets: res.buckets ?? [],
+        trend: res.trend ?? [],
+        top_papers: res.top_papers ?? [],
+      });
     } catch {
       setData(null);
     } finally {

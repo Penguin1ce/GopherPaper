@@ -249,6 +249,9 @@ function UserDetailDrawer({
     () => (detail?.activity ?? []).map((p) => ({ ...p, label: p.date.slice(5) })),
     [detail],
   );
+  // 后端把空切片序列化成 JSON null,真实用户(无论文)会返回 null,这里兜底成空数组
+  const statusDist = detail?.paper_status_distribution ?? [];
+  const recentPapers = detail?.recent_papers ?? [];
 
   return (
     <motion.div
@@ -296,14 +299,14 @@ function UserDetailDrawer({
               </div>
             </div>
 
-            {detail.paper_status_distribution.length > 0 && (
+            {statusDist.length > 0 && (
               <div className="rounded-xl border border-border bg-card p-4">
                 <h4 className="mb-2 text-sm font-semibold">论文状态分布</h4>
                 <div className="h-40">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={detail.paper_status_distribution}
+                        data={statusDist}
                         dataKey="count"
                         nameKey="status"
                         innerRadius="55%"
@@ -311,7 +314,7 @@ function UserDetailDrawer({
                         paddingAngle={2}
                         stroke="var(--card)"
                       >
-                        {detail.paper_status_distribution.map((s) => (
+                        {statusDist.map((s) => (
                           <Cell key={s.status} fill={STATUS_COLORS[s.status] ?? "#94a3b8"} />
                         ))}
                       </Pie>
@@ -336,11 +339,11 @@ function UserDetailDrawer({
               </div>
             </div>
 
-            {detail.recent_papers.length > 0 && (
+            {recentPapers.length > 0 && (
               <div className="rounded-xl border border-border bg-card p-4">
                 <h4 className="mb-2 text-sm font-semibold">最近论文</h4>
                 <ul className="space-y-2">
-                  {detail.recent_papers.map((p) => (
+                  {recentPapers.map((p) => (
                     <li key={p.id} className="flex items-center justify-between gap-2 text-sm">
                       <span className="min-w-0 flex-1 truncate">{p.title || p.file_name}</span>
                       <span className="shrink-0 text-xs text-muted-foreground">

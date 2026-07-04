@@ -5,6 +5,15 @@
   -webkit-user-select: none;
 }
 
+.ReaderDrawingCanvas {
+  position: absolute;
+  z-index: 56;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .reader-annotation-dragging,
 .reader-annotation-dragging .textLayer,
 .reader-annotation-dragging .PdfHighlighter,
@@ -158,35 +167,11 @@
   pointer-events: none;
 }
 
+.TextHighlight__toolbar,
+.TextHighlight__toolbar-wrapper,
 .FreetextHighlight__toolbar,
 .DrawingHighlight__toolbar {
   display: none !important;
-  top: auto;
-  bottom: calc(100% + 6px);
-  left: 0;
-  gap: 3px;
-  padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 7px;
-  background: rgba(15, 23, 42, 0.94);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.24);
-  transform: translateY(2px);
-}
-
-.FreetextHighlight__toolbar {
-  bottom: calc(100% + 4px);
-  gap: 2px;
-  padding: 2px;
-  border-radius: 6px;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.2);
-}
-
-.FreetextHighlight__container:hover .FreetextHighlight__toolbar,
-.FreetextHighlight--editing .FreetextHighlight__toolbar,
-.DrawingHighlight__container:hover .DrawingHighlight__toolbar,
-.DrawingHighlight__toolbar--visible {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .FreetextHighlight__edit-button,
@@ -370,67 +355,4 @@
   min-width: 176px;
   border-radius: 8px;
   box-shadow: 0 14px 32px rgba(15, 23, 42, 0.24);
-}
-
-.DrawingCanvas {
-  z-index: 44;
-}
-
-.DrawingCanvas__controls {
-  bottom: 16px;
-  gap: 6px;
-  padding: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.94);
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.26);
-  z-index: 46;
-}
-
-.DrawingCanvas__controls button {
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 6px;
-  font-size: 0;
-  font-weight: 500;
-  line-height: 1;
-  transform: none;
-}
-
-.DrawingCanvas__controls button::after {
-  font-size: 13px;
-}
-
-.DrawingCanvas__clearButton {
-  background: rgba(245, 158, 11, 0.18);
-  color: #fde68a;
-}
-
-.DrawingCanvas__clearButton::after {
-  content: "清空";
-}
-
-.DrawingCanvas__cancelButton {
-  background: rgba(248, 113, 113, 0.18);
-  color: #fecaca;
-}
-
-.DrawingCanvas__cancelButton::after {
-  content: "取消";
-}
-
-.DrawingCanvas__doneButton {
-  background: rgba(34, 197, 94, 0.2);
-  color: #bbf7d0;
-}
-
-.DrawingCanvas__doneButton::after {
-  content: "保存";
-}
-
-.DrawingCanvas__clearButton:hover,
-.DrawingCanvas__cancelButton:hover,
-.DrawingCanvas__doneButton:hover {
-  filter: brightness(1.08);
-  transform: none;
 }

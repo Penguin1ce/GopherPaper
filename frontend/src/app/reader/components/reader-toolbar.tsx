@@ -17,7 +17,6 @@ import {
   PencilLine,
   RotateCcw,
   Type,
-  X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -41,6 +40,9 @@ import {
 import {
   COLOR_KEYS,
   COLOR_META,
+  DRAWING_SIZE_MAX,
+  DRAWING_SIZE_MIN,
+  DRAWING_SIZE_STEP,
   type AnnotationColor,
   type ReaderTool,
 } from "@/app/reader/lib/annotations";
@@ -110,22 +112,21 @@ function AnnotationStyleMenu({
   onColorChange,
   onTextSizeChange,
   onDrawingSizeChange,
-  onDrawingClear,
-  onDrawingCancel,
+  onClearDrawingDraft,
 }: {
   prefs: ReaderToolbarPrefs;
   onColorChange: (color: AnnotationColor) => void;
   onTextSizeChange: (size: number) => void;
   onDrawingSizeChange: (size: number) => void;
-  onDrawingClear: () => void;
-  onDrawingCancel: () => void;
+  onClearDrawingDraft: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const selected = COLOR_META[prefs.color];
-  const isDrawing = prefs.activeTool === "drawing";
   const isFreetext = prefs.activeTool === "freetext";
-  const sizeLabel = isDrawing ? prefs.drawingSize : prefs.textSize;
+  const isDrawing = prefs.activeTool === "drawing";
+  const showSize = isFreetext || isDrawing;
   const colorLabel = isDrawing ? "画笔颜色" : isFreetext ? "文字颜色" : "高亮颜色";
+  const triggerSizeText = isDrawing ? prefs.drawingSize.toFixed(1) : prefs.textSize.toFixed(0);
   return (
     <DropdownMenu open={open} onOpenChange={(nextOpen) => setOpen(nextOpen)}>
       <DropdownMenuTrigger
@@ -138,9 +139,9 @@ function AnnotationStyleMenu({
             className="h-8 gap-1 rounded-md px-2"
           >
             <span className={cn("size-4 rounded-sm border", selected.className)} />
-            {(isDrawing || isFreetext) && (
+            {showSize && (
               <span className="min-w-5 text-xs tabular-nums text-muted-foreground">
-                {sizeLabel.toFixed(isDrawing ? 1 : 0)}
+                {triggerSizeText}
               </span>
             )}
             <ChevronDown className="size-3.5 text-muted-foreground" />
@@ -170,46 +171,48 @@ function AnnotationStyleMenu({
             );
           })}
         </div>
-        {(isDrawing || isFreetext) && (
+        {isFreetext && (
           <>
             <DropdownMenuSeparator />
             <div className="space-y-3 px-2 py-2">
               <div className="flex items-center justify-between text-sm">
-                <span>{isDrawing ? "画笔粗细" : "文字大小"}</span>
+                <span>文字大小</span>
                 <span className="tabular-nums text-muted-foreground">
-                  {sizeLabel.toFixed(isDrawing ? 1 : 0)}
+                  {prefs.textSize.toFixed(0)}
                 </span>
               </div>
-              {isDrawing ? (
-                <Slider
-                  min={1}
-                  max={8}
-                  step={0.5}
-                  value={[prefs.drawingSize]}
-                  onValueChange={(value) => onDrawingSizeChange(firstSliderValue(value, prefs.drawingSize))}
-                />
-              ) : (
-                <Slider
-                  min={10}
-                  max={28}
-                  step={1}
-                  value={[prefs.textSize]}
-                  onValueChange={(value) => onTextSizeChange(firstSliderValue(value, prefs.textSize))}
-                />
-              )}
+              <Slider
+                min={10}
+                max={28}
+                step={1}
+                value={[prefs.textSize]}
+                onValueChange={(value) => onTextSizeChange(firstSliderValue(value, prefs.textSize))}
+              />
             </div>
           </>
         )}
         {isDrawing && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onDrawingClear}>
+            <div className="space-y-3 px-2 py-2">
+              <div className="flex items-center justify-between text-sm">
+                <span>画笔大小</span>
+                <span className="tabular-nums text-muted-foreground">
+                  {prefs.drawingSize.toFixed(1)}
+                </span>
+              </div>
+              <Slider
+                min={DRAWING_SIZE_MIN}
+                max={DRAWING_SIZE_MAX}
+                step={DRAWING_SIZE_STEP}
+                value={[prefs.drawingSize]}
+                onValueChange={(value) => onDrawingSizeChange(firstSliderValue(value, prefs.drawingSize))}
+              />
+            </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onClearDrawingDraft}>
               <Eraser className="size-3.5" />
-              清空当前笔迹
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onDrawingCancel}>
-              <X className="size-3.5" />
-              取消绘制
+              清除当前笔迹
             </DropdownMenuItem>
           </>
         )}
@@ -242,8 +245,7 @@ export function ReaderToolbar({
   onColorChange,
   onTextSizeChange,
   onDrawingSizeChange,
-  onDrawingClear,
-  onDrawingCancel,
+  onClearDrawingDraft,
 }: {
   title: string;
   currentPage: number;
@@ -268,8 +270,7 @@ export function ReaderToolbar({
   onColorChange: (color: AnnotationColor) => void;
   onTextSizeChange: (size: number) => void;
   onDrawingSizeChange: (size: number) => void;
-  onDrawingClear: () => void;
-  onDrawingCancel: () => void;
+  onClearDrawingDraft: () => void;
 }) {
   const zoomText = typeof scaleValue === "number" ? `${Math.round(scaleValue * 100)}%` : "适宽";
 
@@ -345,7 +346,7 @@ export function ReaderToolbar({
         <ToolbarButton label="新增文字" active={prefs.activeTool === "freetext"} onClick={() => onToolChange("freetext")}>
           <Type className="size-4" />
         </ToolbarButton>
-        <ToolbarButton label="自由绘图" active={prefs.activeTool === "drawing"} onClick={() => onToolChange("drawing")}>
+        <ToolbarButton label="绘画" active={prefs.activeTool === "drawing"} onClick={() => onToolChange("drawing")}>
           <PencilLine className="size-4" />
         </ToolbarButton>
         <AnnotationStyleMenu
@@ -353,8 +354,7 @@ export function ReaderToolbar({
           onColorChange={onColorChange}
           onTextSizeChange={onTextSizeChange}
           onDrawingSizeChange={onDrawingSizeChange}
-          onDrawingClear={onDrawingClear}
-          onDrawingCancel={onDrawingCancel}
+          onClearDrawingDraft={onClearDrawingDraft}
         />
       </div>
 

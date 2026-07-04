@@ -305,7 +305,7 @@ function AnnotationCard({
                   alt={`第 ${annotation.page_no} 页手绘线条`}
                   className={cn(
                     "absolute inset-0 size-full object-contain",
-                    drawingPreview.snapshot ? "p-4" : "p-2",
+                    drawingPreview.snapshot ? "" : "p-2",
                   )}
                 />
               )}
@@ -445,7 +445,7 @@ function AnnotationPanel({
         <div className="w-full space-y-3 p-3">
           {annotations.length === 0 ? (
             <div className="rounded-md border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground">
-              选中 PDF 原文、点击页面添加文字，或打开画笔完成手绘标注。
+              选中 PDF 原文添加高亮，或点击页面添加文字批注。
             </div>
           ) : (
             annotations.map((annotation) => (

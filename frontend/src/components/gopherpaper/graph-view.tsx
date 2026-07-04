@@ -7,6 +7,7 @@ import {
   Copy,
   Download,
   FileText,
+  GitCompareArrows,
   Hash,
   Maximize2,
   MessageCircle,
@@ -20,6 +21,8 @@ import {
   Tags,
   Undo2,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -58,12 +61,17 @@ const MAX_ZOOM = 2.6;
 const NODE_DRAG_THRESHOLD = 8;
 const GRAPH_KEYWORD_LIMIT = 10000;
 const DEFAULT_GRAPH_DISPLAY_LIMIT = 60;
+const ALL_RELATIONSHIPS_FILTER = "*";
 const HISTORY_LIMIT = 30;
 const MINIMAP_W = 168;
 const MINIMAP_H = 96;
 const PAPER_NODE_COLOR = "#35A98D";
 const GRAPH_EDGE_COLOR = "#94a3b8";
 const GRAPH_SELECTED_COLOR = "#22c55e";
+const GRAPH_TOOL_BUTTON_CLASS =
+  "w-auto bg-emerald-600 text-white hover:bg-emerald-500 hover:text-white dark:bg-emerald-600 dark:text-white dark:hover:bg-emerald-500";
+const GRAPH_TOP_BUTTON_CLASS =
+  "border-slate-200 bg-white shadow-sm hover:bg-slate-50 aria-expanded:bg-white dark:border-slate-200 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-50";
 const PAPER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const QUESTION_CONTEXT_NODE_TYPES = new Set([
   "experiment",
@@ -73,6 +81,7 @@ const QUESTION_CONTEXT_NODE_TYPES = new Set([
   "research_question",
   "result",
   "method",
+  "keyword",
 ]);
 const QUESTION_CONTEXT_LABELS: Record<string, string> = {
   experiment: "实验",
@@ -82,6 +91,7 @@ const QUESTION_CONTEXT_LABELS: Record<string, string> = {
   research_question: "研究问题",
   result: "结果",
   method: "研究方法",
+  keyword: "关键词",
 };
 
 const TYPE_META: Record<string, { label: string; color: string; radius: number }> = {
@@ -420,6 +430,9 @@ function ForceEntityGraph({
   const [limitOpen, setLimitOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(DEFAULT_GRAPH_DISPLAY_LIMIT);
+  const [displayLimitDraft, setDisplayLimitDraft] = useState(
+    String(DEFAULT_GRAPH_DISPLAY_LIMIT),
+  );
   const [graphFilter, setGraphFilter] = useState<GraphFilter>({ kind: "all" });
   const [expandedNodeIDs, setExpandedNodeIDs] = useState<string[]>([]);
   const [selectedNodeIDs, setSelectedNodeIDs] = useState<string[]>([]);
@@ -483,7 +496,9 @@ function ForceEntityGraph({
   const expandedNodeIDSet = useMemo(() => new Set(expandedNodeIDs), [expandedNodeIDs]);
   const baseFilteredEdges = useMemo(() => {
     if (graphFilter.kind === "edge") {
-      return allGraphEdges.filter((edge) => edge.type === graphFilter.type);
+      return graphFilter.type === ALL_RELATIONSHIPS_FILTER
+        ? allGraphEdges
+        : allGraphEdges.filter((edge) => edge.type === graphFilter.type);
     }
     if (graphFilter.kind === "node") {
       if (!graphFilter.expanded) return [];
@@ -715,6 +730,15 @@ function ForceEntityGraph({
     setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
   }, [clearFilterClickTimer, recordSceneSnapshot]);
 
+  const selectAllRelationships = useCallback(() => {
+    clearFilterClickTimer();
+    recordSceneSnapshot();
+    setGraphFilter({ kind: "edge", type: ALL_RELATIONSHIPS_FILTER });
+    setExpandedNodeIDs([]);
+    setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
+    setDisplayLimitDraft(String(DEFAULT_GRAPH_DISPLAY_LIMIT));
+  }, [clearFilterClickTimer, recordSceneSnapshot]);
+
   const selectNodeFilter = useCallback(
     (type: string) => {
       clearFilterClickTimer();
@@ -760,6 +784,7 @@ function ForceEntityGraph({
       setGraphFilter({ kind: "edge", type });
       setExpandedNodeIDs([]);
       setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
+      setDisplayLimitDraft(String(DEFAULT_GRAPH_DISPLAY_LIMIT));
     },
     [clearFilterClickTimer, recordSceneSnapshot],
   );
@@ -1281,6 +1306,33 @@ function ForceEntityGraph({
   const selectedQuestionPaperID = selectedQuestionContext
     ? paperIDForNode(selectedQuestionContext.paper)
     : "";
+  const selectedSemanticPaperIDs = useMemo(() => {
+    if (
+      selected?.kind !== "edge" ||
+      selected.edge.type !== "SEMANTIC_SIMILAR"
+    ) {
+      return [];
+    }
+    const ids = [selected.source, selected.target]
+      .filter((node): node is EntityGraphNode => node?.type === "paper")
+      .map((node) => paperIDForNode(node))
+      .filter(Boolean);
+    return [...new Set(ids)].slice(0, 2);
+  }, [paperIDForNode, selected]);
+  const selectedPaperID =
+    selected?.kind === "node" && selected.node.type === "paper"
+      ? paperIDForNode(selected.node)
+      : "";
+  const selectedReferenceText =
+    selected?.kind === "node" && selected.node.type === "reference"
+      ? referenceSearchText(selected.node)
+      : "";
+  const hasSelectedTools = Boolean(
+    selectedPaperID ||
+      selectedReferenceText ||
+      (selectedQuestionContext && selectedQuestionPaperID) ||
+      selectedSemanticPaperIDs.length === 2,
+  );
   const togglePinnedSelection = () => {
     if (selectionForActions.length === 0) return;
     recordSceneSnapshot();
@@ -1333,6 +1385,18 @@ function ForceEntityGraph({
     setZoom(1);
     setSearchTerm("");
     resetLayout(true);
+  };
+  const changeZoom = (factor: number) => {
+    const nextZoom = clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM);
+    if (nextZoom === zoom) return;
+    recordSceneSnapshot();
+    const centerWorldX = (VIEW_W / 2 - pan.x) / zoom;
+    const centerWorldY = (VIEW_H / 2 - pan.y) / zoom;
+    setZoom(nextZoom);
+    setPan({
+      x: VIEW_W / 2 - centerWorldX * nextZoom,
+      y: VIEW_H / 2 - centerWorldY * nextZoom,
+    });
   };
   const graphDownloadName = (ext: "svg" | "png") =>
     mode === "overview" ? `overview-knowledge-graph.${ext}` : `paper-knowledge-graph.${ext}`;
@@ -1535,8 +1599,15 @@ function ForceEntityGraph({
     window.location.assign("/pioneer");
   };
 
+  const openSemanticCompare = (paperIDs: string[]) => {
+    if (paperIDs.length !== 2) return;
+    const params = new URLSearchParams();
+    params.set("compare_ids", paperIDs.join(","));
+    window.location.assign(`/reports?${params.toString()}`);
+  };
+
   const filterPanel = (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col bg-white">
       <div className="border-b px-4 py-3">
         <div className="text-base font-semibold">Database information</div>
         <div className="mt-1 text-xs text-muted-foreground">单击筛选，双击节点标签展开或收回论文关系。</div>
@@ -1574,7 +1645,7 @@ function ForceEntityGraph({
                 title="Show overview graph"
                 onClick={selectAllFilter}
               >
-                *
+                Overview
               </button>
               {nodeFilterItems.map((item) => {
                 const active = graphFilter.kind === "node" && graphFilter.type === item.type;
@@ -1613,14 +1684,17 @@ function ForceEntityGraph({
                   type="button"
                   className={cn(
                     "inline-flex h-8 items-center px-4 pl-5 text-sm font-semibold text-slate-950 transition-transform hover:scale-[1.03]",
-                    graphFilter.kind === "all" ? "ring-2 ring-slate-500/40" : "",
+                    graphFilter.kind === "edge" &&
+                      graphFilter.type === ALL_RELATIONSHIPS_FILTER
+                      ? "ring-2 ring-slate-500/40"
+                      : "",
                   )}
                   style={{
                     background: "#e5e7eb",
                     clipPath: "polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%)",
                   }}
-                  title="Show overview graph"
-                  onClick={selectAllFilter}
+                  title="展示全部关系与相关节点"
+                  onClick={selectAllRelationships}
                 >
                   *
                 </button>
@@ -1657,7 +1731,7 @@ function ForceEntityGraph({
 
   return (
     <div className="grid h-full min-h-0 flex-1 grid-cols-[14rem_minmax(0,1fr)] overflow-hidden rounded-lg border bg-background lg:grid-cols-[16rem_minmax(0,1fr)]">
-      <aside className="min-h-0 overflow-hidden border-r bg-background">{filterPanel}</aside>
+      <aside className="min-h-0 overflow-hidden border-r bg-white">{filterPanel}</aside>
       <div className="relative min-h-0 flex-1 overflow-hidden bg-background">
       <div className="absolute left-3 right-3 top-3 z-10 flex flex-wrap items-start justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -1665,27 +1739,48 @@ function ForceEntityGraph({
             <Button
               variant={limitOpen ? "secondary" : "outline"}
               size="sm"
+              className={GRAPH_TOP_BUTTON_CLASS}
               title="设置图谱展示数量上限"
-              onClick={() => setLimitOpen((open) => !open)}
+              onClick={() =>
+                setLimitOpen((open) => {
+                  const next = !open;
+                  if (next) setDisplayLimitDraft(String(displayLimit));
+                  return next;
+                })
+              }
             >
               <Hash className="size-4" />
               数量 {displayLimit}
             </Button>
             {limitOpen && (
-              <div className="absolute left-0 top-[calc(100%+0.5rem)] z-20 flex items-center gap-2 rounded-md border bg-background/95 p-2 shadow-sm backdrop-blur">
+              <div className="absolute left-0 top-[calc(100%+0.5rem)] z-20 flex items-center gap-2 rounded-md border bg-white p-2 shadow-md">
                 <input
                   type="number"
-                  min={1}
-                  value={displayLimit}
-                  onChange={(event) => setDisplayLimit(clamp(Number.parseInt(event.target.value, 10) || 1, 1, 9999))}
-                  className="h-8 w-24 rounded-md border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                  min={0}
+                  value={displayLimitDraft}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    setDisplayLimitDraft(raw);
+                    if (raw.trim() === "") {
+                      setDisplayLimit(0);
+                      return;
+                    }
+                    const parsed = Number.parseInt(raw, 10);
+                    setDisplayLimit(
+                      Number.isFinite(parsed) ? clamp(parsed, 0, 9999) : 0,
+                    );
+                  }}
+                  className="h-8 w-24 rounded-md border bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
                   autoFocus
                 />
                 <Button
                   variant="ghost"
                   size="icon-xs"
                   title="恢复默认数量"
-                  onClick={() => setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT)}
+                  onClick={() => {
+                    setDisplayLimit(DEFAULT_GRAPH_DISPLAY_LIMIT);
+                    setDisplayLimitDraft(String(DEFAULT_GRAPH_DISPLAY_LIMIT));
+                  }}
                 >
                   <RotateCcw className="size-3.5" />
                 </Button>
@@ -1695,6 +1790,7 @@ function ForceEntityGraph({
           <Button
             variant={searchOpen ? "secondary" : "outline"}
             size="sm"
+            className={GRAPH_TOP_BUTTON_CLASS}
             title="搜索当前图谱节点"
             onClick={() => {
               setSearchOpen((open) => {
@@ -1708,7 +1804,7 @@ function ForceEntityGraph({
             搜索
           </Button>
           {searchOpen && (
-            <div className="flex items-center gap-1 rounded-md border bg-background/95 px-2 py-1 shadow-sm backdrop-blur">
+            <div className="flex items-center gap-1 rounded-md border bg-white px-2 py-1 shadow-md">
               <Search className="size-3.5 text-muted-foreground" />
               <input
                 value={searchTerm}
@@ -1725,12 +1821,12 @@ function ForceEntityGraph({
             </div>
           )}
           <div className="relative">
-            <Button variant={keywordsOpen ? "secondary" : "outline"} size="sm" title="查看关键词" onClick={() => setKeywordsOpen((open) => !open)}>
+            <Button variant={keywordsOpen ? "secondary" : "outline"} size="sm" className={GRAPH_TOP_BUTTON_CLASS} title="查看关键词" onClick={() => setKeywordsOpen((open) => !open)}>
               <Tags className="size-4" />
               关键词
             </Button>
             {keywordsOpen && (
-              <div className="absolute left-0 top-[calc(100%+0.5rem)] z-20 w-[min(34rem,calc(100vw-19rem))] min-w-80 overflow-hidden rounded-lg border bg-popover shadow-lg">
+              <div className="absolute left-0 top-[calc(100%+0.5rem)] z-20 w-[min(34rem,calc(100vw-19rem))] min-w-80 overflow-hidden rounded-lg border bg-white shadow-lg">
                 <div className="flex items-center justify-between border-b px-3 py-2">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     关键词汇总
@@ -1751,7 +1847,7 @@ function ForceEntityGraph({
                         {keywordItems.map((item, index) => (
                           <span
                             key={`${item.name}:${index}`}
-                            className="flex min-w-0 items-start justify-between gap-2 rounded-md border bg-muted/35 px-3 py-2 text-xs"
+                            className="flex min-w-0 items-start justify-between gap-2 rounded-md border bg-white px-3 py-2 text-xs shadow-xs"
                             title={item.name}
                           >
                             <span className="min-w-0 whitespace-normal break-words leading-5">
@@ -1774,6 +1870,7 @@ function ForceEntityGraph({
           <Button
             variant={boxSelectMode ? "secondary" : "outline"}
             size="sm"
+            className={GRAPH_TOP_BUTTON_CLASS}
             title="框选节点；按住 Shift 可追加选择"
             aria-pressed={boxSelectMode}
             onClick={() => {
@@ -1788,6 +1885,7 @@ function ForceEntityGraph({
           <Button
             variant="outline"
             size="icon-sm"
+            className={GRAPH_TOP_BUTTON_CLASS}
             title={selectionIsPinned ? "取消固定选中节点" : "固定选中节点"}
             disabled={selectionForActions.length === 0}
             onClick={togglePinnedSelection}
@@ -1801,6 +1899,7 @@ function ForceEntityGraph({
           <Button
             variant="outline"
             size="icon-sm"
+            className={GRAPH_TOP_BUTTON_CLASS}
             title="适应选中区域"
             disabled={selectedNodeIDs.length === 0}
             onClick={fitSelectedNodes}
@@ -1810,6 +1909,27 @@ function ForceEntityGraph({
           <Button
             variant="outline"
             size="icon-sm"
+            className={GRAPH_TOP_BUTTON_CLASS}
+            title="缩小图谱"
+            disabled={zoom <= MIN_ZOOM}
+            onClick={() => changeZoom(0.9)}
+          >
+            <ZoomOut className="size-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            className={GRAPH_TOP_BUTTON_CLASS}
+            title="放大图谱"
+            disabled={zoom >= MAX_ZOOM}
+            onClick={() => changeZoom(1.1)}
+          >
+            <ZoomIn className="size-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            className={GRAPH_TOP_BUTTON_CLASS}
             title="撤销"
             disabled={undoStack.length === 0}
             onClick={undoScene}
@@ -1819,6 +1939,7 @@ function ForceEntityGraph({
           <Button
             variant="outline"
             size="icon-sm"
+            className={GRAPH_TOP_BUTTON_CLASS}
             title="重做"
             disabled={redoStack.length === 0}
             onClick={redoScene}
@@ -1827,17 +1948,17 @@ function ForceEntityGraph({
           </Button>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" title="重置位置并解除全部固定" onClick={resetGraphView}>
+          <Button variant="outline" size="sm" className={GRAPH_TOP_BUTTON_CLASS} title="重置位置并解除全部固定" onClick={resetGraphView}>
             <RotateCcw className="size-4" />
             重置
           </Button>
           <div className="relative">
-            <Button variant={downloadOpen ? "secondary" : "outline"} size="sm" title="下载知识图谱" onClick={() => setDownloadOpen((open) => !open)}>
+            <Button variant={downloadOpen ? "secondary" : "outline"} size="sm" className={GRAPH_TOP_BUTTON_CLASS} title="下载知识图谱" onClick={() => setDownloadOpen((open) => !open)}>
               <Download className="size-4" />
               下载
             </Button>
             {downloadOpen && (
-              <div className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-36 overflow-hidden rounded-md border bg-popover p-1 shadow-lg">
+              <div className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-36 overflow-hidden rounded-md border bg-white p-1 shadow-lg">
                 <button type="button" className="flex w-full items-center rounded px-2.5 py-2 text-left text-sm hover:bg-accent" onClick={downloadSvg}>
                   SVG
                 </button>
@@ -2016,7 +2137,7 @@ function ForceEntityGraph({
                   {selectedNode && (
                     <circle
                       className="graph-selected-node-ring"
-                      r={meta.radius + 6}
+                      r={meta.radius + 3}
                       fill="none"
                       stroke={GRAPH_SELECTED_COLOR}
                       strokeOpacity={0.92}
@@ -2193,13 +2314,14 @@ function ForceEntityGraph({
             </Button>
           </div>
 
-          {(selected.kind === "node" || selectedQuestionContext) && (
-            <div className="flex shrink-0 flex-wrap gap-2 border-b bg-muted/20 px-4 py-3">
+          {(selected.kind === "node" || hasSelectedTools) && (
+            <div className="shrink-0 space-y-3 border-b bg-muted/10 px-4 py-3">
               {selected.kind === "node" && (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
+                  className="w-auto"
                   onClick={togglePinnedSelection}
                 >
                   {selectionIsPinned ? (
@@ -2210,99 +2332,122 @@ function ForceEntityGraph({
                   {selectionIsPinned ? "取消固定" : "固定节点"}
                 </Button>
               )}
-              {selected.kind === "node" &&
-                selected.node.type === "paper" &&
-                (() => {
-                  const paperID = paperIDForNode(selected.node);
-                  if (!paperID) {
-                    return (
-                      <span className="self-center text-xs text-muted-foreground">
-                        缺少论文 ID
-                      </span>
-                    );
-                  }
-                  return (
-                    <>
-                      <Link
-                        href={`/reader?id=${encodeURIComponent(paperID)}`}
-                        className={buttonVariants({
-                          variant: "outline",
-                          size: "sm",
-                        })}
-                        onClick={() => onPaperRead?.(paperID)}
-                      >
-                        <FileText className="size-3.5" />
-                        进入精读
-                      </Link>
-                      <Link
-                        href={`/reports?paper_id=${encodeURIComponent(paperID)}`}
-                        className={buttonVariants({
-                          variant: "default",
-                          size: "sm",
-                        })}
-                        onClick={() => onPaperRead?.(paperID)}
-                      >
-                        <BookOpenText className="size-3.5" />
-                        查看研读报告
-                      </Link>
+
+              {hasSelectedTools && (
+                <div>
+                  <div className="mb-2 text-xs font-semibold text-muted-foreground">
+                    工具
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selected.kind === "node" && selectedPaperID && (
+                      <>
+                        <Link
+                          href={`/reader?id=${encodeURIComponent(selectedPaperID)}`}
+                          className={cn(
+                            buttonVariants({
+                              variant: "default",
+                              size: "sm",
+                            }),
+                            GRAPH_TOOL_BUTTON_CLASS,
+                          )}
+                          onClick={() => onPaperRead?.(selectedPaperID)}
+                        >
+                          <FileText className="size-3.5" />
+                          进入精读
+                        </Link>
+                        <Link
+                          href={`/reports?paper_id=${encodeURIComponent(selectedPaperID)}`}
+                          className={cn(
+                            buttonVariants({
+                              variant: "default",
+                              size: "sm",
+                            }),
+                            GRAPH_TOOL_BUTTON_CLASS,
+                          )}
+                          onClick={() => onPaperRead?.(selectedPaperID)}
+                        >
+                          <BookOpenText className="size-3.5" />
+                          查看研读报告
+                        </Link>
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          className={GRAPH_TOOL_BUTTON_CLASS}
+                          onClick={() => openPaperChat(selectedPaperID)}
+                        >
+                          <MessageCircle className="size-3.5" />
+                          对话问答
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          className={GRAPH_TOOL_BUTTON_CLASS}
+                          onClick={() =>
+                            searchRelatedPapersInPioneer(selected.node)
+                          }
+                        >
+                          <Search className="size-3.5" />
+                          检索相关论文
+                        </Button>
+                      </>
+                    )}
+                    {selected.kind === "node" && selectedReferenceText && (
                       <Button
                         type="button"
-                        variant="secondary"
+                        variant="default"
                         size="sm"
-                        onClick={() => openPaperChat(paperID)}
-                      >
-                        <MessageCircle className="size-3.5" />
-                        对话问答
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
+                        className={GRAPH_TOOL_BUTTON_CLASS}
                         onClick={() =>
-                          searchRelatedPapersInPioneer(selected.node)
+                          void searchReferenceInPioneer(selected.node)
                         }
                       >
                         <Search className="size-3.5" />
-                        检索相关论文
+                        小云雀检索
                       </Button>
-                    </>
-                  );
-                })()}
-              {selected.kind === "node" &&
-                selected.node.type === "reference" &&
-                referenceSearchText(selected.node) && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() =>
-                      void searchReferenceInPioneer(selected.node)
-                    }
-                  >
-                    <Search className="size-3.5" />
-                    小云雀检索
-                  </Button>
-                )}
-              {selected.kind === "edge" &&
-                selectedQuestionContext &&
-                selectedQuestionPaperID && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() =>
-                      openPaperChat(
-                        selectedQuestionPaperID,
-                        `请结合论文《${selectedQuestionContext.paper.label}》的原文，具体解释以下${
-                          QUESTION_CONTEXT_LABELS[
-                            selectedQuestionContext.entity.type
-                          ] || "实体"
-                        }，并说明它在论文中的作用、依据和结论：\n${selectedQuestionContext.entity.label}`,
-                      )
-                    }
-                  >
-                    <MessageCircle className="size-3.5" />
-                    对话问答
-                  </Button>
-                )}
+                    )}
+                    {selected.kind === "edge" &&
+                      selectedQuestionContext &&
+                      selectedQuestionPaperID && (
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          className={GRAPH_TOOL_BUTTON_CLASS}
+                          onClick={() =>
+                            openPaperChat(
+                              selectedQuestionPaperID,
+                              `请结合论文《${selectedQuestionContext.paper.label}》的原文，具体解释以下${
+                                QUESTION_CONTEXT_LABELS[
+                                  selectedQuestionContext.entity.type
+                                ] || "实体"
+                              }，并说明它在论文中的作用、依据和结论：\n${selectedQuestionContext.entity.label}`,
+                            )
+                          }
+                        >
+                          <MessageCircle className="size-3.5" />
+                          对话问答
+                        </Button>
+                      )}
+                    {selected.kind === "edge" &&
+                      selectedSemanticPaperIDs.length === 2 && (
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          className={GRAPH_TOOL_BUTTON_CLASS}
+                          onClick={() =>
+                            openSemanticCompare(selectedSemanticPaperIDs)
+                          }
+                        >
+                          <GitCompareArrows className="size-3.5" />
+                          对比分析
+                        </Button>
+                      )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

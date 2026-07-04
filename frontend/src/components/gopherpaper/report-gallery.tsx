@@ -159,6 +159,7 @@ export function ReportGallery() {
   const [activeCompareReport, setActiveCompareReport] =
     useState<PaperCompareReport | null>(null);
   const routedPaperRef = useRef("");
+  const routedCompareRef = useRef("");
 
   useEffect(() => {
     const paperID = new URLSearchParams(window.location.search)
@@ -176,6 +177,26 @@ export function ReportGallery() {
     setActiveCompareReport(null);
     selectPaper(paperID);
   }, [activePaperID, papers, selectPaper]);
+
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search)
+      .get("compare_ids")
+      ?.trim();
+    if (!raw) return;
+    const requestedIDs = [...new Set(raw.split(",").map((id) => id.trim()))]
+      .filter(Boolean)
+      .slice(0, MAX_COMPARE_PAPERS);
+    if (requestedIDs.length < 2) return;
+    const routeKey = requestedIDs.join(",");
+    if (routedCompareRef.current === routeKey) return;
+    if (!requestedIDs.every((id) => papers.some((paper) => paper.id === id))) {
+      return;
+    }
+    routedCompareRef.current = routeKey;
+    setActiveCompareReport(null);
+    setCompareMode(true);
+    setCompareIDs(requestedIDs);
+  }, [papers]);
 
   const keywords = useMemo(() => {
     const counts = new Map<string, number>();

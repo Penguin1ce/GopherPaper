@@ -72,7 +72,12 @@ export function TaskDetailDrawer({
     setLoading(true);
     try {
       const res = await fetchTaskDetail(token, taskId);
-      setDetail(res);
+      // 后端空切片会序列化成 JSON null,新建/无评论的任务需兜底成空数组,避免下方 .length/.map 崩溃
+      setDetail({
+        ...res,
+        comments: res.comments ?? [],
+        activities: res.activities ?? [],
+      });
     } catch {
       setDetail(null);
     } finally {
@@ -233,7 +238,7 @@ export function TaskDetailDrawer({
                 <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${checkPct}%` }} />
               </div>
               <ul className="space-y-1">
-                {checklist?.items.map((item) => (
+                {checklist?.items?.map((item) => (
                   <li key={item.id} className="group flex items-center gap-2 rounded px-1 py-1 hover:bg-muted/50">
                     <button
                       type="button"
