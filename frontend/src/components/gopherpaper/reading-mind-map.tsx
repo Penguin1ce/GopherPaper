@@ -178,6 +178,13 @@ const LAYOUT_MARGIN_Y = 56;
 const LAYOUT_RANK_GAP = 148;
 const LAYOUT_NODE_GAP = 88;
 const LAYOUT_ROOT_GAP = 112;
+const MANUAL_NODE_PARENT_GAP = 72;
+const MANUAL_NODE_COLUMN_GAP = 56;
+const MANUAL_NODE_ROW_GAP = 28;
+const MANUAL_NODE_COLLISION_PADDING_X = 18;
+const MANUAL_NODE_COLLISION_PADDING_Y = 12;
+const MANUAL_NODE_PLACEMENT_COLUMNS = 8;
+const MANUAL_NODE_PLACEMENT_ROWS = 28;
 const SVG_EXPORT_PADDING = 64;
 const SVG_EDGE_PADDING = 8;
 const SVG_BODY_LINE_HEIGHT = 18;
@@ -812,11 +819,28 @@ function ReadingMindMapCanvas({
             ...cur.edges.filter((item) => item.target !== manualEditingID),
             { id: edgeID, source: parentID, target: manualEditingID, data: { manual: true } },
           ];
+          const currentNode = cur.nodes.find((item) => item.id === manualEditingID);
+          const currentParentID =
+            currentNode?.data.parentId ||
+            cur.edges.find((item) => item.target === manualEditingID)?.source ||
+            "";
+          const nextPosition = currentParentID !== parentID
+            ? manualNodePosition(
+                graphWithImagePreviews({ ...cur, edges }, annotationPreviews),
+                parentID,
+                label,
+                manualEditingID,
+              )
+            : currentNode?.position;
           return {
             ...cur,
             nodes: cur.nodes.map((item) =>
               item.id === manualEditingID
-                ? { ...item, data: { ...item.data, label, parentId: parentID, manual: true } }
+                ? {
+                    ...item,
+                    position: nextPosition || item.position,
+                    data: { ...item.data, label, parentId: parentID, manual: true },
+                  }
                 : item,
             ),
             edges,
@@ -831,19 +855,25 @@ function ReadingMindMapCanvas({
       return;
     }
     const id = `manual:${Date.now().toString(36)}`;
-    const manualNode: MindMapNode = {
-      id,
-      type: "manual",
-      position: manualNodePosition(graph, parentID),
-      data: { label, parentId: parentID, manual: true },
-    };
-    const manualEdge: MindMapEdge = {
-      id: `${parentID}->${id}`,
-      source: parentID,
-      target: id,
-      data: { manual: true },
-    };
-    updateGraph((cur) => ({ ...cur, nodes: [...cur.nodes, manualNode], edges: [...cur.edges, manualEdge] }), true);
+    updateGraph((cur) => {
+      const nextParentID = cur.nodes.some((item) => item.id === parentID)
+        ? parentID
+        : cur.nodes[0]?.id;
+      if (!nextParentID) return cur;
+      const manualNode: MindMapNode = {
+        id,
+        type: "manual",
+        position: manualNodePosition(graphWithImagePreviews(cur, annotationPreviews), nextParentID, label),
+        data: { label, parentId: nextParentID, manual: true },
+      };
+      const manualEdge: MindMapEdge = {
+        id: `${nextParentID}->${id}`,
+        source: nextParentID,
+        target: id,
+        data: { manual: true },
+      };
+      return { ...cur, nodes: [...cur.nodes, manualNode], edges: [...cur.edges, manualEdge] };
+    }, true);
     setSelectedNodeID(id);
     setManualDialogOpen(false);
     setManualEditingID(null);
@@ -1595,14 +1625,89 @@ function flowNodeToGraphPosition(node: MindMapFlowNode) {
   };
 }
 
-function manualNodePosition(graph: MindMapGraph, parentID: string) {
-  const parent = graph.nodes.find((item) => item.id === parentID);
+function manualNodePosition(
+  graph: MindMapGraph,
+  parentID: string,
+  label = "",
+  excludeNodeID = "",
+) {
+  const graphWithEdges = ensureParentEdges(graph);
+  const placementGraph = excludeNodeID
+    ? graphWithoutNodeForPlacement(graphWithEdges, excludeNodeID)
+    : graphWithEdges;
+  const parent = placementGraph.nodes.find((item) => item.id === parentID);
+  const parentPosition = parent?.position || { x: LAYOUT_MARGIN_X, y: LAYOUT_MARGIN_Y };
   const parentSize = parent ? nodeSize(parent.type, parent.data) : nodeSize("manual");
-  const childCount = graph.edges.filter((item) => item.source === parentID).length;
-  return {
-    x: (parent?.position.x || LAYOUT_MARGIN_X) + parentSize.width + LAYOUT_RANK_GAP,
-    y: (parent?.position.y || LAYOUT_MARGIN_Y) + childCount * (nodeSize("manual").height + LAYOUT_NODE_GAP),
+  const manualData: Partial<MindMapNodeData> = {
+    label: label.trim() || "manual",
+    parentId: parentID,
+    manual: true,
   };
+  const manualSize = nodeSize("manual", manualData);
+  const rowStep = manualSize.height + MANUAL_NODE_ROW_GAP;
+  const columnStep = manualSize.width + MANUAL_NODE_COLUMN_GAP;
+  const baseX = parentPosition.x + parentSize.width + MANUAL_NODE_PARENT_GAP;
+  const baseY = parentPosition.y + parentSize.height / 2 - manualSize.height / 2;
+  const occupiedRects = placementGraph.nodes.map((node) =>
+    mindMapNodeRect(node, MANUAL_NODE_COLLISION_PADDING_X, MANUAL_NODE_COLLISION_PADDING_Y),
+  );
+
+  for (let column = 0; column < MANUAL_NODE_PLACEMENT_COLUMNS; column += 1) {
+    const x = baseX + column * columnStep;
+    for (let row = 0; row < MANUAL_NODE_PLACEMENT_ROWS; row += 1) {
+      const y = baseY + placementRowOffset(row, rowStep);
+      if (y < LAYOUT_MARGIN_Y) continue;
+      const candidate = rectFromPosition({ x, y }, manualSize);
+      if (!occupiedRects.some((rect) => rectsOverlap(candidate, rect))) {
+        return { x, y };
+      }
+    }
+  }
+
+  const lowestBottom = occupiedRects.reduce((max, rect) => Math.max(max, rect.bottom), baseY);
+  return {
+    x: baseX,
+    y: lowestBottom + LAYOUT_NODE_GAP,
+  };
+}
+
+function graphWithoutNodeForPlacement(graph: MindMapGraph, nodeID: string): MindMapGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.filter((item) => item.id !== nodeID),
+    edges: graph.edges.filter((item) => item.source !== nodeID && item.target !== nodeID),
+  };
+}
+
+function placementRowOffset(row: number, rowStep: number) {
+  if (row === 0) return 0;
+  const distance = Math.ceil(row / 2) * rowStep;
+  return row % 2 === 1 ? distance : -distance;
+}
+
+function mindMapNodeRect(node: MindMapNode, paddingX = 0, paddingY = 0) {
+  return rectFromPosition(node.position || { x: 0, y: 0 }, nodeSize(node.type, node.data), paddingX, paddingY);
+}
+
+function rectFromPosition(
+  position: { x: number; y: number },
+  size: { width: number; height: number },
+  paddingX = 0,
+  paddingY = 0,
+) {
+  return {
+    left: position.x - paddingX,
+    top: position.y - paddingY,
+    right: position.x + size.width + paddingX,
+    bottom: position.y + size.height + paddingY,
+  };
+}
+
+function rectsOverlap(
+  a: { left: number; top: number; right: number; bottom: number },
+  b: { left: number; top: number; right: number; bottom: number },
+) {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
 function nodeOptionLabel(node: MindMapNode) {
