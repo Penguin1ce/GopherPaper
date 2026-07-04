@@ -314,6 +314,8 @@ func appendReportProgress(ctx context.Context, paperID string, t constant.Report
 		steps[last].Text = appendReportStepText(steps[last].Text, detail)
 	} else if len(steps) < constant.MaxExecutionSteps {
 		steps = append(steps, ReportProgressStep{Phase: phase, Text: trimReportStepText(detail)})
+	} else if compacted, ok := compactReportStepsForAppend(steps); ok {
+		steps = append(compacted, ReportProgressStep{Phase: phase, Text: trimReportStepText(detail)})
 	} else {
 		return saveReportProgress(context.WithoutCancel(ctx), paperID, t, run)
 	}
@@ -374,6 +376,33 @@ func saveReportProgress(ctx context.Context, paperID string, t constant.ReportTy
 
 func appendReportStepText(base, extra string) string {
 	return trimReportStepText(base + extra)
+}
+
+func compactReportStepsForAppend(steps []ReportProgressStep) ([]ReportProgressStep, bool) {
+	if len(steps) == 0 {
+		return steps, false
+	}
+	for i, step := range steps {
+		if isReportDetailPhase(step.Phase) {
+			return removeReportStep(steps, i), true
+		}
+	}
+	return removeReportStep(steps, 0), true
+}
+
+func removeReportStep(steps []ReportProgressStep, i int) []ReportProgressStep {
+	next := make([]ReportProgressStep, 0, len(steps)-1)
+	next = append(next, steps[:i]...)
+	return append(next, steps[i+1:]...)
+}
+
+func isReportDetailPhase(phase string) bool {
+	switch phase {
+	case constant.ReportPhaseThinking, "planning", "replanning", "action", "reasoning":
+		return true
+	default:
+		return false
+	}
 }
 
 func trimReportStepText(s string) string {

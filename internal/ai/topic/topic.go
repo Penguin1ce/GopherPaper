@@ -37,6 +37,9 @@ const nameSystemPrompt = "你是会话主题命名助手。根据下面的对话
 // classifying 让同一会话的归类串行执行,防 refine 期相邻轮的 goroutine 并发扣减/加入致质心错乱。
 var classifying sync.Map // sessionID -> struct{}
 
+// userLocks 串行化同一用户的主题质心读改写,防多个会话同时归入/重排时覆盖 member_count 与 centroid。
+var userLocks sync.Map // studentID -> *sync.Mutex
+
 // Classify 把会话归入最相似主题或新建主题,落 Session.TopicID 与归类向量。
 // 首轮拿到问+答即归类(比裸首句鲁棒);前 TopicRefineMaxTurns 轮内容变厚后允许重排——
 // 可留在原主题(仅刷新该会话向量贡献)、搬到更贴切主题或新建,超过轮数则锁定不再动避免 UI 横跳。
@@ -70,6 +73,17 @@ func Classify(ctx context.Context, studentID, sessionID string) error {
 		return fmt.Errorf("ai/topic: 会话向量化失败: %w", err)
 	}
 	normalize(vec)
+
+	unlock := lockUser(studentID)
+	defer unlock()
+
+	sess, err = chatdao.GetSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if sess.TopicID != "" && turns > constant.TopicRefineMaxTurns {
+		return nil
+	}
 
 	topics, err := topicdao.ListTopics(ctx, studentID, constant.AgentPioneer)
 	if err != nil {
@@ -156,6 +170,13 @@ func Classify(ctx context.Context, studentID, sessionID string) error {
 	// 合并:新主题/更新后扫一遍,把与刚归类主题过近的另一主题并掉,防相近主题碎裂。
 	mergeClose(ctx, studentID, assignedID)
 	return nil
+}
+
+func lockUser(studentID string) func() {
+	v, _ := userLocks.LoadOrStore(studentID, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 // conversationTextFrom 把会话消息拼成带角色前缀的累计文本,按字符上限截断作 embedding 输入。

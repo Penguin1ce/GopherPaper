@@ -99,8 +99,12 @@ func Chat(ctx context.Context, sessionID, query string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	instruction := constant.PioneerRuntimeInstruction()
+	if capInstruction := toolkit.CapabilityInstruction(constant.AgentPioneer); capInstruction != "" {
+		instruction += "\n\n" + capInstruction
+	}
 	ch, err := rt.Run(ctx, userID, sessionID, trpcmodel.NewUserMessage(query),
-		agent.WithInstruction(withUserPreference(ctx, constant.PioneerRuntimeInstruction())),
+		agent.WithInstruction(withUserPreference(ctx, instruction)),
 	)
 	if err != nil {
 		return "", err
@@ -114,6 +118,22 @@ func withUserPreference(ctx context.Context, instruction string) string {
 		return instruction + "\n\n" + pref
 	}
 	return instruction
+}
+
+func DeleteSessionMemory(ctx context.Context, userID, sessionID string) error {
+	if sessStore == nil {
+		return nil
+	}
+	userID = strings.TrimSpace(userID)
+	sessionID = strings.TrimSpace(sessionID)
+	if userID == "" || sessionID == "" {
+		return nil
+	}
+	return sessStore.DeleteSession(ctx, trpcsession.Key{
+		AppName:   appName,
+		UserID:    userID,
+		SessionID: sessionID,
+	})
 }
 
 // runnerForUser 懒建该用户的 runner,模型取自 aimodel,工具与 skill 取 pioneer 分组。

@@ -21,12 +21,19 @@ import {
 } from "@/lib/gopherpaper/source-links";
 import { useApp } from "@/lib/gopherpaper/store";
 import type { Message, PaperFlow, Reference } from "@/lib/gopherpaper/types";
-import { formatTime, intentLabel, messagePlan, paperTitle } from "@/lib/gopherpaper/utils";
+import {
+  formatTime,
+  intentLabel,
+  messagePlan,
+  paperTitle,
+  processPlanSteps,
+} from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty, useGuard } from "./app-ui";
 import { Markdown } from "./markdown";
 import { PaperFlowCard } from "./paper-flow-card";
 import { ProcessTrace } from "./process-trace";
+import { ToolTrace } from "./tool-trace";
 
 function extractSources(meta?: Record<string, unknown>): Reference[] {
   if (!meta) return [];
@@ -167,6 +174,7 @@ const MessageBubble = memo(function MessageBubble({
   const refs = isAssistant ? referencesUsedBySourceTags(message.content, allRefs) : [];
   const figures = isAssistant ? buildFigureMap(allRefs) : undefined;
   const steps = isAssistant ? messagePlan(message) : [];
+  const processSteps = processPlanSteps(steps);
   const sourceHref = (label: string) =>
     sourceTagReaderHref(label, allRefs, fallbackPaperID, allowedPaperIDs);
   return (
@@ -174,9 +182,10 @@ const MessageBubble = memo(function MessageBubble({
       {isAssistant ? (
         // 助教答案直接铺在版面上(Perplexity 式),不套气泡框,留白拆开
         <div className="w-full">
-          {steps.length > 0 && (
-            <ProcessTrace steps={steps} live={!!message.streaming} />
+          {processSteps.length > 0 && (
+            <ProcessTrace steps={processSteps} live={!!message.streaming} />
           )}
+          <ToolTrace steps={steps} live={!!message.streaming} />
           <Markdown figures={figures} sourceHref={sourceHref}>{message.content}</Markdown>
           {(message.flow ?? (message.meta?.flow as PaperFlow | undefined)) && (
             <PaperFlowCard flow={(message.flow ?? message.meta?.flow) as PaperFlow} />
@@ -207,16 +216,6 @@ const MessageBubble = memo(function MessageBubble({
   );
 });
 
-function ToolStatus({ note }: { note: string }) {
-  if (!note) return null;
-  return (
-    <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-sienna/30 bg-sienna/10 px-3 py-1 text-xs font-medium text-sienna">
-      <Loader2 className="size-3 animate-spin" />
-      {note}
-    </div>
-  );
-}
-
 const PROMPT_HINTS = [
   "这篇论文的核心贡献是什么?",
   "用了哪些数据集和评测指标?",
@@ -226,14 +225,12 @@ const PROMPT_HINTS = [
 function PaperChatComposer({
   input,
   sending,
-  toolNote,
   variant = "bottom",
   onInputChange,
   onSubmit,
 }: {
   input: string;
   sending: boolean;
-  toolNote: string;
   variant?: "bottom" | "center";
   onInputChange: (value: string) => void;
   onSubmit: () => void;
@@ -251,7 +248,6 @@ function PaperChatComposer({
       }}
     >
       <div className={cn("mx-auto w-full", variant === "center" ? "max-w-2xl" : "max-w-3xl")}>
-        <ToolStatus note={toolNote} />
         <div
           className={cn(
             "flex gap-2 border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md",
@@ -359,7 +355,6 @@ export function ChatPane() {
               <PaperChatComposer
                 input={input}
                 sending={sending}
-                toolNote={toolNote}
                 variant="center"
                 onInputChange={setInput}
                 onSubmit={submit}
@@ -411,7 +406,6 @@ export function ChatPane() {
         <PaperChatComposer
           input={input}
           sending={sending}
-          toolNote={toolNote}
           onInputChange={setInput}
           onSubmit={submit}
         />

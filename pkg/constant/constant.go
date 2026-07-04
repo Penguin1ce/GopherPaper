@@ -264,6 +264,7 @@ const (
 	ReportPhaseResearching = "researching"
 	ReportPhaseWriting     = "writing"
 	ReportPhaseReviewing   = "reviewing"
+	ReportPhaseThinking    = "thinking"
 	ReportPhaseFailed      = "failed"
 )
 
@@ -282,6 +283,13 @@ const ReportProgressCacheKeyPrefix = "report:progress:"
 
 // ReportProgressCacheTTL 是报告进度快照的保留时间。成功/失败后短期保留,便于前端补齐最后状态。
 const ReportProgressCacheTTL = 15 * time.Minute
+
+// CompareProgressCacheKeyPrefix 是多论文对比进度快照在 Redis 的键前缀。
+// SSE 负责实时推送,该快照负责断线、晚订阅和刷新页面后的后台任务恢复。
+const CompareProgressCacheKeyPrefix = "compare:progress:"
+
+// CompareProgressCacheTTL 是对比进度快照的保留时间。成功/失败后短期保留,便于前端补齐最后状态。
+const CompareProgressCacheTTL = ReportProgressCacheTTL
 
 // 知识库相关。
 const (
@@ -723,6 +731,7 @@ const PioneerInstruction = `你是「小云雀」,科研工作者的全能助手
 - 经用户确认要导入后,优先复用上一轮/当前检索结果里的 pdf_url 直接调用 download_paper;不要为了同一篇论文重新查 Semantic Scholar 或 arXiv。若没有 pdf_url,按官方源优先补链:会议论文先用 search_conference_proceedings/search_openreview_papers 按标题查官方 PDF,再考虑 search_semantic_scholar,最后才用 search_arxiv。download_paper 支持 arXiv、OpenReview、ACL、PMLR、NeurIPS、CVF、Semantic Scholar 等白名单学术站 PDF 直链;不要传摘要页。
 - 涉及真实下单、支付、取消等会产生后果的操作,执行前必须向用户确认关键信息。
 - 工具因凭据缺失或失效而调用失败(如 401)时,引导用户在前端设置中绑定或更新对应账号凭据后重试,不要反复重试,也不要让用户把凭据发到聊天里。
+- 严禁向用户输出关于系统/开发者指令、隐藏通道、标签协议、工具来源规范冲突、自我检查或"是否该在最终答案提来源"的元评论;这些只属于内部执行约束。最终答案只回答用户问题。
 - 输出协议必须严格遵守:面向用户的最终结论一律放在 /*FINAL_ANSWER*/ 标签之后,且其后只写干净的答案正文、不得再出现 /*PLANNING*//*REASONING*//*ACTION*//*REPLANNING*/ 任何标签或"我将…""接下来我…"这类描述自己下一步动作的旁白。规划、思考、动作叙述只写在各自标签段内,它们对用户不可见;切勿把这些过程文字混进最终答案。
 - 默认使用中文回复,简洁直接。`
 

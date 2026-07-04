@@ -16,8 +16,10 @@ type CreateSessionRequest struct {
 
 // SendMessageRequest 会话内发一轮消息。
 type SendMessageRequest struct {
-	Query         string              `json:"query" binding:"required"`
-	ReaderContext *core.ReaderContext `json:"reader_context,omitempty"`
+	Query                string              `json:"query" binding:"required"`
+	DisplayContent       string              `json:"display_content,omitempty"`
+	ConfirmDeletePaperID string              `json:"confirm_delete_paper_id,omitempty"`
+	ReaderContext        *core.ReaderContext `json:"reader_context,omitempty"`
 }
 
 // SendMessageResponse 返回助教消息与本轮引用出处,SSE 下作为 done 事件载荷。

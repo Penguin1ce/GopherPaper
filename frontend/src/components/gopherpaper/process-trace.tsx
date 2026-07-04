@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import {
@@ -62,8 +62,9 @@ function ProcessStep({
   const text = step.text.trim();
   const [open, setOpen] = useState(live);
 
+  // 步骤成为当前步时展开,让位后自动折叠成单行摘要,长流水不再无限撑高。
   useEffect(() => {
-    if (live) setOpen(true);
+    setOpen(live);
   }, [live]);
 
   return (
@@ -115,7 +116,20 @@ export function ProcessTrace({
   live?: boolean;
   phaseLabels?: Record<string, string>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(Boolean(live));
+  const listRef = useRef<HTMLOListElement | null>(null);
+  // 黏底标记:用户没有主动往上翻时,新步骤到来自动滚到底部。
+  const stickRef = useRef(true);
+  useEffect(() => {
+    if (live) setOpen(true);
+  }, [live]);
+
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || !live || !open || !stickRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [steps, live, open]);
+
   if (!steps || steps.length === 0) return null;
   const lastIdx = steps.length - 1;
   const active = steps[lastIdx];
@@ -151,7 +165,7 @@ export function ProcessTrace({
               {activeLabel}
             </span>
           </span>
-          {activeText && (
+          {!open && activeText && (
             <span className="mt-0.5 block truncate text-[11px] font-normal text-muted-foreground">
               {activeText}
             </span>
@@ -163,7 +177,15 @@ export function ProcessTrace({
         />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <ol className="relative border-t px-3 py-2.5">
+        <ol
+          ref={listRef}
+          onScroll={(event) => {
+            const el = event.currentTarget;
+            stickRef.current =
+              el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+          }}
+          className="relative max-h-72 overflow-y-auto overscroll-contain border-t px-3 py-2.5"
+        >
           {steps.map((s, i) => (
             <ProcessStep
               key={i}

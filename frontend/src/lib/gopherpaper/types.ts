@@ -152,10 +152,16 @@ export interface PaperFlowNodeDetail {
   figure?: PaperFlowFigure;
 }
 
+export type PlanStepKind = "tool" | "plan";
+export type PlanStepStatus = "running" | "done" | "failed";
+
 // PlanStep 是先锋者 plan-execute 的一个阶段段落,phase 区分规划/动作/思考。
 export interface PlanStep {
   phase: string;
   text: string;
+  kind?: PlanStepKind;
+  tool?: string;
+  status?: PlanStepStatus;
 }
 
 // ReportRun 是某篇论文某类研读报告一次生成的实时进度:执行计划步 + 是否进行中 + 是否失败。
@@ -167,6 +173,7 @@ export interface ReportRun {
 
 export interface CompareRun extends ReportRun {
   paper_ids: string[];
+  report_id?: number;
 }
 
 export interface ReportRunStatus extends ReportRun {

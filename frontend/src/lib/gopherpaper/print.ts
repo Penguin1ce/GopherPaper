@@ -41,8 +41,41 @@ const PRINT_CSS = `
   .report table { border-collapse: collapse; width: 100%; margin: 0 0 10pt; font-size: 10.5pt; page-break-inside: avoid; }
   .report th, .report td { border: 1px solid #ccc; padding: 4pt 6pt; text-align: left; }
   .report th { background: #f4f4f4; }
-  .report img { max-width: 100%; height: auto; page-break-inside: avoid; }
+  .report img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 8pt auto;
+    object-fit: contain;
+    page-break-inside: avoid;
+  }
+  .report a:has(> img) {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin: 8pt auto;
+    text-decoration: none;
+  }
+  .report a:has(> img) img { margin: 0; }
   .report a { color: #1a1a1a; text-decoration: underline; }
+  .report .gp-source-tag {
+    display: inline-block;
+    height: auto;
+    margin: 0 1.5pt;
+    padding: 0.5pt 4pt 1pt;
+    transform: none;
+    vertical-align: 0.08em;
+    border: 0.6pt solid #d8d3c8;
+    border-radius: 4pt;
+    background: #fbfaf7;
+    color: #6f675c;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    font-size: 8.5pt;
+    font-weight: 500;
+    line-height: 1.35;
+    text-decoration: none;
+    white-space: nowrap;
+  }
   .report h1, .report h2, .report h3, .report h4 { page-break-after: avoid; }
 `;
 
@@ -57,10 +90,30 @@ function escapeHTML(s: string): string {
   );
 }
 
+function reportBodyHTML(body: string | HTMLElement): string {
+  if (typeof body === "string") return body;
+  const clone = body.cloneNode(true) as HTMLElement;
+  const sourceImages = Array.from(body.querySelectorAll<HTMLImageElement>("img"));
+  const clonedImages = Array.from(clone.querySelectorAll<HTMLImageElement>("img"));
+
+  clonedImages.forEach((img, index) => {
+    const source = sourceImages[index];
+    const width = Math.round(source?.getBoundingClientRect().width ?? 0);
+    if (width <= 0) return;
+    img.style.width = `${width}px`;
+    img.style.maxWidth = "100%";
+    img.style.height = "auto";
+    img.removeAttribute("width");
+    img.removeAttribute("height");
+  });
+
+  return clone.innerHTML;
+}
+
 // printReport 把报告标题与正文 HTML 写进隐藏 iframe 并触发打印;打印结束后清理 iframe。
 export function printReport(
   title: string,
-  bodyHTML: string,
+  body: string | HTMLElement,
   options: PrintReportOptions = {},
 ): void {
   if (typeof document === "undefined") return;
@@ -76,6 +129,7 @@ export function printReport(
     return;
   }
 
+  const bodyHTML = reportBodyHTML(body);
   const mirroredStyles = options.mirrorStyles
     ? Array.from(
         document.head.querySelectorAll<HTMLLinkElement | HTMLStyleElement>(

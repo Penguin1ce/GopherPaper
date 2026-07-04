@@ -135,16 +135,19 @@ func compareRunnerForUser(ctx context.Context, userID string) (runner.Runner, er
 				llmagent.New("gopher-compare-researcher", researcherOpts...),
 				constant.ReportPhaseResearching,
 				"逐篇检索：小囊鼠正在核对研究问题、方法、实验、数据集与结论证据。",
+				"研究员正在为每篇论文建立可比较的证据清单。",
 			),
 			newReportStageAgent(
 				llmagent.New("gopher-compare-writer", writerOpts...),
 				constant.ReportPhaseWriting,
 				"对齐写作：正在建立跨论文比较矩阵并判断实验可比性。",
+				"撰写员正在把逐篇证据归并成对比维度和结论边界。",
 			),
 			newReportStageAgent(
 				llmagent.New("gopher-compare-reviewer", reviewerOpts...),
 				constant.ReportPhaseReviewing,
 				"交叉审校：正在核对证据归属、缺失项与结论边界。",
+				"评审员正在检查论文归属、指标可比性和遗漏风险。",
 			),
 		}))
 		cached.rt = runner.NewRunner(

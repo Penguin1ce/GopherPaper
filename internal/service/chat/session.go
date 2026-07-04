@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"GopherPaper/internal/ai"
 	"GopherPaper/internal/ai/topic"
 	chatdao "GopherPaper/internal/dao/chat"
 	topicdao "GopherPaper/internal/dao/topic"
@@ -102,13 +103,19 @@ func BackfillPioneerTopics(ctx context.Context, studentID string) (int, error) {
 
 // DeleteSession 删除会话，仅限本人。会话元数据软删，历史事件从 Session 清理。
 func DeleteSession(ctx context.Context, studentID, sessionID string) error {
-	if _, err := ownedSession(ctx, studentID, sessionID); err != nil {
+	sess, err := ownedSession(ctx, studentID, sessionID)
+	if err != nil {
 		return err
 	}
 	// 先清历史事件再软删元数据:历史删除失败即整体失败,会话仍在可重试,
 	// 避免出现「元数据已删但 Session 事件永久残留」的孤儿。Delete 对空会话幂等,重试可自愈。
 	if err := history.Delete(ctx, studentID, sessionID); err != nil {
 		return err
+	}
+	if sess.AgentType == constant.AgentPioneer {
+		if err := ai.DeletePioneerSessionMemory(ctx, studentID, sessionID); err != nil {
+			return err
+		}
 	}
 	if err := chatdao.DeleteSession(ctx, sessionID); err != nil {
 		return err

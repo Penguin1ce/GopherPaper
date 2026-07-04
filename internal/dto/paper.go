@@ -48,6 +48,15 @@ type PaperCompareRequest struct {
 	PaperIDs []string `json:"paper_ids" binding:"required,min=2"`
 }
 
+// CompareRun 是多论文对比当前生成态的可恢复快照。
+type CompareRun struct {
+	PaperIDs []string             `json:"paper_ids"`
+	Steps    []ReportProgressStep `json:"steps"`
+	Live     bool                 `json:"live"`
+	Failed   bool                 `json:"failed"`
+	ReportID uint64               `json:"report_id,omitempty"`
+}
+
 // TranslateResponse 是选段翻译响应。
 type TranslateResponse struct {
 	Translation string `json:"translation"`

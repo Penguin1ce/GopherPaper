@@ -54,6 +54,37 @@ func WithPaperDeleteConfirmation(ctx context.Context, token string) context.Cont
 	return context.WithValue(ctx, paperDeleteConfirmCtxKey{}, strings.TrimSpace(token))
 }
 
+// ConfirmPaperDelete 供后端确认弹窗回调走确定性删除,避免把内部工具指令写入聊天历史或工作记忆。
+func ConfirmPaperDelete(ctx context.Context, paperID string) (string, string, error) {
+	if deletePaperForTool == nil {
+		return "", "", fmt.Errorf("delete_my_paper: 论文删除能力未就绪")
+	}
+	owner := tenant.MustStudentID(ctx)
+	if owner == "" {
+		return "", "", fmt.Errorf("delete_my_paper: 缺少当前用户身份")
+	}
+	paperID = strings.TrimSpace(paperID)
+	if paperID == "" {
+		return "", "", fmt.Errorf("delete_my_paper: paper_id 不能为空")
+	}
+
+	p, err := getPaperForTool(ctx, paperID)
+	if err != nil {
+		return "", "", fmt.Errorf("delete_my_paper: 查询论文失败: %w", err)
+	}
+	if p.OwnerID != owner {
+		return "", "", fmt.Errorf("delete_my_paper: %w", errs.ErrPaperForbidden)
+	}
+	title := displayPaperTitle(p)
+	if !consumePaperDeleteConfirmation(paperDeleteConfirmationFrom(ctx), owner, paperID) {
+		return "", "", fmt.Errorf("delete_my_paper: 删除确认已失效,请重新发起删除")
+	}
+	if err := deletePaperForTool(ctx, owner, paperID); err != nil {
+		return "", "", fmt.Errorf("delete_my_paper: 删除论文失败: %w", err)
+	}
+	return title, fmt.Sprintf("已删除《%s》及其绑定会话、报告、图片、向量索引和知识图谱节点。", title), nil
+}
+
 func deleteMyPaper(ctx context.Context, in deletePaperInput) (deletePaperOutput, error) {
 	if deletePaperForTool == nil {
 		return deletePaperOutput{}, fmt.Errorf("delete_my_paper: 论文删除能力未就绪")

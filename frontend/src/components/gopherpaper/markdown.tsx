@@ -342,7 +342,7 @@ export function Markdown({
         const resolved = sourceLink?.(title);
         const href = resolved?.href ?? sourceHref?.(title);
         const className =
-          "mx-0.5 inline-flex h-5 translate-y-[-1px] items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-1.5 align-middle text-[11px] font-medium leading-none text-primary";
+          "gp-source-tag mx-0.5 inline-flex h-5 translate-y-[-1px] items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-1.5 align-middle text-[11px] font-medium leading-none text-primary";
         if (href) {
           return (
             <a

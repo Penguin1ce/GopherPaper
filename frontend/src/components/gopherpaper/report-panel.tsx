@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils";
 import { Empty, SkeletonLines } from "./app-ui";
 import { Markdown } from "./markdown";
 import { PaperFlowCard } from "./paper-flow-card";
-import { ProcessTrace } from "./process-trace";
+import { ReportRelayTrace } from "./report-relay-trace";
 
 // buildFigureMap 从报告 meta.sources 收图块出处,拼成 markdown 解析 figure://文件名 用的 名->docID 表。
 function buildFigureMap(meta?: Record<string, unknown>): Record<string, string> {
@@ -230,6 +230,8 @@ export function ReportPanel() {
       const paper = activePaperID;
       const reportRun = reportProgress[paper]?.[type];
       autoLoadedRef.current = paper;
+      setFlowOpen(false);
+      setFlowError(false);
       setActive(type);
       if (reports[type] || fetching[type] || (awaiting[type] && !reportRun?.failed)) {
         return;
@@ -285,11 +287,14 @@ export function ReportPanel() {
     if (!activePaperID) return;
     if (flowLoading) return;
     if (flow) {
-      setFlowOpen((open) => !open);
+      setActive(null);
+      setFlowError(false);
+      setFlowOpen(true);
       return;
     }
     const paper = activePaperID;
     if (paperFlowReady[paper]) {
+      setActive(null);
       setFlowOpen(true);
       setFlowError(false);
       setFlowLoading(true);
@@ -312,6 +317,7 @@ export function ReportPanel() {
     }
 
     let receivedFlow = false;
+    setActive(null);
     setFlow(null);
     setFlowOpen(true);
     setFlowError(false);
@@ -360,7 +366,7 @@ export function ReportPanel() {
     if (!articleRef.current || !active || !report) return;
     const label = REPORTS.find((r) => r.type === active)?.label || "研读报告";
     const title = `${paperTitle(activePaper!)} · ${label}`;
-    printReport(title, articleRef.current.innerHTML);
+    printReport(title, articleRef.current);
   };
 
   if (!activePaper) {
@@ -373,8 +379,8 @@ export function ReportPanel() {
 
   return (
     <ScrollArea className="h-full">
-      <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 py-5 lg:px-7">
-        <header className="shrink-0 border-b pb-4">
+      <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 pb-5 lg:px-7">
+        <header className="sticky top-0 z-20 shrink-0 border-b bg-background/95 pb-4 pt-5 backdrop-blur supports-[backdrop-filter]:bg-background/85">
           <div className="flex items-start gap-4">
             <div className="min-w-0">
               <h2 className="font-serif text-lg font-semibold tracking-tight">
@@ -396,7 +402,7 @@ export function ReportPanel() {
             aria-label="报告类型"
           >
             {REPORTS.map((r) => {
-              const isActive = active === r.type;
+              const isActive = active === r.type && !flowOpen;
               const reportRun = reportProgress[activePaperID]?.[r.type];
               const ready = Boolean(
                 reports[r.type] ||
@@ -446,8 +452,8 @@ export function ReportPanel() {
                     ? "生成中"
                     : flowReady
                       ? flowOpen
-                        ? "收起思路图"
-                        : "展开思路图"
+                        ? "正在查看"
+                        : "点击查看"
                       : "点击生成"
               }
               onClick={generateFlow}
@@ -455,9 +461,9 @@ export function ReportPanel() {
           </div>
         </header>
 
-        {(flowLoading || (flow && flowOpen) || flowError) && (
-          <section className="mt-4">
-            {flow && flowOpen ? (
+        <section className="min-h-0 flex-1 py-5">
+          {flowOpen ? (
+            flow ? (
               <div className="animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
                 <PaperFlowCard flow={flow} className="mt-0" />
               </div>
@@ -470,18 +476,18 @@ export function ReportPanel() {
               <p className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 思路图生成失败，请重试。
               </p>
-            ) : null}
-          </section>
-        )}
-
-        <section className="min-h-0 flex-1 py-5">
-          {activeLoading ? (
+            ) : (
+              <div className="mx-auto flex min-h-[18rem] max-w-xl items-center justify-center">
+                <Empty title="暂无思路图" text="点击上方思路图标签生成。" compact />
+              </div>
+            )
+          ) : activeLoading ? (
             <div className="mx-auto max-w-2xl space-y-4">
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
                 正在生成{activeReportLabel}，约需一分钟…
               </p>
-              <ProcessTrace
+              <ReportRelayTrace
                 steps={
                   run && run.steps.length > 0
                     ? run.steps
@@ -495,7 +501,7 @@ export function ReportPanel() {
             <div className="mx-auto max-w-2xl space-y-3">
               <p className="text-sm text-destructive">报告生成失败，请重试。</p>
               {run.steps.length > 0 && (
-                <ProcessTrace steps={run.steps} live={false} />
+                <ReportRelayTrace steps={run.steps} live={false} failed />
               )}
             </div>
           ) : report ? (

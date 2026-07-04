@@ -16,9 +16,14 @@ import {
 import Link from "next/link";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -50,14 +55,28 @@ import type {
   Topic,
 } from "@/lib/gopherpaper/types";
 import { toolStatusText } from "@/lib/gopherpaper/tool-status";
-import { formatTime, messagePlan, metaPlanSteps, sessionTitle } from "@/lib/gopherpaper/utils";
+import {
+  ensurePlanningStep,
+  finishToolCallStep,
+  formatTime,
+  messagePlan,
+  metaPlanSteps,
+  processPlanSteps,
+  pushReasoningStep,
+  pushToolCallStep,
+  sessionTitle,
+} from "@/lib/gopherpaper/utils";
 import { cn } from "@/lib/utils";
 import { Empty } from "@/components/gopherpaper/app-ui";
 import { AgentIntro } from "@/components/gopherpaper/agent-intro";
 import { Markdown } from "@/components/gopherpaper/markdown";
 import { PaperFlowCard } from "@/components/gopherpaper/paper-flow-card";
 import { ProcessTrace } from "@/components/gopherpaper/process-trace";
-import { WorkspaceFrame, WorkspacePanel } from "@/components/gopherpaper/workspace-frame";
+import { ToolTrace } from "@/components/gopherpaper/tool-trace";
+import {
+  WorkspaceFrame,
+  WorkspacePanel,
+} from "@/components/gopherpaper/workspace-frame";
 
 const AUTH_KEY = "gopherpaper.auth";
 const LUCKIN_KEY = "gopherpaper.luckin";
@@ -66,6 +85,7 @@ const LUCKIN_HEADER = "X-Luckin-Token";
 const DELETE_CONFIRM_HEADER = "X-GopherPaper-Delete-Confirm";
 const AGENT_TYPE = "pioneer";
 const REFERENCE_DRAFT_KEY = "gopherpaper.pioneer.referenceDraft";
+const BACKGROUND_PENDING_WINDOW_MS = 30 * 60 * 1000;
 
 function loadAuth(): { token: string; user: AuthUser | null } {
   if (typeof window === "undefined") return { token: "", user: null };
@@ -145,35 +165,34 @@ function LuckinCard({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         className={cn(
-          "flex w-full items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2.5 text-left shadow-sm transition-colors hover:bg-accent/45 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-          open && "bg-accent/45"
+          "flex h-8 w-full items-center justify-between gap-2 rounded-md px-1.5 text-left text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+          open && "bg-accent/45",
         )}
+        title={cred ? "管理瑞幸 MCP token" : "绑定瑞幸 MCP token"}
       >
-        <span className="flex min-w-0 items-center gap-2.5">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground">
-            <Coffee className="size-4" />
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-accent/70 text-accent-foreground">
+            <Coffee className="size-3" />
           </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-medium">瑞幸点单</span>
-            <span className="block truncate text-xs text-muted-foreground">
-              {cred ? "点击管理 MCP token" : "点击绑定 MCP token"}
-            </span>
+          <span className="min-w-0 truncate text-xs font-medium text-foreground">
+            瑞幸点单
           </span>
         </span>
-        {cred ? (
-          <Badge variant={expired ? "destructive" : "secondary"} className="shrink-0 rounded-full font-normal">
-            {expired ? "已过期" : `剩 ${daysLeft} 天`}
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="shrink-0 rounded-full font-normal">
-            未绑定
-          </Badge>
-        )}
+        <span
+          className={cn(
+            "shrink-0 text-[11px] tabular-nums",
+            expired ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          {cred ? (expired ? "已过期" : `${daysLeft}天`) : "未绑定"}
+        </span>
       </PopoverTrigger>
       <PopoverContent className="space-y-3" align="start" side="top">
         <div className="space-y-1">
           <PopoverTitle>瑞幸 MCP token</PopoverTitle>
-          <PopoverDescription>token 只存在当前浏览器，发消息时透传给工具。</PopoverDescription>
+          <PopoverDescription>
+            token 只存在当前浏览器，发消息时透传给工具。
+          </PopoverDescription>
         </div>
         <div className="space-y-2">
           <Label htmlFor="luckin-token">MCP token</Label>
@@ -209,23 +228,32 @@ const Bubble = memo(function Bubble({ message }: { message: Message }) {
   // flow 来源:本轮流式挂在 message.flow;刷新/重开会话则从持久化的 meta.flow 还原。
   const flow = message.flow ?? (message.meta?.flow as PaperFlow | undefined);
   const steps = isAssistant ? messagePlan(message) : [];
+  const processSteps = processPlanSteps(steps);
   return (
-    <article className={cn("flex flex-col gap-1.5", isAssistant ? "items-start" : "items-end")}>
+    <article
+      className={cn(
+        "flex flex-col gap-1.5",
+        isAssistant ? "items-start" : "items-end",
+      )}
+    >
       {isAssistant ? (
         <div className="w-full">
-          {steps.length > 0 && (
+          {processSteps.length > 0 && (
             <ProcessTrace
-              steps={steps}
+              steps={processSteps}
               live={!!message.streaming}
               phaseLabels={PIONEER_TRACE_LABELS}
             />
           )}
+          <ToolTrace steps={steps} live={!!message.streaming} />
           <Markdown richLinks>{message.content}</Markdown>
           {flow && <PaperFlowCard flow={flow} />}
         </div>
       ) : (
         <div className="max-w-[80%] rounded-2xl bg-primary px-4 py-2.5 text-primary-foreground">
-          <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
+          <p className="whitespace-pre-wrap text-sm leading-6">
+            {message.content}
+          </p>
         </div>
       )}
       <div className="flex gap-2 px-0.5 text-xs text-muted-foreground">
@@ -236,16 +264,6 @@ const Bubble = memo(function Bubble({ message }: { message: Message }) {
   );
 });
 
-function ToolStatus({ note }: { note: string }) {
-  if (!note) return null;
-  return (
-    <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-sienna/30 bg-sienna/10 px-3 py-1 text-xs font-medium text-sienna">
-      <Loader2 className="size-3 animate-spin" />
-      {note}
-    </div>
-  );
-}
-
 const PROMPT_HINTS = [
   "帮我找几篇关于注意力机制的经典论文",
   "我在重庆大学虎溪校区，帮我点一杯冰美式",
@@ -255,14 +273,12 @@ const PROMPT_HINTS = [
 function PioneerComposer({
   input,
   sending,
-  toolNote,
   variant = "bottom",
   onInputChange,
   onSubmit,
 }: {
   input: string;
   sending: boolean;
-  toolNote: string;
   variant?: "bottom" | "center";
   onInputChange: (value: string) => void;
   onSubmit: () => void;
@@ -279,8 +295,12 @@ function PioneerComposer({
         onSubmit();
       }}
     >
-      <div className={cn("mx-auto w-full", variant === "center" ? "max-w-2xl" : "max-w-3xl")}>
-        <ToolStatus note={toolNote} />
+      <div
+        className={cn(
+          "mx-auto w-full",
+          variant === "center" ? "max-w-2xl" : "max-w-3xl",
+        )}
+      >
         <div
           className={cn(
             "flex gap-2 border border-border bg-card py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/50 focus-within:shadow-md",
@@ -334,11 +354,28 @@ interface SessionGroup {
   latest: number;
 }
 
+function SessionBusyIndicator() {
+  return (
+    <span
+      className="relative inline-grid size-4 shrink-0 place-items-center self-center"
+      title="正在生成"
+      aria-label="正在生成"
+    >
+      <span className="absolute size-3 rounded-full bg-sienna/20 motion-safe:animate-ping" />
+      <span className="relative size-2 rounded-full bg-sienna shadow-[0_0_0_3px_color-mix(in_oklch,var(--sienna)_14%,transparent)]" />
+    </span>
+  );
+}
+
 // groupSessionsByTopic 把会话按主题分组:组内会话按时间倒序,组间按各组最新会话时间倒序。
 // 未归类(无 topic_id 或主题已被合并删除)的会话归「未归类」组,一同参与时间排序。
-function groupSessionsByTopic(sessions: Session[], topics: Topic[]): SessionGroup[] {
+function groupSessionsByTopic(
+  sessions: Session[],
+  topics: Topic[],
+): SessionGroup[] {
   const topicName = new Map(topics.map((t) => [t.id, t.name]));
-  const ms = (s: Session) => new Date(s.updated_at || s.created_at).getTime() || 0;
+  const ms = (s: Session) =>
+    new Date(s.updated_at || s.created_at).getTime() || 0;
   const buckets = new Map<string, Session[]>();
   for (const s of sessions) {
     const tid = s.topic_id && topicName.has(s.topic_id) ? s.topic_id : "";
@@ -360,6 +397,19 @@ function groupSessionsByTopic(sessions: Session[], topics: Topic[]): SessionGrou
   return groups;
 }
 
+function awaitingAssistant(messages: Message[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    const role = message?.role;
+    if (role === "system") continue;
+    if (role !== "user") return false;
+    const createdAt = Date.parse(String(message.created_at || ""));
+    if (Number.isNaN(createdAt)) return true;
+    return Date.now() - createdAt < BACKGROUND_PENDING_WINDOW_MS;
+  }
+  return false;
+}
+
 export default function PioneerPage() {
   const [token, setToken] = useState<string | null>(null);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -371,15 +421,46 @@ export default function PioneerPage() {
   const [search, setSearch] = useState("");
   const [activeID, setActiveID] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
-  const [sending, setSending] = useState(false);
+  const [sendingIDs, setSendingIDs] = useState<Set<string>>(() => new Set());
+  const [backgroundIDs, setBackgroundIDs] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [toolNote, setToolNote] = useState("");
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [luckin, setLuckin] = useState<LuckinCred | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<PaperDeleteConfirmPayload | null>(null);
+  const [deleteConfirm, setDeleteConfirm] =
+    useState<PaperDeleteConfirmPayload | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
+  const activeIDRef = useRef("");
+  const sendingRef = useRef<Set<string>>(new Set());
+  const backgroundRef = useRef<Set<string>>(new Set());
+  const ignoredPendingRef = useRef<Set<string>>(new Set());
   const incomingReferenceDraftRef = useRef(false);
+  const activeSending = activeID ? sendingIDs.has(activeID) : false;
+  const activeBackground = activeID ? backgroundIDs.has(activeID) : false;
+  const activeBusy = activeSending || activeBackground;
+
+  const setSessionSending = useCallback((id: string, busy: boolean) => {
+    if (!id) return;
+    const next = new Set(sendingRef.current);
+    if (busy) next.add(id);
+    else next.delete(id);
+    sendingRef.current = next;
+    setSendingIDs(next);
+  }, []);
+
+  const setSessionBackground = useCallback((id: string, busy: boolean) => {
+    if (!id) return;
+    const has = backgroundRef.current.has(id);
+    if (has === busy) return;
+    const next = new Set(backgroundRef.current);
+    if (busy) next.add(id);
+    else next.delete(id);
+    backgroundRef.current = next;
+    setBackgroundIDs(next);
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -400,6 +481,7 @@ export default function PioneerPage() {
     if (!draft) return;
     incomingReferenceDraftRef.current = true;
     setActiveID("");
+    activeIDRef.current = "";
     setMessages([]);
     setError("");
     setInput(draft);
@@ -410,24 +492,43 @@ export default function PioneerPage() {
   }, [token]);
 
   useEffect(() => {
+    activeIDRef.current = activeID;
+  }, [activeID]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" });
-  }, [messages, sending, toolNote]);
+  }, [messages, activeBusy, toolNote]);
+
+  useEffect(() => {
+    if (!activeID) return;
+    if (ignoredPendingRef.current.has(activeID)) {
+      setSessionBackground(activeID, false);
+      return;
+    }
+    setSessionBackground(activeID, awaitingAssistant(messages));
+  }, [activeID, messages, setSessionBackground]);
 
   const fail = useCallback((e: unknown) => {
     if (!mountedRef.current) return;
     setError(e instanceof Error ? e.message : "请求失败，请稍后再试");
   }, []);
 
-  const openSession = useCallback(async (id: string) => {
-    setActiveID(id);
-    setError("");
-    try {
-      const msgs = await api.listMessages(id);
-      if (mountedRef.current) setMessages(Array.isArray(msgs) ? msgs : []);
-    } catch (e) {
-      fail(e);
-    }
-  }, [fail]);
+  const openSession = useCallback(
+    async (id: string) => {
+      setActiveID(id);
+      activeIDRef.current = id;
+      setError("");
+      try {
+        const msgs = await api.listMessages(id);
+        if (mountedRef.current && activeIDRef.current === id) {
+          setMessages(Array.isArray(msgs) ? msgs : []);
+        }
+      } catch (e) {
+        fail(e);
+      }
+    },
+    [fail],
+  );
 
   // reloadSidebar 重拉会话与主题,供归类异步完成后刷新分组。openFirst 仅首次进页时定位首个会话。
   const reloadSidebar = useCallback(
@@ -443,7 +544,9 @@ export default function PioneerPage() {
           setTopicsSupported(false);
         }
         if (!mountedRef.current) return;
-        const mine = (Array.isArray(list) ? list : []).filter((s) => s.agent_type === AGENT_TYPE);
+        const mine = (Array.isArray(list) ? list : []).filter(
+          (s) => s.agent_type === AGENT_TYPE,
+        );
         setSessions(mine);
         setTopics(Array.isArray(topicList) ? topicList : []);
         if (openFirst && mine.length > 0) void openSession(mine[0].id);
@@ -459,8 +562,44 @@ export default function PioneerPage() {
     void reloadSidebar(!incomingReferenceDraftRef.current);
   }, [token, reloadSidebar]);
 
+  useEffect(() => {
+    if (!activeID || !activeBackground || activeSending) return;
+    let cancelled = false;
+    const refreshPendingMessage = async () => {
+      try {
+        const msgs = await api.listMessages(activeID);
+        if (
+          cancelled ||
+          !mountedRef.current ||
+          activeIDRef.current !== activeID
+        )
+          return;
+        const next = Array.isArray(msgs) ? msgs : [];
+        setMessages(next);
+        const waiting = awaitingAssistant(next);
+        setSessionBackground(activeID, waiting);
+        if (!waiting) void reloadSidebar();
+      } catch {
+        // 轮询只是兜底提示,失败不打扰当前会话。
+      }
+    };
+    void refreshPendingMessage();
+    const timer = window.setInterval(refreshPendingMessage, 3500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    activeID,
+    activeBackground,
+    activeSending,
+    reloadSidebar,
+    setSessionBackground,
+  ]);
+
   const startNewSession = () => {
     setActiveID("");
+    activeIDRef.current = "";
     setMessages([]);
     setError("");
     setInput("");
@@ -472,7 +611,9 @@ export default function PioneerPage() {
     setBackfilling(true);
     try {
       await api.backfillTopics();
-      [2000, 5000, 9000].forEach((d) => window.setTimeout(() => void reloadSidebar(), d));
+      [2000, 5000, 9000].forEach((d) =>
+        window.setTimeout(() => void reloadSidebar(), d),
+      );
     } catch (e) {
       fail(e);
     } finally {
@@ -493,11 +634,13 @@ export default function PioneerPage() {
   };
 
   const removeSession = async (id: string) => {
+    if (sendingRef.current.has(id)) return;
     try {
       await api.deleteSession(id);
       setSessions((list) => list.filter((s) => s.id !== id));
       if (activeID === id) {
         setActiveID("");
+        activeIDRef.current = "";
         setMessages([]);
       }
     } catch (e) {
@@ -507,28 +650,37 @@ export default function PioneerPage() {
 
   const sendMessageText = async (
     query: string,
-    options: { displayText?: string; extraHeaders?: Record<string, string> } = {},
+    options: {
+      displayText?: string;
+      extraHeaders?: Record<string, string>;
+      confirmDeletePaperID?: string;
+    } = {},
   ) => {
     const q = query.trim();
-    if (!q || sending) return;
+    if (!q) return;
     const visibleText = options.displayText?.trim() || q;
     setError("");
     let sid = activeID;
     if (!sid) {
-      const title = visibleText.length > 24 ? `${visibleText.slice(0, 24)}…` : visibleText;
+      const title =
+        visibleText.length > 24 ? `${visibleText.slice(0, 24)}…` : visibleText;
       try {
         const s = await api.createSession(title, undefined, AGENT_TYPE);
         if (!mountedRef.current) return;
         setSessions((list) => [s, ...list]);
         setActiveID(s.id);
+        activeIDRef.current = s.id;
         sid = s.id;
       } catch (e) {
         fail(e);
         return;
       }
     }
+    if (sendingRef.current.has(sid)) return;
     setInput("");
-    setSending(true);
+    ignoredPendingRef.current.delete(sid);
+    setSessionBackground(sid, false);
+    setSessionSending(sid, true);
     setMessages((list) => [
       ...list,
       {
@@ -544,6 +696,7 @@ export default function PioneerPage() {
     let shown = false;
     const patch = (fn: (m: Message) => Message) => {
       if (!mountedRef.current) return;
+      if (activeIDRef.current !== sid) return;
       if (!shown) {
         shown = true;
         setMessages((list) => [
@@ -559,7 +712,9 @@ export default function PioneerPage() {
         ]);
         return;
       }
-      setMessages((list) => list.map((m) => (m.id === placeholderID ? fn(m) : m)));
+      setMessages((list) =>
+        list.map((m) => (m.id === placeholderID ? fn(m) : m)),
+      );
     };
 
     let pending = "";
@@ -569,7 +724,7 @@ export default function PioneerPage() {
       if (!pending) return;
       const chunk = pending;
       pending = "";
-      setToolNote("");
+      if (activeIDRef.current === sid) setToolNote("");
       patch((m) => ({ ...m, content: m.content + chunk }));
     };
     const planSteps: PlanStep[] = [];
@@ -589,83 +744,121 @@ export default function PioneerPage() {
     };
 
     try {
-      const headers: Record<string, string> = { ...(options.extraHeaders ?? {}) };
+      const headers: Record<string, string> = {
+        ...(options.extraHeaders ?? {}),
+      };
       if (luckin?.token) headers[LUCKIN_HEADER] = luckin.token;
-      const data = await api.sendMessage(sid, q, headers, {
-        onDelta: (text, reset) => {
-          if (!mountedRef.current) return;
-          // 新一轮答案开始:丢弃上一轮已流式正文,气泡只展示末轮。
-          if (reset) {
-            pending = "";
-            patch((m) => ({ ...m, content: "" }));
-          }
-          pending += text;
-          if (rafID === null) rafID = requestAnimationFrame(flush);
+      const data = await api.sendMessage(
+        sid,
+        q,
+        headers,
+        {
+          onDelta: (text, reset) => {
+            if (!mountedRef.current) return;
+            // 新一轮答案开始:丢弃上一轮已流式正文,气泡只展示末轮。
+            if (reset) {
+              pending = "";
+              patch((m) => ({ ...m, content: "" }));
+            }
+            pending += text;
+            if (rafID === null) rafID = requestAnimationFrame(flush);
+          },
+          onPlan: (phase, content) => {
+            if (!mountedRef.current) return;
+            phase = phase.trim();
+            if (!phase) return;
+            const last = planSteps[planSteps.length - 1];
+            if (last && last.phase === phase && last.kind !== "tool")
+              last.text += content;
+            else planSteps.push({ phase, text: content });
+            if (planRafID === null)
+              planRafID = requestAnimationFrame(flushPlan);
+          },
+          onTool: (tool, done) => {
+            if (mountedRef.current) {
+              if (activeIDRef.current === sid)
+                setToolNote(toolStatusText(tool, done));
+              if (!done) {
+                ensurePlanningStep(planSteps, "拆解任务，选择可用工具");
+                pushToolCallStep(planSteps, tool);
+              } else {
+                finishToolCallStep(planSteps, tool);
+                pushReasoningStep(planSteps, "读取工具结果，整理下一步");
+              }
+              if (planRafID === null)
+                planRafID = requestAnimationFrame(flushPlan);
+            }
+          },
+          onConfirmDeletePaper: (payload) => {
+            if (mountedRef.current && activeIDRef.current === sid)
+              setDeleteConfirm(payload);
+          },
+          onPaperFlow: (payload) => {
+            if (!mountedRef.current) return;
+            capturedFlow = payload;
+            patch((m) => ({ ...m, flow: payload }));
+          },
+          onPaperFlowNode: (payload) => {
+            if (!mountedRef.current || !capturedFlow) return;
+            const figures = payload.figure
+              ? [...(capturedFlow.figures ?? []), payload.figure]
+              : capturedFlow.figures;
+            capturedFlow = {
+              ...capturedFlow,
+              nodes: capturedFlow.nodes.map((n) =>
+                n.id === payload.node_id ? { ...n, detail: payload.detail } : n,
+              ),
+              figures,
+            };
+            const flow = capturedFlow;
+            patch((m) => ({ ...m, flow }));
+          },
         },
-        onPlan: (phase, content) => {
-          if (!mountedRef.current) return;
-          phase = phase.trim();
-          if (!phase) return;
-          const last = planSteps[planSteps.length - 1];
-          if (last && last.phase === phase) last.text += content;
-          else planSteps.push({ phase, text: content });
-          if (planRafID === null) planRafID = requestAnimationFrame(flushPlan);
+        undefined,
+        undefined,
+        {
+          displayContent: visibleText,
+          confirmDeletePaperID: options.confirmDeletePaperID,
         },
-        onTool: (tool, done) => {
-          if (mountedRef.current) {
-            setToolNote(toolStatusText(tool, done));
-          }
-        },
-        onConfirmDeletePaper: (payload) => {
-          if (mountedRef.current) setDeleteConfirm(payload);
-        },
-        onPaperFlow: (payload) => {
-          if (!mountedRef.current) return;
-          capturedFlow = payload;
-          patch((m) => ({ ...m, flow: payload }));
-        },
-        onPaperFlowNode: (payload) => {
-          if (!mountedRef.current || !capturedFlow) return;
-          const figures = payload.figure
-            ? [...(capturedFlow.figures ?? []), payload.figure]
-            : capturedFlow.figures;
-          capturedFlow = {
-            ...capturedFlow,
-            nodes: capturedFlow.nodes.map((n) =>
-              n.id === payload.node_id ? { ...n, detail: payload.detail } : n,
-            ),
-            figures,
-          };
-          const flow = capturedFlow;
-          patch((m) => ({ ...m, flow }));
-        },
-      });
+      );
       cancelFlush();
       if (!mountedRef.current) return;
       const finalMeta = data.meta ?? data.message.meta;
       const persistedPlan = metaPlanSteps(finalMeta);
-      const finalPlan = persistedPlan.length > 0 ? persistedPlan : planSteps;
-      setMessages((list) => [
-        ...list.filter((m) => m.id !== placeholderID),
-        {
-          ...data.message,
-          id: data.message.id || `local-a-${Date.now()}`,
-          meta: finalMeta,
-          plan: finalPlan.length > 0 ? finalPlan : undefined,
-          flow: capturedFlow,
-        },
-      ]);
+      const finalPlan = planSteps.length > 0 ? planSteps : persistedPlan;
+      if (activeIDRef.current === sid) {
+        setMessages((list) => [
+          ...list.filter((m) => m.id !== placeholderID),
+          {
+            ...data.message,
+            id: data.message.id || `local-a-${Date.now()}`,
+            meta: finalMeta,
+            plan: finalPlan.length > 0 ? finalPlan : undefined,
+            flow: capturedFlow,
+          },
+        ]);
+      }
+      setSessionBackground(sid, false);
       // 主题归类在后端异步进行,延时重拉一次让侧边栏分组刷新。
       window.setTimeout(() => void reloadSidebar(), 1800);
     } catch (e) {
       cancelFlush();
       if (!mountedRef.current) return;
-      setMessages((list) => list.filter((m) => m.id !== placeholderID));
+      if (activeIDRef.current === sid) {
+        setMessages((list) => list.filter((m) => m.id !== placeholderID));
+      }
+      if (e instanceof api.ApiError && e.message.includes("连接中断")) {
+        setSessionBackground(sid, true);
+        if (activeIDRef.current === sid) setError("");
+        return;
+      }
+      ignoredPendingRef.current.add(sid);
+      setSessionBackground(sid, false);
       fail(e);
     } finally {
       if (!mountedRef.current) return;
-      setSending(false);
-      setToolNote("");
+      setSessionSending(sid, false);
+      if (activeIDRef.current === sid) setToolNote("");
     }
   };
 
@@ -674,19 +867,16 @@ export default function PioneerPage() {
   };
 
   const confirmPaperDelete = async () => {
-    if (!deleteConfirm || sending) return;
-    const title = deleteConfirm.title || deleteConfirm.file_name || deleteConfirm.paper_id;
-    const query = [
-      "用户已在前端删除确认弹窗中确认删除论文。",
-      `paper_id: ${deleteConfirm.paper_id}`,
-      `title: ${title}`,
-      "请立即调用 delete_my_paper 完成删除。",
-    ].join("\n");
+    if (!deleteConfirm || activeBusy) return;
+    const title =
+      deleteConfirm.title || deleteConfirm.file_name || deleteConfirm.paper_id;
+    const query = `已确认删除《${title}》`;
     const token = deleteConfirm.confirmation_token;
+    const paperID = deleteConfirm.paper_id;
     setDeleteConfirm(null);
     await sendMessageText(query, {
-      displayText: `已确认删除《${title}》`,
       extraHeaders: { [DELETE_CONFIRM_HEADER]: token },
+      confirmDeletePaperID: paperID,
     });
   };
 
@@ -712,10 +902,14 @@ export default function PioneerPage() {
         <Card className="max-w-md text-center">
           <CardHeader>
             <CardTitle>小云雀</CardTitle>
-            <CardDescription>还没有登录态，请先回 GopherPaper 主页登录。</CardDescription>
+            <CardDescription>
+              还没有登录态，请先回 GopherPaper 主页登录。
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <Link className={buttonVariants()} href="/">返回主页</Link>
+            <Link className={buttonVariants()} href="/">
+              返回主页
+            </Link>
           </CardContent>
         </Card>
       </main>
@@ -735,7 +929,7 @@ export default function PioneerPage() {
       return next;
     });
   const displayName = authUser?.name || authUser?.student_id || "同学";
-  const emptyConversation = messages.length === 0 && !sending;
+  const emptyConversation = messages.length === 0 && !activeBusy;
 
   return (
     <WorkspaceFrame>
@@ -751,7 +945,11 @@ export default function PioneerPage() {
             </Link>
             <AgentIntro kind="pioneer" />
           </div>
-          <Button type="button" className="w-full justify-start" onClick={startNewSession}>
+          <Button
+            type="button"
+            className="w-full justify-start"
+            onClick={startNewSession}
+          >
             <Plus className="size-4" />
             新会话
           </Button>
@@ -800,9 +998,17 @@ export default function PioneerPage() {
           <ScrollArea className="absolute! inset-0 px-3">
             <div className="py-3">
               {sessions.length === 0 ? (
-                <Empty title="还没有会话" text="发送一条消息后会自动创建云雀会话。" compact />
+                <Empty
+                  title="还没有会话"
+                  text="发送一条消息后会自动创建云雀会话。"
+                  compact
+                />
               ) : sessionGroups.length === 0 ? (
-                <Empty title="没有匹配的会话" text={`没有标题包含「${search.trim()}」的会话。`} compact />
+                <Empty
+                  title="没有匹配的会话"
+                  text={`没有标题包含「${search.trim()}」的会话。`}
+                  compact
+                />
               ) : (
                 sessionGroups.map((g) => {
                   const isOpen = !collapsed.has(g.key);
@@ -829,37 +1035,47 @@ export default function PioneerPage() {
                       </button>
                       {isOpen && (
                         <div className="mt-0.5 space-y-1">
-                          {g.sessions.map((s) => (
-                            <div
-                              key={s.id}
-                              className={cn(
-                                "group relative flex items-center gap-1 rounded-md p-1",
-                                s.id === activeID
-                                  ? "bg-card shadow-sm before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sienna"
-                                  : "hover:bg-accent/60",
-                              )}
-                            >
-                              <button
-                                type="button"
-                                className="min-w-0 flex-1 rounded-md px-2 py-2 text-left"
-                                onClick={() => void openSession(s.id)}
+                          {g.sessions.map((s) => {
+                            const rowSending =
+                              sendingIDs.has(s.id) || backgroundIDs.has(s.id);
+                            return (
+                              <div
+                                key={s.id}
+                                className={cn(
+                                  "group relative flex items-center gap-1 rounded-md p-1",
+                                  s.id === activeID
+                                    ? "bg-card shadow-sm before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sienna"
+                                    : "hover:bg-accent/60",
+                                )}
                               >
-                                <div className="truncate text-sm font-medium">{sessionTitle(s)}</div>
-                                <div className="mt-0.5 text-xs text-muted-foreground">
-                                  {formatTime(s.updated_at || s.created_at)}
-                                </div>
-                              </button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                className="opacity-0 group-hover:opacity-100"
-                                onClick={() => void removeSession(s.id)}
-                              >
-                                <Trash2 className="size-3.5" />
-                              </Button>
-                            </div>
-                          ))}
+                                <button
+                                  type="button"
+                                  className="min-w-0 flex-1 rounded-md px-2 py-2 text-left"
+                                  onClick={() => void openSession(s.id)}
+                                >
+                                  <div className="flex min-w-0 items-center gap-1.5">
+                                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                                      {sessionTitle(s)}
+                                    </span>
+                                    {rowSending && <SessionBusyIndicator />}
+                                  </div>
+                                  <div className="mt-0.5 text-xs text-muted-foreground">
+                                    {formatTime(s.updated_at || s.created_at)}
+                                  </div>
+                                </button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  className="opacity-0 group-hover:opacity-100"
+                                  disabled={rowSending}
+                                  onClick={() => void removeSession(s.id)}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </section>
@@ -869,7 +1085,7 @@ export default function PioneerPage() {
             </div>
           </ScrollArea>
         </div>
-        <div className="border-t p-3">
+        <div className="border-t px-3 py-1.5">
           <LuckinCard cred={luckin} onChange={setLuckin} />
         </div>
       </WorkspacePanel>
@@ -892,8 +1108,7 @@ export default function PioneerPage() {
                   </div>
                   <PioneerComposer
                     input={input}
-                    sending={sending}
-                    toolNote={toolNote}
+                    sending={activeBusy}
                     variant="center"
                     onInputChange={setInput}
                     onSubmit={send}
@@ -918,16 +1133,18 @@ export default function PioneerPage() {
                   {messages.map((m) => (
                     <Bubble key={String(m.id)} message={m} />
                   ))}
-                  {sending && !messages.some((m) => m.streaming) && (
+                  {activeBusy && !messages.some((m) => m.streaming) && (
                     <article className="flex items-start">
                       <div className="inline-flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground">
                         <Loader2 className="size-4 animate-spin" />
-                        小云雀正在处理工具与上下文…
+                        {activeBackground && !activeSending
+                          ? "小云雀正在后台继续生成，切到其他会话也不会打断…"
+                          : "小云雀正在处理工具与上下文…"}
                       </div>
                     </article>
                   )}
                 </>
-                )}
+              )}
               <div ref={bottomRef} />
             </div>
           </ScrollArea>
@@ -942,8 +1159,7 @@ export default function PioneerPage() {
         {!emptyConversation && (
           <PioneerComposer
             input={input}
-            sending={sending}
-            toolNote={toolNote}
+            sending={activeBusy}
             onInputChange={setInput}
             onSubmit={send}
           />
@@ -975,7 +1191,9 @@ export default function PioneerPage() {
                 </span>
                 <div className="min-w-0 space-y-1">
                   <div className="line-clamp-2 min-w-0 break-words text-sm font-medium [overflow-wrap:anywhere]">
-                    {deleteConfirm.title || deleteConfirm.file_name || deleteConfirm.paper_id}
+                    {deleteConfirm.title ||
+                      deleteConfirm.file_name ||
+                      deleteConfirm.paper_id}
                   </div>
                   {deleteConfirm.file_name && (
                     <div
@@ -1009,10 +1227,10 @@ export default function PioneerPage() {
                 type="button"
                 variant="destructive"
                 className="w-full sm:w-auto"
-                disabled={sending || !deleteConfirm.confirmation_token}
+                disabled={activeBusy || !deleteConfirm.confirmation_token}
                 onClick={() => void confirmPaperDelete()}
               >
-                {sending ? (
+                {activeBusy ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <Trash2 className="size-4" />
