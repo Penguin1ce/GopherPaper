@@ -4,11 +4,17 @@
 // 同源、dev/prod 通用,无需后端 CORS。
 
 import type { NextRequest } from "next/server";
+import { Agent } from "undici";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const API_ORIGIN = process.env.GOPHERPAPER_API_ORIGIN ?? "http://127.0.0.1:8080";
+const UPSTREAM_TIMEOUT_MS = 30 * 60 * 1000;
+const upstreamDispatcher = new Agent({
+  headersTimeout: UPSTREAM_TIMEOUT_MS,
+  bodyTimeout: UPSTREAM_TIMEOUT_MS,
+});
 
 // 透传响应时需剥离的逐跳/会破坏流的头,其余(含 content-type/cache-control)原样带回。
 const STRIP_RESPONSE_HEADERS = new Set([
@@ -25,10 +31,11 @@ async function proxy(req: NextRequest, path: string[]): Promise<Response> {
   headers.delete("host");
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
-  const init: RequestInit & { duplex?: "half" } = {
+  const init: RequestInit & { duplex?: "half"; dispatcher?: Agent } = {
     method: req.method,
     headers,
     redirect: "manual",
+    dispatcher: upstreamDispatcher,
     // 流式转发请求体(上传大文件也不整块进内存);带 body 必须声明 duplex
     body: hasBody ? req.body : undefined,
     duplex: hasBody ? "half" : undefined,
