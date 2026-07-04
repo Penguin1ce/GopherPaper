@@ -297,10 +297,16 @@ export function CompareGenerationPanel({
   papers,
   paperIDs,
   progress,
+  startedAt,
+  failed,
+  onMinimize,
 }: {
   papers: Paper[];
   paperIDs: string[];
   progress: CompareRun | null;
+  startedAt?: number;
+  failed?: boolean;
+  onMinimize?: () => void;
 }) {
   const names = paperIDs.map((id) => {
     const paper = papers.find((item) => item.id === id);
@@ -310,50 +316,78 @@ export function CompareGenerationPanel({
     progress && progress.steps.length > 0
       ? progress.steps
       : COMPARE_LOADING_STEPS;
+  const isFailed = failed || progress?.failed;
+  const live = !isFailed && (progress?.live ?? true);
 
   return (
     <ScrollArea className="h-full">
       <div className="mx-auto flex min-h-full w-full max-w-5xl items-center p-5 md:p-8">
-        <section className="w-full overflow-hidden rounded-lg border bg-card shadow-sm">
-          <header className="flex items-start gap-3 border-b px-5 py-4">
-            <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-              <BookOpenCheck className="size-4.5" />
-            </span>
-            <div className="min-w-0">
-              <h2 className="font-serif text-lg font-semibold">
-                小囊鼠正在生成对比报告
-              </h2>
-              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                正在逐篇读取正文证据，而不是只比较元数据。所需时间会随论文数量增加。
-              </p>
+        <section className="w-full">
+          <header className="mb-5 flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <span
+                className={cn(
+                  "mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg",
+                  isFailed
+                    ? "bg-destructive/10 text-destructive"
+                    : "bg-sienna/10 text-sienna",
+                )}
+              >
+                {isFailed ? (
+                  <AlertTriangle className="size-4.5" />
+                ) : (
+                  <BookOpenCheck className="size-4.5" />
+                )}
+              </span>
+              <div className="min-w-0">
+                <h2 className="font-serif text-xl font-semibold tracking-tight">
+                  {isFailed ? "对比报告生成失败" : "对比报告正在后台生成"}
+                </h2>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  {isFailed
+                    ? "可以重新选择论文生成，或先查看其他论文报告。"
+                    : "可以继续切换论文、查看历史报告，完成后会自动打开新报告。"}
+                </p>
+                {startedAt ? (
+                  <p className="mt-2 font-mono text-[11px] text-muted-foreground/70">
+                    {formatTime(new Date(startedAt).toISOString())}
+                  </p>
+                ) : null}
+              </div>
             </div>
+            {onMinimize && !isFailed ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="self-start"
+                onClick={onMinimize}
+              >
+                <ChevronDown className="size-3.5" />
+                收起到后台
+              </Button>
+            ) : null}
           </header>
 
-          <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_18rem]">
-            <div className="space-y-5 p-5">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">逐篇检索</span>
-                <span aria-hidden>→</span>
-                <span className="font-medium text-foreground">对齐写作</span>
-                <span aria-hidden>→</span>
-                <span className="font-medium text-foreground">交叉审校</span>
-              </div>
-
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-10">
+            <div className="min-w-0">
               <ProcessTrace
                 steps={steps}
-                live={progress?.live ?? true}
+                live={live}
                 phaseLabels={COMPARE_PHASE_LABELS}
               />
 
-              <p className="border-t pt-4 text-xs leading-relaxed text-muted-foreground">
+              <p className="text-xs leading-relaxed text-muted-foreground/80">
                 对比过程仅检索所选论文，并保留研究问题、方法、实验与结论的原文页码。
               </p>
             </div>
 
-            <aside className="border-t bg-muted/20 p-5 lg:border-l lg:border-t-0">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-sm font-medium">对比论文</span>
-                <span className="font-mono text-xs text-muted-foreground">
+            <aside className="min-w-0 lg:border-l lg:pl-6">
+              <div className="flex items-baseline justify-between pb-2.5">
+                <h3 className="text-xs font-semibold text-muted-foreground">
+                  对比论文
+                </h3>
+                <span className="font-mono text-[11px] text-muted-foreground/60">
                   {names.length}
                 </span>
               </div>
@@ -368,7 +402,7 @@ export function CompareGenerationPanel({
                     >
                       {paperLetter(index)}
                     </span>
-                    <span className="min-w-0 text-xs leading-relaxed text-muted-foreground">
+                    <span className="line-clamp-2 min-w-0 text-xs leading-5 text-muted-foreground">
                       {name}
                     </span>
                   </li>
@@ -381,7 +415,6 @@ export function CompareGenerationPanel({
     </ScrollArea>
   );
 }
-
 export function CompareReportContent({
   report,
   papers,

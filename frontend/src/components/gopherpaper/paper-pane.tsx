@@ -412,7 +412,7 @@ function SessionPopover({
       <PopoverTrigger
         aria-label={`论文会话：${paperSessions.length} 个`}
         title="论文会话"
-        className="inline-flex h-7 min-w-8 shrink-0 items-center justify-center gap-1 rounded-md px-1.5 text-[11px] font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none data-[popup-open]:bg-background/80 data-[popup-open]:text-foreground"
+        className="inline-flex h-6 min-w-7 shrink-0 items-center justify-center gap-1 rounded-md px-1.5 text-[11px] font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none data-[popup-open]:bg-background/80 data-[popup-open]:text-foreground"
         onClick={(e) => e.stopPropagation()}
       >
         <MessagesSquare className="size-3.5" />
@@ -506,7 +506,7 @@ function PaperActionsMenu({
               type="button"
               variant="ghost"
               size="icon-sm"
-              className="size-7 text-muted-foreground opacity-70 transition-opacity hover:bg-background/80 hover:opacity-100 aria-expanded:bg-background/80 aria-expanded:opacity-100 sm:opacity-0 sm:group-focus-within/paper:opacity-100 sm:group-hover/paper:opacity-100"
+              className="size-6 text-muted-foreground opacity-70 transition-opacity hover:bg-background/80 hover:opacity-100 aria-expanded:bg-background/80 aria-expanded:opacity-100 sm:opacity-0 sm:group-focus-within/paper:opacity-100 sm:group-hover/paper:opacity-100"
               aria-label={`论文操作：${paperTitle(paper)}`}
               title="论文操作"
             >
@@ -664,7 +664,7 @@ export function PaperPane({
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-foreground/55" />
             <Input
               value={query}
-              className="h-7 rounded-md border-border/70 bg-card pl-7 pr-7 text-sm shadow-none hover:border-border focus-visible:border-primary/60 focus-visible:ring-1 focus-visible:ring-primary/20"
+              className="h-7 rounded-md border-transparent bg-muted/60 pl-7 pr-7 text-sm shadow-none transition-colors hover:bg-muted/80 focus-visible:border-ring/40 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/25 dark:bg-muted/40 dark:hover:bg-muted/50 dark:focus-visible:bg-background"
               placeholder=""
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -749,10 +749,10 @@ export function PaperPane({
                   tabIndex={0}
                   aria-label={`选择论文：${paperTitle(p)}`}
                   className={cn(
-                    "group/paper relative min-h-[3.625rem] w-full cursor-pointer select-none rounded-lg px-2.5 py-2 transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+                    "group/paper w-full cursor-pointer select-none rounded-md px-2.5 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                     active
-                      ? "bg-accent/75 ring-1 ring-primary/25 before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary dark:bg-accent/35 dark:ring-primary/30"
-                      : "hover:bg-muted/55",
+                      ? "bg-accent dark:bg-accent/50"
+                      : "hover:bg-accent/50",
                   )}
                   onClick={() => selectPaper(p.id)}
                   onKeyDown={(e) => {
@@ -762,18 +762,16 @@ export function PaperPane({
                     }
                   }}
                 >
-                  <div className="relative z-10 min-w-0">
-                    <strong className="pointer-events-none line-clamp-2 min-w-0 text-sm font-medium leading-snug">
+                  <div className="min-w-0">
+                    <span className="pointer-events-none line-clamp-2 min-w-0 text-sm leading-snug">
                       {paperTitle(p)}
-                    </strong>
+                    </span>
                   </div>
-                  <div className="relative z-10 mt-1.5 flex min-w-0 items-center gap-2">
-                    <div className="pointer-events-none flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
-                      <InlinePaperStatus status={p.status} />
-                      <span
-                        className="h-3 w-px shrink-0 bg-border/70"
-                        aria-hidden
-                      />
+                  <div className="mt-0.5 flex min-w-0 items-center gap-2">
+                    <div className="pointer-events-none flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-muted-foreground/80">
+                      {p.status !== "ready" && (
+                        <InlinePaperStatus status={p.status} />
+                      )}
                       <span
                         className={cn(
                           "line-clamp-1 min-w-0",

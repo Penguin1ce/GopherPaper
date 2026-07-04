@@ -129,6 +129,7 @@ interface AppContextValue {
   // 后端确认报告进入生成队列后调用,把该报告的进度置为「进行中」,后续阶段由 SSE 累积。
   beginReport: (paperID: string, type: ReportType) => void;
   beginCompare: (paperIDs: string[]) => void;
+  restoreCompare: (run: CompareRun) => void;
   markPaperFlowReady: (paperID: string, ready?: boolean) => void;
 }
 
@@ -458,6 +459,16 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       ],
       live: true,
       failed: false,
+    });
+  }, []);
+
+  const restoreCompare = useCallback((run: CompareRun) => {
+    setCompareProgress({
+      paper_ids: [...run.paper_ids],
+      steps: [...(run.steps ?? [])],
+      live: run.live,
+      failed: run.failed,
+      report_id: run.report_id,
     });
   }, []);
 
@@ -1277,6 +1288,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       sendMessage,
       beginReport,
       beginCompare,
+      restoreCompare,
       markPaperFlowReady,
     }),
     [
@@ -1325,6 +1337,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       sendMessage,
       beginReport,
       beginCompare,
+      restoreCompare,
       markPaperFlowReady,
     ],
   );

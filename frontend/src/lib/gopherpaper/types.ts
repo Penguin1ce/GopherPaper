@@ -173,6 +173,7 @@ export interface ReportRun {
 
 export interface CompareRun extends ReportRun {
   paper_ids: string[];
+  report_id?: number;
 }
 
 export interface ReportRunStatus extends ReportRun {
