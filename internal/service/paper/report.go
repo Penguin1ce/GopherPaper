@@ -83,7 +83,7 @@ func ReportOverview(ctx context.Context, ownerID, paperID string) ([]constant.Re
 	if err != nil {
 		return nil, nil, false, err
 	}
-	flowReady, err := paperdao.HasPaperFlow(ctx, ownerID, paperID)
+	flowReady, err := paperdao.HasReport(ctx, paperID, constant.ReportFlow)
 	if err != nil {
 		return nil, nil, false, err
 	}

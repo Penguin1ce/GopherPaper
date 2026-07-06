@@ -43,7 +43,6 @@ import { UsersPanel } from "./users-panel";
 import { LogsPanel } from "./logs-panel";
 import { ArchitectureGraph } from "./architecture-graph";
 import { ExportBar } from "./export-bar";
-import { TagsPanel } from "./tags-panel";
 import { SessionsPanel } from "./sessions-panel";
 import { AdminsPanel } from "./admins-panel";
 import { BatchPanel } from "./batch-panel";
@@ -608,7 +607,6 @@ export default function AdminPage() {
             <SessionsPanel token={token} />
             <BatchPanel token={token} onChanged={() => void refreshAll()} />
             <StoragePanel token={token} />
-            <TagsPanel token={token} />
             <AdminsPanel token={token} />
             <ExportBar token={token} />
             <OverviewGrid overview={overview} onAction={onOverviewAction} />

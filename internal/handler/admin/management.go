@@ -12,64 +12,6 @@ import (
 	"GopherPaper/internal/zlog"
 )
 
-// ── 标签管理 ─────────────────────────────────────────────────
-
-func ListTags(c *gin.Context) {
-	res, err := adminservice.ListTags(c.Request.Context())
-	if err != nil {
-		zlog.Error("admin list tags failed", "err", err)
-		response.Fail(c, http.StatusInternalServerError, "query failed")
-		return
-	}
-	response.OK(c, res)
-}
-
-func RenameTag(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		response.Fail(c, http.StatusBadRequest, "非法标签 ID")
-		return
-	}
-	var req dto.AdminTagRenameRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Fail(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
-		return
-	}
-	if err := adminservice.RenameTag(c.Request.Context(), id, req.Name); err != nil {
-		response.Fail(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.OKMsg(c, "标签已重命名", nil)
-}
-
-func DeleteTag(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		response.Fail(c, http.StatusBadRequest, "非法标签 ID")
-		return
-	}
-	if err := adminservice.DeleteTag(c.Request.Context(), id); err != nil {
-		zlog.Error("admin delete tag failed", "err", err)
-		response.Fail(c, http.StatusInternalServerError, "delete failed")
-		return
-	}
-	response.OKMsg(c, "标签已删除", nil)
-}
-
-func MergeTags(c *gin.Context) {
-	source, err1 := strconv.ParseUint(c.Query("source"), 10, 64)
-	target, err2 := strconv.ParseUint(c.Query("target"), 10, 64)
-	if err1 != nil || err2 != nil {
-		response.Fail(c, http.StatusBadRequest, "非法标签 ID")
-		return
-	}
-	if err := adminservice.MergeTags(c.Request.Context(), source, target); err != nil {
-		response.Fail(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.OKMsg(c, "标签已合并", nil)
-}
-
 // ── 会话管理 ─────────────────────────────────────────────────
 
 func ListSessions(c *gin.Context) {

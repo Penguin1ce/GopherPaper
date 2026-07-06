@@ -43,14 +43,15 @@ func PaperFlow(ctx context.Context, ownerID, paperID string) (*core.Reply, error
 	if !ok {
 		return nil, fmt.Errorf("service/paper: 思路图生成结果缺少 flow")
 	}
-	flowJSON, err := normalizeFlowJSON(flow)
+	blob, err := json.Marshal(flow)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("service/paper: 序列化思路图失败: %w", err)
 	}
-	if err := paperdao.SavePaperFlow(ctx, &model.PaperFlowCache{
-		PaperID:  paperID,
-		OwnerID:  ownerID,
-		FlowJSON: model.JSONMap(flowJSON),
+	// 思路图复用 paper_reports 表落库,作 report_type=flow 的一行,JSON 存 Content(longtext)。
+	if err := paperdao.SaveReport(ctx, &model.PaperReport{
+		PaperID:    paperID,
+		ReportType: constant.ReportFlow,
+		Content:    string(blob),
 	}); err != nil {
 		return nil, err
 	}
@@ -62,25 +63,20 @@ func GetPaperFlow(ctx context.Context, ownerID, paperID string) (*core.Reply, er
 	if _, err := owned(ctx, ownerID, paperID); err != nil {
 		return nil, err
 	}
-	cached, err := paperdao.GetPaperFlow(ctx, ownerID, paperID)
+	cached, err := paperdao.GetReport(ctx, paperID, constant.ReportFlow)
 	if err != nil {
+		if errors.Is(err, errs.ErrReportNotFound) {
+			return nil, errs.ErrPaperFlowNotFound
+		}
 		return nil, err
+	}
+	var flow map[string]any
+	if err := json.Unmarshal([]byte(cached.Content), &flow); err != nil {
+		return nil, fmt.Errorf("service/paper: 解析思路图缓存失败: %w", err)
 	}
 	return &core.Reply{Meta: map[string]any{
 		"format": "paper_flow",
-		"flow":   map[string]any(cached.FlowJSON),
+		"flow":   flow,
 		"cached": true,
 	}}, nil
-}
-
-func normalizeFlowJSON(flow any) (map[string]any, error) {
-	blob, err := json.Marshal(flow)
-	if err != nil {
-		return nil, fmt.Errorf("service/paper: 序列化思路图失败: %w", err)
-	}
-	var out map[string]any
-	if err := json.Unmarshal(blob, &out); err != nil {
-		return nil, fmt.Errorf("service/paper: 解析思路图失败: %w", err)
-	}
-	return out, nil
 }

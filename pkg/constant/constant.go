@@ -66,6 +66,11 @@ const (
 	ReportResult     ReportType = "result"     // 实验结果总结
 	ReportInnovation ReportType = "innovation" // 创新点与不足分析
 	ReportRelated    ReportType = "related"    // 相关研究/参考文献链接
+
+	// ReportFlow 是思路图产物,复用 paper_reports 表落库(Content 存 flow JSON)。
+	// 非用户可触发的研读报告,不进 Valid 与 AllReportTypes,也被 ListReportTypes 过滤,
+	// 就绪态经独立的 flow_ready 透出,不混入报告就绪列表。
+	ReportFlow ReportType = "flow"
 )
 
 // Valid 判断报告类型是否合法。

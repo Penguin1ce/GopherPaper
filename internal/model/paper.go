@@ -234,18 +234,6 @@ type PaperReport struct {
 
 func (PaperReport) TableName() string { return "paper_reports" }
 
-// PaperFlowCache 保存小云雀同款论文思路图 JSON,供小囊鼠报告页复用与重开回填。
-type PaperFlowCache struct {
-	ID        uint64    `gorm:"primaryKey" json:"id"`
-	PaperID   string    `gorm:"size:36;not null;uniqueIndex:idx_owner_paper_flow" json:"paper_id"`
-	OwnerID   string    `gorm:"size:64;not null;index;uniqueIndex:idx_owner_paper_flow" json:"owner_id"`
-	FlowJSON  JSONMap   `gorm:"column:flow_json;type:longtext" json:"flow_json"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-func (PaperFlowCache) TableName() string { return "paper_flows" }
-
 // PaperCompareReport 保存多论文对比分析报告, 供研究报告页历史记录复用。
 type PaperCompareReport struct {
 	ID        uint64      `gorm:"primaryKey" json:"id"`
@@ -366,20 +354,3 @@ type MindMap struct {
 }
 
 func (MindMap) TableName() string { return "mind_maps" }
-
-// Tag 是用户自定义的论文标签。
-type Tag struct {
-	ID      uint64 `gorm:"primaryKey" json:"id"`
-	OwnerID string `gorm:"size:64;not null;index:idx_owner_name" json:"owner_id"`
-	Name    string `gorm:"size:64;not null;index:idx_owner_name" json:"name"`
-}
-
-func (Tag) TableName() string { return "tags" }
-
-// PaperTag 是论文与标签的多对多关联。
-type PaperTag struct {
-	PaperID string `gorm:"size:36;primaryKey" json:"paper_id"`
-	TagID   uint64 `gorm:"primaryKey" json:"tag_id"`
-}
-
-func (PaperTag) TableName() string { return "paper_tags" }

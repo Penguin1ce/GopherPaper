@@ -167,29 +167,6 @@ export function fetchAdvancedAnalytics(token: string) {
   return dashboardRequest<AdvancedAnalytics>("/admin/analytics/advanced", token);
 }
 
-// ── 标签管理 ─────────────────────────────────────────────────
-
-export type TagItem = { id: number; owner_id: string; name: string; paper_count: number };
-export type TagListResponse = { items: TagItem[]; total: number };
-
-export function fetchTags(token: string) {
-  return dashboardRequest<TagListResponse>("/admin/tags", token);
-}
-export function renameTag(token: string, id: number, name: string) {
-  return dashboardRequest<null>(`/admin/tags/${id}`, token, {
-    method: "PUT",
-    body: JSON.stringify({ name }),
-  });
-}
-export function deleteTag(token: string, id: number) {
-  return dashboardRequest<null>(`/admin/tags/${id}`, token, { method: "DELETE" });
-}
-export function mergeTags(token: string, source: number, target: number) {
-  return dashboardRequest<null>(`/admin/tags/merge?source=${source}&target=${target}`, token, {
-    method: "POST",
-  });
-}
-
 // ── 会话管理 ─────────────────────────────────────────────────
 
 export type SessionItem = {
