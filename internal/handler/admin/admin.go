@@ -216,19 +216,6 @@ func AdvancedAnalytics(c *gin.Context) {
 	response.OK(c, res)
 }
 
-// ListAudit 分页返回管理员操作审计记录。
-func ListAudit(c *gin.Context) {
-	page := parseInt(c.Query("page"), 1)
-	pageSize := parseInt(c.Query("page_size"), 20)
-	res, err := adminservice.ListAudit(c.Request.Context(), page, pageSize)
-	if err != nil {
-		zlog.Error("admin list audit failed", "err", err)
-		response.Fail(c, http.StatusInternalServerError, "query failed")
-		return
-	}
-	response.OK(c, res)
-}
-
 func ListPapers(c *gin.Context) {
 	page := parseInt(c.Query("page"), 1)
 	pageSize := parseInt(c.Query("page_size"), 10)
@@ -259,61 +246,6 @@ func DeletePaper(c *gin.Context) {
 		return
 	}
 	response.OK(c, nil)
-}
-
-func ListModelConfigs(c *gin.Context) {
-	res, err := adminservice.ListModelConfigs(c.Request.Context())
-	if err != nil {
-		writeAdminErr(c, err, "query model configs failed")
-		return
-	}
-	response.OK(c, res)
-}
-
-func UpdateModelConfig(c *gin.Context) {
-	adminID, ok := currentAdminID(c)
-	if !ok {
-		response.Fail(c, http.StatusUnauthorized, "not logged in")
-		return
-	}
-	var req dto.AdminModelConfigUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
-		return
-	}
-	item, err := adminservice.UpdateModelConfig(c.Request.Context(), c.Param("role"), req, adminID)
-	if err != nil {
-		writeAdminErr(c, err, "update model config failed")
-		return
-	}
-	response.OK(c, item)
-}
-
-func TestModelConfig(c *gin.Context) {
-	res, err := adminservice.TestModelConfig(c.Request.Context(), c.Param("role"))
-	if err != nil {
-		writeAdminErr(c, err, "test model config failed")
-		return
-	}
-	response.OK(c, res)
-}
-
-func RestoreModelConfig(c *gin.Context) {
-	item, err := adminservice.RestoreModelConfig(c.Request.Context(), c.Param("role"))
-	if err != nil {
-		writeAdminErr(c, err, "restore model config failed")
-		return
-	}
-	response.OK(c, item)
-}
-
-func ApplyModelConfigs(c *gin.Context) {
-	res, err := adminservice.ApplyModelConfigs(c.Request.Context())
-	if err != nil {
-		writeAdminErr(c, err, "apply model configs failed")
-		return
-	}
-	response.OK(c, res)
 }
 
 func currentAdminID(c *gin.Context) (uint, bool) {
@@ -349,13 +281,6 @@ func writeAdminErr(c *gin.Context, err error, fallback string) {
 		errors.Is(err, adminservice.ErrWrongPassword),
 		errors.Is(err, adminservice.ErrAdminInactive):
 		response.Fail(c, http.StatusUnauthorized, err.Error())
-	case errors.Is(err, adminservice.ErrModelRoleInvalid),
-		errors.Is(err, adminservice.ErrModelConfigInvalid):
-		response.Fail(c, http.StatusBadRequest, err.Error())
-	case errors.Is(err, adminservice.ErrModelRuntimeNotReady):
-		response.Fail(c, http.StatusServiceUnavailable, err.Error())
-	case errors.Is(err, adminservice.ErrModelConfigConnectionFail):
-		response.Fail(c, http.StatusBadGateway, err.Error())
 	default:
 		zlog.Error("admin api failed", "err", err)
 		response.Fail(c, http.StatusInternalServerError, fallback)

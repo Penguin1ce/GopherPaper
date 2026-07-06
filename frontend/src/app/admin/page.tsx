@@ -12,7 +12,6 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
   Trash2,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -43,17 +42,12 @@ import { AdminDashboard } from "./dashboard";
 import { UsersPanel } from "./users-panel";
 import { LogsPanel } from "./logs-panel";
 import { ArchitectureGraph } from "./architecture-graph";
-import { AuditPanel } from "./audit-panel";
 import { ExportBar } from "./export-bar";
-import { SettingsPanel } from "./settings-panel";
-import { AnnouncementsPanel } from "./announcements-panel";
-import { FeedbackPanel } from "./feedback-panel";
 import { TagsPanel } from "./tags-panel";
 import { SessionsPanel } from "./sessions-panel";
 import { AdminsPanel } from "./admins-panel";
 import { BatchPanel } from "./batch-panel";
 import { StoragePanel } from "./storage-panel";
-import { TasksPanel } from "./tasks-panel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -567,12 +561,6 @@ export default function AdminPage() {
               >
                 运营报表
               </Link>
-              <Link
-                href="/admin/model-configs"
-                className="hidden rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
-              >
-                模型配置
-              </Link>
               <Button variant="outline" size="sm" onClick={() => void refreshAll()}>
                 {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                 刷新
@@ -617,19 +605,13 @@ export default function AdminPage() {
             <ArchitectureGraph />
             <UsersPanel token={token} />
             <LogsPanel token={token} />
-            <AnnouncementsPanel token={token} />
-            <FeedbackPanel token={token} />
             <SessionsPanel token={token} />
             <BatchPanel token={token} onChanged={() => void refreshAll()} />
-            <TasksPanel token={token} />
             <StoragePanel token={token} />
             <TagsPanel token={token} />
             <AdminsPanel token={token} />
-            <AuditPanel token={token} />
-            <SettingsPanel token={token} />
             <ExportBar token={token} />
             <OverviewGrid overview={overview} onAction={onOverviewAction} />
-            <ModelConfigShortcut />
             <section ref={paperSectionRef} className="rounded-lg border border-border bg-card">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
                 <div>
@@ -1066,33 +1048,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span className="text-sm font-medium">{label}</span>
       {children}
     </label>
-  );
-}
-
-function ModelConfigShortcut() {
-  return (
-    <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <SlidersHorizontal className="size-5" />
-          </span>
-          <div className="min-w-0">
-            <h1 className="text-base font-semibold">模型配置中心</h1>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-              配置 AI 供应商、中转站、模型名和密钥。完整表单已收纳到独立页面，避免后台首页过重。
-            </p>
-          </div>
-        </div>
-        <Link
-          href="/admin/model-configs"
-          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground outline-none transition hover:bg-primary/80 focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <SlidersHorizontal className="size-4" />
-          进入配置
-        </Link>
-      </div>
-    </section>
   );
 }
 

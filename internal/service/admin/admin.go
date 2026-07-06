@@ -45,7 +45,6 @@ func Init(cfg *config.Config) {
 	}
 	registrationCode = strings.TrimSpace(cfg.Admin.RegistrationCode)
 	mqURL = strings.TrimSpace(cfg.MQ.URL)
-	setRuntimeConfig(cfg)
 }
 
 func SendVerifyCode(ctx context.Context, email string) error {
