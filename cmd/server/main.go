@@ -73,9 +73,6 @@ func run(cfgPath string, backfillGraph bool) error {
 	if err := model.AutoMigrate(dao.DB); err != nil {
 		return err
 	}
-	if err := adminservice.ApplyStoredModelConfigs(ctx, cfg); err != nil {
-		return err
-	}
 	zlog.Info("MySQL 已连接，数据表已就绪")
 
 	// 会话历史：trpc MySQL Session 承载多轮上下文与历史，须在 MySQL 之后

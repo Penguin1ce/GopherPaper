@@ -172,8 +172,6 @@ func SeedDemo(ctx context.Context) (*dto.AdminSeedResult, error) {
 	}
 	result.Sessions = sessionCount
 
-	_, _ = SeedDemoFeedbacks(ctx)
-
 	return result, nil
 }
 
@@ -194,7 +192,6 @@ func ClearDemo(ctx context.Context) (*dto.AdminSeedResult, error) {
 	res.Papers = int(r.RowsAffected)
 	r = db.Unscoped().Where("student_id LIKE ?", like).Delete(&model.User{})
 	res.Users = int(r.RowsAffected)
-	db.Unscoped().Where("student_id LIKE ?", like).Delete(&model.Feedback{})
 
 	return res, nil
 }
