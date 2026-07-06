@@ -289,27 +289,6 @@ type AdminAdvancedAnalytics struct {
 	Pipeline           []AdminPipelineStage `json:"pipeline"`
 }
 
-// ── 后台标签管理 ─────────────────────────────────────────────
-
-// AdminTagItem 是一个标签及其被引用的论文数。
-type AdminTagItem struct {
-	ID         uint64 `json:"id"`
-	OwnerID    string `json:"owner_id"`
-	Name       string `json:"name"`
-	PaperCount int64  `json:"paper_count"`
-}
-
-// AdminTagListResponse 是标签列表。
-type AdminTagListResponse struct {
-	Items []AdminTagItem `json:"items"`
-	Total int64          `json:"total"`
-}
-
-// AdminTagRenameRequest 是重命名标签的请求体。
-type AdminTagRenameRequest struct {
-	Name string `json:"name" binding:"required"`
-}
-
 // ── 后台会话管理 ─────────────────────────────────────────────
 
 // AdminSessionItem 是一条会话记录。

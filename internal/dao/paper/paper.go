@@ -183,16 +183,10 @@ func Delete(ctx context.Context, id string) error {
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperReport{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperFlowCache{}).Error; err != nil {
-			return err
-		}
 		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperAnnotation{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("paper_id = ?", id).Delete(&model.MindMap{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("paper_id = ?", id).Delete(&model.PaperTag{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("source_paper_id = ? or target_paper_id = ?", id, id).Delete(&model.PaperSemanticRelation{}).Error; err != nil {
@@ -242,11 +236,12 @@ func GetReport(ctx context.Context, paperID string, t constant.ReportType) (*mod
 }
 
 // ListReportTypes 列出某篇论文已落库的研读报告类型，供前端进页面时回填就绪态。
+// 只取公开研读报告类型，排除 flow 等复用本表的内部产物，避免混入就绪列表。
 func ListReportTypes(ctx context.Context, paperID string) ([]constant.ReportType, error) {
 	var types []constant.ReportType
 	err := dao.DB.WithContext(ctx).
 		Model(&model.PaperReport{}).
-		Where("paper_id = ?", paperID).
+		Where("paper_id = ? and report_type in ?", paperID, constant.AllReportTypes()).
 		Pluck("report_type", &types).Error
 	if err != nil {
 		return nil, fmt.Errorf("dao/paper: 列出研读报告类型失败: %w", err)
@@ -274,46 +269,19 @@ func SaveReport(ctx context.Context, r *model.PaperReport) error {
 	return nil
 }
 
-// GetPaperFlow 取某篇论文的小云雀同款思路图缓存。
-func GetPaperFlow(ctx context.Context, ownerID, paperID string) (*model.PaperFlowCache, error) {
-	var r model.PaperFlowCache
-	err := dao.DB.WithContext(ctx).
-		Where("owner_id = ? and paper_id = ?", ownerID, paperID).
-		First(&r).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errs.ErrPaperFlowNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("dao/paper: 查询论文思路图失败: %w", err)
-	}
-	return &r, nil
-}
-
-// HasPaperFlow 判断某篇论文是否已有思路图缓存,不读取大 JSON。
-func HasPaperFlow(ctx context.Context, ownerID, paperID string) (bool, error) {
+// HasReport 判断某篇论文某类报告产物是否已落库,不读取大 JSON/正文。
+func HasReport(ctx context.Context, paperID string, t constant.ReportType) (bool, error) {
 	var id uint64
 	err := dao.DB.WithContext(ctx).
-		Model(&model.PaperFlowCache{}).
+		Model(&model.PaperReport{}).
 		Select("id").
-		Where("owner_id = ? and paper_id = ?", ownerID, paperID).
+		Where("paper_id = ? and report_type = ?", paperID, t).
 		Limit(1).
 		Scan(&id).Error
 	if err != nil {
-		return false, fmt.Errorf("dao/paper: 查询论文思路图状态失败: %w", err)
+		return false, fmt.Errorf("dao/paper: 查询报告产物状态失败: %w", err)
 	}
 	return id > 0, nil
-}
-
-// SavePaperFlow 写入或覆盖某篇论文的小云雀同款思路图缓存。
-func SavePaperFlow(ctx context.Context, r *model.PaperFlowCache) error {
-	err := dao.DB.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "owner_id"}, {Name: "paper_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"flow_json", "updated_at"}),
-	}).Create(r).Error
-	if err != nil {
-		return fmt.Errorf("dao/paper: 写入论文思路图失败: %w", err)
-	}
-	return nil
 }
 
 // SaveSections 覆盖论文章节，先删后插保证幂等。
