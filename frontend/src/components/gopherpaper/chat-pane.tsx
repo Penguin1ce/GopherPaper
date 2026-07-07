@@ -225,12 +225,14 @@ const PROMPT_HINTS = [
 function PaperChatComposer({
   input,
   sending,
+  disabled = sending,
   variant = "bottom",
   onInputChange,
   onSubmit,
 }: {
   input: string;
   sending: boolean;
+  disabled?: boolean;
   variant?: "bottom" | "center";
   onInputChange: (value: string) => void;
   onSubmit: () => void;
@@ -259,7 +261,7 @@ function PaperChatComposer({
             rows={1}
             value={input}
             placeholder={variant === "center" ? "问小文鸮" : ""}
-            disabled={sending}
+            disabled={disabled}
             className={cn(
               "max-h-44 min-h-9 resize-none overflow-y-auto border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0",
               variant === "center" && "min-h-10 py-2.5 pl-4 text-sm leading-5",
@@ -277,9 +279,9 @@ function PaperChatComposer({
               type="submit"
               size="icon"
               className="size-9 shrink-0 rounded-full"
-              disabled={sending || !hasDraft}
-              title={sending ? "正在发送" : "发送"}
-              aria-label={sending ? "正在发送" : "发送"}
+              disabled={disabled || !hasDraft}
+              title={sending ? "正在发送" : disabled ? "已有会话处理中" : "发送"}
+              aria-label={sending ? "正在发送" : disabled ? "已有会话处理中" : "发送"}
             >
               {sending ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -295,11 +297,36 @@ function PaperChatComposer({
 }
 
 export function ChatPane() {
-  const { user, messages, activeSession, activePaper, papers, sending, toolNote, sendMessage } = useApp();
+  const {
+    user,
+    messages,
+    activeSession,
+    activePaper,
+    activePaperID,
+    activeSessionID,
+    papers,
+    sending,
+    sendingSessionID,
+    sendingPaperID,
+    toolNote,
+    sendMessage,
+  } = useApp();
   const guard = useGuard();
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fallbackPaperID = activeSession?.paper_id || activePaper?.id || "";
+  const sendingHere = Boolean(
+    sending &&
+      ((activeSessionID ? sendingSessionID === activeSessionID : false) ||
+        (!activeSessionID && activePaperID
+          ? sendingPaperID === activePaperID
+          : false) ||
+        (!activeSessionID &&
+          !activePaperID &&
+          !sendingSessionID &&
+          !sendingPaperID)),
+  );
+  const visibleToolNote = sendingHere ? toolNote : "";
   const allowedPaperIDs = useMemo(
     () => (papers.length > 0 ? new Set(papers.map((paper) => paper.id)) : undefined),
     [papers],
@@ -318,7 +345,7 @@ export function ChatPane() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" });
-  }, [messages, sending, toolNote]);
+  }, [messages, sendingHere, visibleToolNote]);
 
   const submit = () => {
     const q = input.trim();
@@ -328,7 +355,7 @@ export function ChatPane() {
   };
 
   const hasContent = Boolean(activeSession) || messages.length > 0;
-  const emptyConversation = messages.length === 0 && !sending;
+  const emptyConversation = messages.length === 0 && !sendingHere;
   const displayName = user?.name || user?.student_id || "同学";
 
   return (
@@ -354,7 +381,8 @@ export function ChatPane() {
               </div>
               <PaperChatComposer
                 input={input}
-                sending={sending}
+                sending={sendingHere}
+                disabled={sending}
                 variant="center"
                 onInputChange={setInput}
                 onSubmit={submit}
@@ -389,7 +417,7 @@ export function ChatPane() {
                   allowedPaperIDs={allowedPaperIDs}
                 />
               ))}
-              {sending && !messages.some((m) => m.streaming) && (
+              {sendingHere && !messages.some((m) => m.streaming) && (
                 <article className="flex items-start">
                   <div className="inline-flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground">
                     <Loader2 className="size-4 animate-spin" />
@@ -405,7 +433,8 @@ export function ChatPane() {
       {!emptyConversation && (
         <PaperChatComposer
           input={input}
-          sending={sending}
+          sending={sendingHere}
+          disabled={sending}
           onInputChange={setInput}
           onSubmit={submit}
         />
