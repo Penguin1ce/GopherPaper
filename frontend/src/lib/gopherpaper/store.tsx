@@ -87,6 +87,9 @@ interface AppContextValue {
   activePaperID: string;
   activeSessionID: string;
   sending: boolean;
+  // 当前正在作答的会话/论文,用于切论文后只在对应会话里显示思考态。
+  sendingSessionID: string;
+  sendingPaperID: string;
   // 当前轮工具调用状态文案,SSE 进行中显示在输入框上方的状态气泡,空串隐藏
   toolNote: string;
   toasts: ToastItem[];
@@ -209,6 +212,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   });
   const messages = messagesQuery.data ?? EMPTY_MESSAGES;
   const [sending, setSending] = useState(false);
+  const [sendingSessionID, setSendingSessionID] = useState("");
+  const [sendingPaperID, setSendingPaperID] = useState("");
   const [toolNote, setToolNote] = useState("");
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [reportReady, setReportReady] = useState<
@@ -305,6 +310,10 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       setPaperSearch("");
       setActivePaperID("");
       setActiveSessionID("");
+      setSending(false);
+      setSendingSessionID("");
+      setSendingPaperID("");
+      setToolNote("");
       setReportReady({});
       setPaperFlowReady({});
       setReportProgress({});
@@ -1043,19 +1052,24 @@ function AppProviderInner({ children }: { children: ReactNode }) {
 
   const sendMessage = useCallback(
     async (query: string) => {
+      const initialPaperID = activePaperID;
       setSending(true);
+      setSendingSessionID(activeSessionID);
+      setSendingPaperID(initialPaperID);
       try {
         let sessionID = activeSessionID;
         if (!sessionID) {
-          const paper = papers.find((p) => p.id === activePaperID) || null;
-          const paperID = paper?.id || activePaperID || undefined;
+          const paper = papers.find((p) => p.id === initialPaperID) || null;
+          const targetPaperID = paper?.id || initialPaperID || undefined;
           const title = paper
             ? `${paperTitle(paper)} 问答`
-            : paperID
+            : targetPaperID
               ? "论文问答"
               : query.slice(0, 24) || "新会话";
-          const session = await createSession(title, paperID);
+          const session = await createSession(title, targetPaperID);
           sessionID = session.id;
+          setSendingSessionID(sessionID);
+          setSendingPaperID(session.paper_id || targetPaperID || "");
         }
         // 取消该会话在飞的 listMessages,避免乐观写入被随后到达的 fetch 结果覆盖(官方乐观更新模式)。
         await queryClient.cancelQueries({ queryKey: ["messages", sessionID] });
@@ -1219,6 +1233,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
         await refreshSessions();
       } finally {
         setSending(false);
+        setSendingSessionID("");
+        setSendingPaperID("");
         setToolNote("");
       }
     },
@@ -1253,6 +1269,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       activePaperID,
       activeSessionID,
       sending,
+      sendingSessionID,
+      sendingPaperID,
       toolNote,
       toasts,
       activePaper,
@@ -1302,6 +1320,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       activePaperID,
       activeSessionID,
       sending,
+      sendingSessionID,
+      sendingPaperID,
       toolNote,
       toasts,
       activePaper,
