@@ -68,6 +68,7 @@ const ANNOTATION_DRAGGING_CLASS = "reader-annotation-dragging";
 const FREETEXT_MIN_WIDTH = 24;
 const FREETEXT_TEXT_MIN_HEIGHT = 18;
 const FREETEXT_HEIGHT_EPSILON = 1;
+const FREETEXT_DRAG_EPSILON = 1;
 const FREETEXT_RESIZE_ENABLE = {
   top: false,
   right: true,
@@ -660,7 +661,6 @@ function ReaderDrawingLayer({
   strokeColor,
   strokeWidth,
   onCreateDrawing,
-  onClearReady,
   onSaveReady,
 }: {
   active: boolean;
@@ -673,7 +673,6 @@ function ReaderDrawingLayer({
     strokes: DrawingStroke[],
     meta: DrawingSaveMeta,
   ) => Promise<boolean> | boolean;
-  onClearReady: (clear: () => void) => void;
   onSaveReady: (save: () => void) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -805,13 +804,11 @@ function ReaderDrawingLayer({
   }, [clearSaveTimer, saveDraft]);
 
   useEffect(() => {
-    onClearReady(clearDraft);
     onSaveReady(saveDraft);
     return () => {
-      onClearReady(() => {});
       onSaveReady(() => {});
     };
-  }, [clearDraft, onClearReady, onSaveReady, saveDraft]);
+  }, [onSaveReady, saveDraft]);
 
   useEffect(() => {
     if (!active || !utils) return;
@@ -979,6 +976,7 @@ function ReaderFreetextHighlight({
   const selectAllOnEditRef = useRef(false);
   const committedTextRef = useRef(highlight.content?.text || "");
   const editDirtyRef = useRef(false);
+  const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const height = Math.max(FREETEXT_DEFAULT_HEIGHT, visualHeight);
   const className = [
     "FreetextHighlight",
@@ -1131,14 +1129,27 @@ function ReaderFreetextHighlight({
     (_event: RndDragEvent, data: DraggableData) => {
       setInteracting(false);
       unlockAnnotationTextSelection();
+      const startPos = dragStartPosRef.current;
+      dragStartPosRef.current = null;
+      if (
+        startPos &&
+        Math.abs(data.x - startPos.x) <= FREETEXT_DRAG_EPSILON &&
+        Math.abs(data.y - startPos.y) <= FREETEXT_DRAG_EPSILON
+      ) {
+        return;
+      }
       onChange(rectWith({ left: data.x, top: data.y }));
     },
     [onChange, rectWith],
   );
 
   const handleDragStart = useCallback(
-    (event: RndDragEvent) => {
+    (event: RndDragEvent, data: DraggableData) => {
+      if ("detail" in event && typeof event.detail === "number" && event.detail > 1) {
+        return false;
+      }
       event.preventDefault();
+      dragStartPosRef.current = { x: data.x, y: data.y };
       setInteracting(true);
       lockAnnotationTextSelection();
       onSelect();
@@ -1527,7 +1538,6 @@ export function ReaderPdf({
   drawingColor,
   drawingSize,
   onCreateDrawing,
-  onDrawingDraftClearReady,
   onDrawingDraftSaveReady,
   onUpdateAnnotationPosition,
   onUpdateAnnotationText,
@@ -1560,7 +1570,6 @@ export function ReaderPdf({
     strokes: DrawingStroke[],
     meta: DrawingSaveMeta,
   ) => Promise<boolean> | boolean;
-  onDrawingDraftClearReady: (clear: () => void) => void;
   onDrawingDraftSaveReady: (save: () => void) => void;
   onUpdateAnnotationPosition: (
     annotation: PaperAnnotation,
@@ -1720,7 +1729,6 @@ export function ReaderPdf({
             strokeColor={drawingColor}
             strokeWidth={drawingSize}
             onCreateDrawing={onCreateDrawing}
-            onClearReady={onDrawingDraftClearReady}
             onSaveReady={onDrawingDraftSaveReady}
           />
         </>

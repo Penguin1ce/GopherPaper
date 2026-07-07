@@ -350,6 +350,24 @@ function annotationUpdatedAt(annotation: PaperAnnotation) {
   return Number.isFinite(created) ? created : 0;
 }
 
+function annotationCreatedAt(annotation: PaperAnnotation) {
+  const created = Date.parse(annotation.created_at || "");
+  if (Number.isFinite(created)) return created;
+  const updated = Date.parse(annotation.updated_at || "");
+  return Number.isFinite(updated) ? updated : 0;
+}
+
+function latestDrawingAnnotation(items: PaperAnnotation[]) {
+  return items.reduce<PaperAnnotation | null>((latest, item) => {
+    if (annotationKind(item) !== "drawing") return latest;
+    if (!latest) return item;
+    const itemTime = annotationCreatedAt(item);
+    const latestTime = annotationCreatedAt(latest);
+    if (itemTime !== latestTime) return itemTime > latestTime ? item : latest;
+    return item.id > latest.id ? item : latest;
+  }, null);
+}
+
 function isDraftFreetext(annotation: PaperAnnotation) {
   const text = normalizeFreetextText(annotation.text);
   return !text || text === FREETEXT_CREATE_TEXT;
@@ -1681,7 +1699,6 @@ export function ReaderClient() {
   const positionPatchSeqRef = useRef(new Map<number, number>());
   const freetextCreateInFlightRef = useRef(false);
   const recentFreetextCreateRef = useRef<RecentFreetextCreate | null>(null);
-  const clearDrawingDraftRef = useRef<(() => void) | null>(null);
   const saveDrawingDraftRef = useRef<(() => void) | null>(null);
   const mindMapGridRef = useRef<HTMLDivElement | null>(null);
   const pdfWheelRef = useRef<HTMLDivElement | null>(null);
@@ -2413,6 +2430,15 @@ export function ReaderClient() {
     [clearLocatedAnnotation, id, locatedAnnotationId],
   );
 
+  const deleteLatestDrawingAnnotation = useCallback(() => {
+    const annotation = latestDrawingAnnotation(visibleAnnotations);
+    if (!annotation) {
+      setError("暂无可删除的绘画标注");
+      return;
+    }
+    void deleteAnnotation(annotation);
+  }, [deleteAnnotation, visibleAnnotations]);
+
   useEffect(() => {
     const handleDeleteSelectedAnnotation = (event: KeyboardEvent) => {
       if (event.key !== "Delete") return;
@@ -2719,7 +2745,7 @@ export function ReaderClient() {
         onColorChange={(color) => updatePrefs({ color })}
         onTextSizeChange={(textSize) => updatePrefs({ textSize })}
         onDrawingSizeChange={(drawingSize) => updatePrefs({ drawingSize })}
-        onClearDrawingDraft={() => clearDrawingDraftRef.current?.()}
+        onDeleteLatestDrawing={deleteLatestDrawingAnnotation}
       />
 
       <div ref={mindMapGridRef} className={cn("grid min-h-0 flex-1 grid-cols-1", gridClass)} style={gridStyle}>
@@ -2768,9 +2794,6 @@ export function ReaderClient() {
                 onCreateDrawing={(image, position, strokes, meta) =>
                   createDrawingAnnotation(image, position, strokes, meta)
                 }
-                onDrawingDraftClearReady={(clear) => {
-                  clearDrawingDraftRef.current = clear;
-                }}
                 onDrawingDraftSaveReady={(save) => {
                   saveDrawingDraftRef.current = save;
                 }}

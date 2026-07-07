@@ -7,7 +7,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Eraser,
   Languages,
   ListTree,
   Maximize2,
@@ -16,6 +15,7 @@ import {
   Network,
   PencilLine,
   RotateCcw,
+  Trash2,
   Type,
   ZoomIn,
   ZoomOut,
@@ -112,13 +112,13 @@ function AnnotationStyleMenu({
   onColorChange,
   onTextSizeChange,
   onDrawingSizeChange,
-  onClearDrawingDraft,
+  onDeleteLatestDrawing,
 }: {
   prefs: ReaderToolbarPrefs;
   onColorChange: (color: AnnotationColor) => void;
   onTextSizeChange: (size: number) => void;
   onDrawingSizeChange: (size: number) => void;
-  onClearDrawingDraft: () => void;
+  onDeleteLatestDrawing: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const selected = COLOR_META[prefs.color];
@@ -210,9 +210,9 @@ function AnnotationStyleMenu({
               />
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onClearDrawingDraft}>
-              <Eraser className="size-3.5" />
-              清除当前笔迹
+            <DropdownMenuItem onClick={onDeleteLatestDrawing}>
+              <Trash2 className="size-3.5" />
+              删除最新绘画
             </DropdownMenuItem>
           </>
         )}
@@ -245,7 +245,7 @@ export function ReaderToolbar({
   onColorChange,
   onTextSizeChange,
   onDrawingSizeChange,
-  onClearDrawingDraft,
+  onDeleteLatestDrawing,
 }: {
   title: string;
   currentPage: number;
@@ -270,7 +270,7 @@ export function ReaderToolbar({
   onColorChange: (color: AnnotationColor) => void;
   onTextSizeChange: (size: number) => void;
   onDrawingSizeChange: (size: number) => void;
-  onClearDrawingDraft: () => void;
+  onDeleteLatestDrawing: () => void;
 }) {
   const zoomText = typeof scaleValue === "number" ? `${Math.round(scaleValue * 100)}%` : "适宽";
 
@@ -354,7 +354,7 @@ export function ReaderToolbar({
           onColorChange={onColorChange}
           onTextSizeChange={onTextSizeChange}
           onDrawingSizeChange={onDrawingSizeChange}
-          onClearDrawingDraft={onClearDrawingDraft}
+          onDeleteLatestDrawing={onDeleteLatestDrawing}
         />
       </div>
 
