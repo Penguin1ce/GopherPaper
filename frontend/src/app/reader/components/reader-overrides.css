@@ -85,6 +85,12 @@
 .FreetextHighlight__input {
   user-select: text;
   -webkit-user-select: text;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.FreetextHighlight__input::-webkit-scrollbar {
+  display: none;
 }
 
 .FreetextHighlight--editing,
@@ -299,8 +305,10 @@
   word-break: break-word;
   appearance: none;
   caret-color: currentColor;
-  overflow: hidden;
+  overflow: hidden !important;
   resize: none;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .FreetextHighlight__input:focus,
