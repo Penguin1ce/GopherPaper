@@ -2,7 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Clock, Gauge, Loader2, TrendingUp, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  Clock,
+  Gauge,
+  GitBranch,
+  Loader2,
+  PieChart as PieChartIcon,
+  TrendingUp,
+  Users,
+  Zap,
+} from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -16,6 +26,7 @@ import {
 } from "recharts";
 
 import { readSavedAuth } from "@/components/gopherpaper/admin-auth";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type Analytics, dashboardRequest } from "../dashboard-api";
 import { type AdvancedAnalytics, fetchAdvancedAnalytics } from "../console-api";
 
@@ -36,12 +47,24 @@ const tooltipStyle = {
   fontSize: "12px",
 };
 
+type AnalyticsTab = "summary" | "latency" | "hourly" | "actors" | "pipeline" | "status";
+
+const ANALYTICS_TABS: Array<{ key: AnalyticsTab; label: string; icon: typeof Gauge }> = [
+  { key: "summary", label: "总览", icon: Gauge },
+  { key: "latency", label: "延迟", icon: Zap },
+  { key: "hourly", label: "时段", icon: Clock },
+  { key: "actors", label: "用户排行", icon: Users },
+  { key: "pipeline", label: "流水线", icon: GitBranch },
+  { key: "status", label: "论文状态", icon: PieChartIcon },
+];
+
 export default function AdminAnalyticsPage() {
   const [token, setToken] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [basic, setBasic] = useState<Analytics | null>(null);
   const [advanced, setAdvanced] = useState<AdvancedAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<AnalyticsTab>("summary");
 
   useEffect(() => {
     setMounted(true);
@@ -112,18 +135,35 @@ export default function AdminAnalyticsPage() {
             正在加载分析数据
           </div>
         ) : (
-          <div className="flex flex-col gap-5">
-            <SummaryStrip basic={basic} />
-            <div className="grid gap-5 lg:grid-cols-2">
+          <Tabs value={tab} onValueChange={(value) => setTab(value as AnalyticsTab)}>
+            <TabsList variant="line" className="flex-wrap">
+              {ANALYTICS_TABS.map(({ key, label, icon: Icon }) => (
+                <TabsTrigger key={key} value={key}>
+                  <Icon className="size-4" />
+                  {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+
+            <TabsContent value="summary">
+              <SummaryStrip basic={basic} />
+            </TabsContent>
+            <TabsContent value="latency">
               <LatencyHistogram advanced={advanced} />
+            </TabsContent>
+            <TabsContent value="hourly">
               <HourlyDistribution advanced={advanced} />
-            </div>
-            <div className="grid gap-5 lg:grid-cols-2">
+            </TabsContent>
+            <TabsContent value="actors">
               <TopActors advanced={advanced} />
+            </TabsContent>
+            <TabsContent value="pipeline">
               <PipelineFunnel advanced={advanced} />
-            </div>
-            <StatusDonut basic={basic} />
-          </div>
+            </TabsContent>
+            <TabsContent value="status">
+              <StatusDonut basic={basic} />
+            </TabsContent>
+          </Tabs>
         )}
       </div>
     </main>
