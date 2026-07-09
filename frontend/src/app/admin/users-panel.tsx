@@ -26,10 +26,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
-  type ClassStat,
   type UserDetail,
   type UserItem,
-  fetchClassStats,
   fetchUserDetail,
   fetchUsers,
   formatBytes,
@@ -61,8 +59,6 @@ export function UsersPanel({ token }: { token: string }) {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
-  const [classFilter, setClassFilter] = useState("");
-  const [classes, setClasses] = useState<ClassStat[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -75,7 +71,6 @@ export function UsersPanel({ token }: { token: string }) {
           page: nextPage,
           page_size: PAGE_SIZE,
           query,
-          class_id: classFilter,
         });
         setItems(res.items ?? []);
         setTotal(res.total ?? 0);
@@ -86,14 +81,11 @@ export function UsersPanel({ token }: { token: string }) {
         setLoading(false);
       }
     },
-    [classFilter, page, query, token],
+    [page, query, token],
   );
 
   useEffect(() => {
     void load(1);
-    void fetchClassStats(token)
-      .then((r) => setClasses(r.items ?? []))
-      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -120,20 +112,6 @@ export function UsersPanel({ token }: { token: string }) {
               }}
             />
           </label>
-          <select
-            className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none"
-            value={classFilter}
-            onChange={(e) => {
-              setClassFilter(e.target.value);
-            }}
-          >
-            <option value="">全部班级</option>
-            {classes.map((c) => (
-              <option key={c.class_id} value={c.class_id === "未分班" ? "" : c.class_id}>
-                {c.class_id}({c.user_count})
-              </option>
-            ))}
-          </select>
           <Button size="sm" variant="outline" onClick={() => void load(1)} disabled={loading}>
             {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
             查询
@@ -146,7 +124,6 @@ export function UsersPanel({ token }: { token: string }) {
           <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-3 py-2 font-medium">用户</th>
-              <th className="px-3 py-2 font-medium">班级</th>
               <th className="px-3 py-2 font-medium">论文</th>
               <th className="px-3 py-2 font-medium">会话</th>
               <th className="px-3 py-2 font-medium">调用</th>
@@ -156,14 +133,14 @@ export function UsersPanel({ token }: { token: string }) {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-3 py-10 text-center text-muted-foreground">
+                <td colSpan={5} className="px-3 py-10 text-center text-muted-foreground">
                   <Loader2 className="mx-auto mb-2 size-5 animate-spin" />
                   加载中
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-10 text-center text-muted-foreground">
+                <td colSpan={5} className="px-3 py-10 text-center text-muted-foreground">
                   暂无用户
                 </td>
               </tr>
@@ -178,7 +155,6 @@ export function UsersPanel({ token }: { token: string }) {
                     <div className="font-medium">{u.name || u.student_id}</div>
                     <div className="text-xs text-muted-foreground">{u.email || u.student_id}</div>
                   </td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{u.class_id || "—"}</td>
                   <td className="px-3 py-2.5 tabular-nums">{u.paper_count}</td>
                   <td className="px-3 py-2.5 tabular-nums">{u.session_count}</td>
                   <td className="px-3 py-2.5 tabular-nums">{u.call_count}</td>
@@ -294,7 +270,7 @@ function UserDetailDrawer({
                 <MiniStat icon={Users} label="调用" value={detail.user.call_count} />
               </div>
               <div className="mt-3 text-xs text-muted-foreground">
-                学号 {detail.user.student_id} · 班级 {detail.user.class_id || "—"} · 注册于{" "}
+                学号 {detail.user.student_id} · 注册于{" "}
                 {formatDateTime(detail.user.created_at)}
               </div>
             </div>

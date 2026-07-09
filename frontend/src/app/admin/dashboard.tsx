@@ -6,6 +6,8 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recha
 
 import { Button } from "@/components/ui/button";
 import { type Analytics, dashboardRequest } from "./dashboard-api";
+import { type AdvancedAnalytics, fetchAdvancedAnalytics } from "./console-api";
+import { PipelineFunnel, StatusDonut, SummaryStrip, TopActors } from "./analytics-charts";
 
 const tooltipStyle = {
   background: "var(--popover)",
@@ -29,6 +31,7 @@ export function AdminDashboard({
   onChanged?: () => void;
 }) {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [advanced, setAdvanced] = useState<AdvancedAnalytics | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -36,8 +39,12 @@ export function AdminDashboard({
 
   const loadMain = useCallback(async () => {
     if (!token) return;
-    const data = await dashboardRequest<Analytics>("/admin/analytics?days=30", token);
-    setAnalytics(data);
+    const [a, adv] = await Promise.all([
+      dashboardRequest<Analytics>("/admin/analytics?days=30", token),
+      fetchAdvancedAnalytics(token),
+    ]);
+    setAnalytics(a);
+    setAdvanced(adv);
   }, [token]);
 
   useEffect(() => {
@@ -86,7 +93,7 @@ export function AdminDashboard({
           </span>
           <div>
             <h2 className="text-base font-semibold tracking-tight">数据看板</h2>
-            <p className="text-xs text-muted-foreground">近 30 天服务调用趋势</p>
+            <p className="text-xs text-muted-foreground">关键指标 · 论文状态 · 流水线 · 活跃度 · 调用趋势</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -118,40 +125,54 @@ export function AdminDashboard({
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold">服务调用趋势</h3>
-            <p className="text-xs text-muted-foreground">成功 / 失败调用量按日统计</p>
+      {/* KPI 概览 */}
+      <SummaryStrip basic={analytics} />
+
+      {/* 数据分析核心图表 */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <StatusDonut basic={analytics} />
+        <PipelineFunnel advanced={advanced} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <TopActors advanced={advanced} />
+
+        {/* 近 30 天调用趋势 */}
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">服务调用趋势</h3>
+              <p className="text-xs text-muted-foreground">成功 / 失败调用量按日统计</p>
+            </div>
+            {successRate != null && (
+              <span className="rounded-md bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                成功率 {(successRate * 100).toFixed(1)}%
+              </span>
+            )}
           </div>
-          {successRate != null && (
-            <span className="rounded-md bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              成功率 {(successRate * 100).toFixed(1)}%
-            </span>
-          )}
-        </div>
-        <div className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={trendData} margin={{ top: 6, right: 8, left: -18, bottom: 0 }} barCategoryGap="16%">
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                tickLine={false}
-                axisLine={false}
-                interval={4}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                tickLine={false}
-                axisLine={false}
-                width={34}
-                allowDecimals={false}
-              />
-              <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--muted)", opacity: 0.35 }} />
-              <Bar dataKey="success" name="成功" stackId="calls" fill="#10b981" />
-              <Bar dataKey="failed" name="失败" stackId="calls" fill="#ef4444" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="h-56 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={trendData} margin={{ top: 6, right: 8, left: -18, bottom: 0 }} barCategoryGap="16%">
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  tickLine={false}
+                  axisLine={false}
+                  interval={4}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={34}
+                  allowDecimals={false}
+                />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--muted)", opacity: 0.35 }} />
+                <Bar dataKey="success" name="成功" stackId="calls" fill="#10b981" />
+                <Bar dataKey="failed" name="失败" stackId="calls" fill="#ef4444" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
     </section>

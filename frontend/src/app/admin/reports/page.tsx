@@ -4,36 +4,24 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
-  Clock,
   FileBarChart,
   Gauge,
   Layers,
   Loader2,
   PieChart as PieChartIcon,
   Printer,
-  School,
 } from "lucide-react";
 import {
-  Bar,
-  BarChart,
   Cell,
   Pie,
   PieChart,
   ResponsiveContainer,
   Tooltip,
-  XAxis,
-  YAxis,
 } from "recharts";
 
 import { readSavedAuth } from "@/components/gopherpaper/admin-auth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type Analytics, dashboardRequest } from "../dashboard-api";
-import {
-  type AdvancedAnalytics,
-  type ClassStat,
-  fetchAdvancedAnalytics,
-  fetchClassStats,
-} from "../console-api";
 
 const STATUS_COLORS: Record<string, string> = {
   ready: "#10b981",
@@ -52,22 +40,18 @@ const tooltipStyle = {
   fontSize: "12px",
 };
 
-type ReportTab = "summary" | "status" | "services" | "classes" | "latency";
+type ReportTab = "summary" | "status" | "services";
 
 const REPORT_TABS: Array<{ key: ReportTab; label: string; icon: typeof Gauge }> = [
   { key: "summary", label: "摘要", icon: Gauge },
   { key: "status", label: "论文状态", icon: PieChartIcon },
   { key: "services", label: "服务调用", icon: Layers },
-  { key: "classes", label: "班级概览", icon: School },
-  { key: "latency", label: "延迟分布", icon: Clock },
 ];
 
 export default function AdminReportsPage() {
   const [token, setToken] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [basic, setBasic] = useState<Analytics | null>(null);
-  const [advanced, setAdvanced] = useState<AdvancedAnalytics | null>(null);
-  const [classes, setClasses] = useState<ClassStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<ReportTab>("summary");
 
@@ -82,16 +66,8 @@ export default function AdminReportsPage() {
       return;
     }
     setLoading(true);
-    Promise.all([
-      dashboardRequest<Analytics>("/admin/analytics?days=30", token),
-      fetchAdvancedAnalytics(token),
-      fetchClassStats(token),
-    ])
-      .then(([b, a, c]) => {
-        setBasic(b);
-        setAdvanced(a);
-        setClasses(c.items ?? []);
-      })
+    dashboardRequest<Analytics>("/admin/analytics?days=30", token)
+      .then((b) => setBasic(b))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [token]);
@@ -129,8 +105,8 @@ export default function AdminReportsPage() {
               <FileBarChart className="size-5" />
             </span>
             <div>
-              <h1 className="text-base font-semibold tracking-tight">运营报表</h1>
-              <p className="text-xs text-muted-foreground">近 30 天综合运营概况</p>
+              <h1 className="text-base font-semibold tracking-tight">统计报表</h1>
+              <p className="text-xs text-muted-foreground">近 30 天综合数据概况</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -226,36 +202,6 @@ export default function AdminReportsPage() {
                 </Section>
               </TabsContent>
 
-              <TabsContent value="classes">
-                <Section title="班级维度概览">
-                  <div className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={classes} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
-                        <XAxis dataKey="class_id" tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} />
-                        <YAxis tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} width={30} allowDecimals={false} />
-                        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--muted)", opacity: 0.35 }} />
-                        <Bar dataKey="user_count" name="用户数" fill="#6366f1" radius={[3, 3, 0, 0]} />
-                        <Bar dataKey="paper_count" name="论文数" fill="#10b981" radius={[3, 3, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Section>
-              </TabsContent>
-
-              <TabsContent value="latency">
-                <Section title="延迟分布">
-                  <div className="h-52">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={advanced?.latency_histogram ?? []} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
-                        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} />
-                        <YAxis tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} width={30} allowDecimals={false} />
-                        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--muted)", opacity: 0.35 }} />
-                        <Bar dataKey="count" name="调用数" fill="#0ea5e9" radius={[3, 3, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Section>
-              </TabsContent>
             </Tabs>
 
             <footer className="border-t border-border pt-4 text-xs text-muted-foreground">
@@ -271,7 +217,7 @@ export default function AdminReportsPage() {
 function ReportHeader() {
   return (
     <div className="text-center">
-      <h2 className="font-serif text-2xl font-semibold">GopherPaper 运营报表</h2>
+      <h2 className="font-serif text-2xl font-semibold">GopherPaper 统计报表</h2>
       <p className="mt-1 text-sm text-muted-foreground">科研文献智能解析与知识服务系统</p>
     </div>
   );

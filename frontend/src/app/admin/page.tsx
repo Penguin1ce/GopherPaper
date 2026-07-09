@@ -102,11 +102,11 @@ type TabKey =
 
 const ADMIN_TABS: Array<{ key: TabKey; label: string; icon: typeof Gauge }> = [
   { key: "dashboard", label: "数据看板", icon: Gauge },
-  { key: "users", label: "用户管理", icon: Users },
   { key: "papers", label: "论文库", icon: FileText },
+  { key: "storage", label: "存储", icon: HardDrive },
+  { key: "users", label: "用户管理", icon: Users },
   { key: "sessions", label: "会话管理", icon: MessagesSquare },
   { key: "logs", label: "日志", icon: ScrollText },
-  { key: "storage", label: "存储", icon: HardDrive },
   { key: "admins", label: "管理员", icon: ShieldCheck },
 ];
 type PaperFilters = {
@@ -208,7 +208,7 @@ function AdminBrand({ authed }: { authed: boolean }) {
           {authed ? "GopherPaper Admin" : "GopherPaper"}
         </span>
         <span className="block text-xs text-muted-foreground">
-          {authed ? "论文库运营控制台" : "管理员后台"}
+          {authed ? "论文库管理控制台" : "管理员后台"}
         </span>
       </span>
     </Link>
@@ -483,7 +483,7 @@ export default function AdminPage() {
                 href="/admin/reports"
                 className="hidden rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
               >
-                运营报表
+                统计报表
               </Link>
               <Button variant="outline" size="sm" onClick={() => void refreshAll()}>
                 {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
