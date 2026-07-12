@@ -115,6 +115,21 @@ func TestIntentClassifierInputTrimsHistory(t *testing.T) {
 	}
 }
 
+func TestClassifyIntentReproductionKeyword(t *testing.T) {
+	cases := []string{
+		"如何复现这篇论文的实验？",
+		"请给出复现步骤",
+		"分析一下实验的可复现性",
+	}
+	for _, query := range cases {
+		t.Run(query, func(t *testing.T) {
+			if got := ClassifyIntent(context.Background(), query); got != constant.IntentMethod {
+				t.Fatalf("ClassifyIntent(%q) = %q, want %q", query, got, constant.IntentMethod)
+			}
+		})
+	}
+}
+
 func TestPaperResourceIntentOverride(t *testing.T) {
 	boundCtx := core.WithPaperTitle(core.WithPaperID(context.Background(), "paper-1"), "Test Paper")
 	cases := map[string]constant.IntentType{

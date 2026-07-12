@@ -55,7 +55,7 @@ func TestChatModelConnectivity(t *testing.T) {
 	t.Logf("trpc chat 模型连通,返回: %s", strings.TrimSpace(sb.String()))
 }
 
-// TestEmbedderConnectivity 验证 bge-m3 经 Ollama OpenAI 兼容端点能向量化且维度对齐。
+// TestEmbedderConnectivity 验证 Qwen3-Embedding 经 OpenAI 兼容端点能向量化且维度对齐。
 func TestEmbedderConnectivity(t *testing.T) {
 	cfg := loadTestConfig(t)
 	ec := cfg.Embedding
@@ -78,5 +78,5 @@ func TestEmbedderConnectivity(t *testing.T) {
 	if len(vec) != ec.Dim {
 		t.Fatalf("向量维度不符,期望 %d 实际 %d", ec.Dim, len(vec))
 	}
-	t.Logf("trpc embedder 连通,bge-m3 维度 %d", len(vec))
+	t.Logf("trpc embedder 连通,Qwen3-Embedding 维度 %d", len(vec))
 }

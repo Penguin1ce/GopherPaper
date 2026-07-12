@@ -128,7 +128,7 @@ type ModelConfig struct {
 	Provider constant.Provider `toml:"provider"` // ollama / openai
 	BaseURL  string            `toml:"base_url"` // ollama: http://localhost:11434 ; openai: 网关地址
 	APIKey   string            `toml:"api_key"`  // openai 必填，ollama 留空
-	Model    string            `toml:"model"`    // 模型名，如 qwen2.5:1.5b / bge-m3
+	Model    string            `toml:"model"`    // 模型名，如 qwen2.5:1.5b / Qwen3-Embedding-0.6B
 	Dim      int               `toml:"dim"`      // 仅 embedding 用，需与 Milvus collection 维度对齐
 	// MaxTokens 输出 token 上限，0 表示不显式设置走 provider 默认。
 	// openai 分支映射到 max_completion_tokens，覆盖 reasoning 与可见输出。
@@ -146,7 +146,7 @@ type RerankConfig struct {
 	Enabled bool   `toml:"enabled"`
 	BaseURL string `toml:"base_url"` // 完整 /rerank 端点，如 https://api.siliconflow.cn/v1/rerank
 	APIKey  string `toml:"api_key"`
-	Model   string `toml:"model"`   // cross-encoder 模型名，如 BAAI/bge-reranker-v2-m3
+	Model   string `toml:"model"`   // cross-encoder 模型名，如 Qwen/Qwen3-Reranker-4B
 	Timeout int    `toml:"timeout"` // 单次精排 HTTP 超时，秒。精排是 best-effort，超时即退化为向量序，故宜短以免拖慢问答
 }
 

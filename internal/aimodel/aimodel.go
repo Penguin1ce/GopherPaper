@@ -50,7 +50,7 @@ func NewChatModel(mc config.ModelConfig) *trpcopenai.Model {
 }
 
 // NewEmbedder 用 trpc 的 openai 兼容 embedder 建向量化器。
-// bge-m3 经 Ollama 的 OpenAI 兼容端点接入,ec.BaseURL 须指向 /v1 兼容地址。
+// Qwen3-Embedding 经 OpenAI 兼容端点接入,ec.BaseURL 须指向 /v1 兼容地址,硅基流动或 Ollama 皆可。
 func NewEmbedder(ec config.ModelConfig) *trpcembedder.Embedder {
 	apiKey := ec.APIKey
 	if apiKey == "" {

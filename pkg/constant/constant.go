@@ -232,7 +232,7 @@ const MaxPreferenceNicknameRunes = 64
 const MaxPreferenceInstructionRunes = 500
 
 // 知识图谱语义相似边参数。同领域论文关键词字面常不重合(中英意译各异),靠结构化语义摘要的
-// cosine 相似补关联:超过阈值的取 Top K 建 SIMILAR_TO。阈值按 bge/qwen embedding 的同主题召回调校,
+// cosine 相似补关联:超过阈值的取 Top K 建 SIMILAR_TO。阈值按 Qwen3-Embedding 的同主题召回调校,
 // 保持略宽松,再由 TopK 控制密度。
 const (
 	GraphSimilarThreshold = 0.48 // Qwen3-Embedding cosine 相似阈值,低于此不建相似边
@@ -307,7 +307,7 @@ const (
 	// rerank 延迟随候选近似线性,50 为召回与延迟的折中。
 	RecallTopK = 50
 	// MaxChunkRunes 单个知识块正文的字符上限,同标题同页的碎段合并到此为止,超出再切。
-	// bge-m3 支持长文,但块过大召回精度下降,取折中值。
+	// Qwen3-Embedding 支持长文,但块过大召回精度下降,取折中值。
 	MaxChunkRunes = 1000
 	// MaxEmbeddingRunes 送向量化前的硬上限:embedding 模型(Qwen3-Embedding-0.6B)上下文 32K tokens,
 	// 单请求超限会 400 拖垮整篇入库。最坏情况(密集数字/符号表格)约 1 token/rune,故按 ~28K runes 留余量截断
@@ -362,7 +362,7 @@ const SessionTitleRewriteTimeout = 8 * time.Second
 // 会话主题自动归类参数。新会话向量与已有主题质心比余弦相似度,
 // 超 TopicAssignThreshold 并入最相似主题,否则新建;两主题质心相似度超 TopicMergeThreshold 时合并。
 const (
-	// TopicAssignThreshold 是并入既有主题的余弦相似度下限,低于则新建主题。bge-m3 余弦空间,可调。
+	// TopicAssignThreshold 是并入既有主题的余弦相似度下限,低于则新建主题。Qwen3-Embedding 余弦空间,可调。
 	TopicAssignThreshold = 0.62
 	// TopicMergeThreshold 是两主题质心合并的余弦相似度下限,防相近主题碎裂成多个。
 	TopicMergeThreshold = 0.9

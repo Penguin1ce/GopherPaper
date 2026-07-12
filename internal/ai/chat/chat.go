@@ -40,6 +40,9 @@ func Chat(ctx context.Context, history []trpcmodel.Message, query string) (*core
 
 // ClassifyIntent 用该用户的 intent 小模型把自由文本分到意图子类,无法判断兜底 summary。
 func ClassifyIntent(ctx context.Context, query string, history ...[]trpcmodel.Message) constant.IntentType {
+	if methodIntentKeywordOverride(query) {
+		return constant.IntentMethod
+	}
 	if intent, ok := paperResourceIntentOverride(ctx, query); ok {
 		return intent
 	}
@@ -110,6 +113,11 @@ func recentIntentContext(history []trpcmodel.Message) string {
 		lines = append(lines, role+": "+trimRunes(strings.TrimSpace(msg.Content), constant.IntentContextMessageMaxRunes))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// methodIntentKeywordOverride 对明确的复现诉求走方法类快路径,避免依赖模型分类结果。
+func methodIntentKeywordOverride(query string) bool {
+	return strings.Contains(query, "复现")
 }
 
 // paperResourceIntentOverride 兜住绑定论文下的短资源询问,避免“有 GitHub 仓库吗”
