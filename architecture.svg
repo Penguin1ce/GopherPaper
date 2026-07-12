@@ -1,0 +1,96 @@
+<svg width="680" height="592" viewBox="0 0 680 592" xmlns="http://www.w3.org/2000/svg" font-family="PingFang SC, Hiragino Sans GB, Microsoft YaHei, Helvetica, Arial, sans-serif">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<rect x="0" y="0" width="680" height="592" fill="#FFFFFF"/>
+
+<!-- band 1 前端 -->
+<rect x="40" y="50" width="600" height="56" rx="10" fill="none" stroke="#888780" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text x="56" y="82" font-size="14" font-weight="500" fill="#2C2C2A">前端</text>
+<g>
+<rect x="130" y="63" width="90" height="30" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="175" y="83" font-size="14" fill="#085041" text-anchor="middle">论文库</text>
+<rect x="232" y="63" width="90" height="30" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="277" y="83" font-size="14" fill="#085041" text-anchor="middle">阅读器</text>
+<rect x="334" y="63" width="90" height="30" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="379" y="83" font-size="14" fill="#085041" text-anchor="middle">智能问答</text>
+<rect x="436" y="63" width="90" height="30" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="481" y="83" font-size="14" fill="#085041" text-anchor="middle">研读报告</text>
+<rect x="538" y="63" width="90" height="30" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="583" y="83" font-size="14" fill="#085041" text-anchor="middle">知识图谱</text>
+</g>
+<path d="M340 106 V124" fill="none" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<!-- band 2 接入层 -->
+<rect x="40" y="126" width="600" height="56" rx="10" fill="none" stroke="#888780" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text x="56" y="150" font-size="14" font-weight="500" fill="#2C2C2A">接入层</text>
+<text x="56" y="167" font-size="12" fill="#5F5E5A">网关</text>
+<g>
+<rect x="130" y="140" width="114" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="187" y="160" font-size="14" fill="#444441" text-anchor="middle">JWT 鉴权</text>
+<rect x="258" y="140" width="114" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="315" y="160" font-size="14" fill="#444441" text-anchor="middle">论文 · 会话</text>
+<rect x="386" y="140" width="114" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="443" y="160" font-size="14" fill="#444441" text-anchor="middle">知识图谱</text>
+<rect x="514" y="140" width="114" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="571" y="160" font-size="14" fill="#444441" text-anchor="middle">SSE 推送</text>
+</g>
+<path d="M340 182 V200" fill="none" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<!-- band 3 服务层 -->
+<rect x="40" y="202" width="600" height="56" rx="10" fill="none" stroke="#888780" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text x="56" y="234" font-size="14" font-weight="500" fill="#2C2C2A">服务层</text>
+<g>
+<rect x="130" y="216" width="156" height="30" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="208" y="236" font-size="14" fill="#3C3489" text-anchor="middle">论文服务</text>
+<rect x="301" y="216" width="156" height="30" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="379" y="236" font-size="14" fill="#3C3489" text-anchor="middle">会话服务</text>
+<rect x="472" y="216" width="156" height="30" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="550" y="236" font-size="14" fill="#3C3489" text-anchor="middle">用户服务</text>
+</g>
+<path d="M340 258 V276" fill="none" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<!-- band 4 编排层 -->
+<rect x="40" y="278" width="600" height="122" rx="10" fill="none" stroke="#888780" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text x="56" y="333" font-size="14" font-weight="500" fill="#2C2C2A">编排层</text>
+<text x="56" y="350" font-size="12" fill="#5F5E5A">Agent</text>
+<g>
+<rect x="130" y="290" width="90" height="34" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="175" y="311" font-size="14" fill="#3C3489" text-anchor="middle">意图分类</text>
+<rect x="232" y="290" width="90" height="34" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="277" y="311" font-size="14" fill="#3C3489" text-anchor="middle">RAG 问答</text>
+<rect x="334" y="290" width="90" height="34" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="379" y="311" font-size="14" fill="#3C3489" text-anchor="middle">研读报告</text>
+<rect x="436" y="290" width="90" height="34" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="481" y="311" font-size="14" fill="#3C3489" text-anchor="middle">结构抽取</text>
+<rect x="538" y="290" width="90" height="34" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="583" y="311" font-size="14" fill="#3C3489" text-anchor="middle">先锋者</text>
+</g>
+<text x="628" y="343" font-size="12" fill="#5F5E5A" text-anchor="end">共享基座</text>
+<g>
+<rect x="130" y="350" width="156" height="34" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="208" y="371" font-size="14" fill="#444441" text-anchor="middle">检索召回</text>
+<rect x="301" y="350" width="156" height="34" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="379" y="371" font-size="14" fill="#444441" text-anchor="middle">工具 · Skill</text>
+<rect x="472" y="350" width="156" height="34" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="550" y="371" font-size="14" fill="#444441" text-anchor="middle">模型 · Embedder</text>
+</g>
+<path d="M340 400 V418" fill="none" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<!-- band 5 基础层 -->
+<rect x="40" y="420" width="600" height="60" rx="10" fill="none" stroke="#888780" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text x="56" y="450" font-size="14" font-weight="500" fill="#2C2C2A">基础层</text>
+<text x="56" y="467" font-size="12" fill="#5F5E5A">存储/外部</text>
+<g>
+<rect x="130" y="435" width="66" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="163" y="454" font-size="12" fill="#444441" text-anchor="middle">MySQL</text>
+<rect x="202" y="435" width="66" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="235" y="454" font-size="12" fill="#444441" text-anchor="middle">Redis</text>
+<rect x="274" y="435" width="66" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="307" y="454" font-size="12" fill="#444441" text-anchor="middle">Milvus</text>
+<rect x="346" y="435" width="66" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="379" y="454" font-size="12" fill="#444441" text-anchor="middle">Neo4j</text>
+<rect x="418" y="435" width="66" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="451" y="454" font-size="12" fill="#444441" text-anchor="middle">MinerU</text>
+<rect x="490" y="435" width="66" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="523" y="454" font-size="12" fill="#444441" text-anchor="middle">LLM</text>
+<rect x="562" y="435" width="66" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="595" y="454" font-size="12" fill="#444441" text-anchor="middle">Embedder</text>
+</g>
+
+<!-- legend -->
+<rect x="226" y="494" width="12" height="12" rx="3" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/><text x="243" y="504" font-size="12" fill="#5F5E5A">前端</text>
+<rect x="291" y="494" width="12" height="12" rx="3" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/><text x="308" y="504" font-size="12" fill="#5F5E5A">服务 · 编排</text>
+<rect x="392" y="494" width="12" height="12" rx="3" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="409" y="504" font-size="12" fill="#5F5E5A">基础设施</text>
+
+<!-- async pipeline -->
+<rect x="40" y="518" width="600" height="56" rx="10" fill="none" stroke="#888780" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text x="56" y="542" font-size="14" font-weight="500" fill="#2C2C2A">流水线</text>
+<text x="56" y="559" font-size="12" fill="#5F5E5A">异步</text>
+<g>
+<rect x="130" y="531" width="82" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="171" y="550" font-size="12" fill="#444441" text-anchor="middle">上传投递</text>
+<rect x="234" y="531" width="82" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="275" y="550" font-size="12" fill="#444441" text-anchor="middle">解析 worker</text>
+<rect x="338" y="531" width="82" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="379" y="550" font-size="12" fill="#444441" text-anchor="middle">MinerU</text>
+<rect x="442" y="531" width="82" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="483" y="550" font-size="12" fill="#444441" text-anchor="middle">结构抽取</text>
+<rect x="546" y="531" width="82" height="30" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/><text x="587" y="550" font-size="12" fill="#444441" text-anchor="middle">向量入库</text>
+</g>
+<path d="M212 546 H232" fill="none" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M316 546 H336" fill="none" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M420 546 H440" fill="none" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M524 546 H544" fill="none" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+</svg>
