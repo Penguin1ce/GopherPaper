@@ -18,7 +18,6 @@ import (
 
 	"GopherPaper/internal/ai"
 	"GopherPaper/internal/ai/core"
-	"GopherPaper/internal/auth"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/response"
@@ -345,16 +344,16 @@ func Delete(c *gin.Context) {
 }
 
 // Figure 返回某篇论文的某张图片文件,供前端渲染召回引用的缩略图。
-// 浏览器 img 标签带不了 Authorization 头,鉴权走 query token,过同一套 auth.Parse。
-// GET /api/v1/papers/:id/figures/:name?token=<jwt>
+// 浏览器 img 标签通过 HttpOnly Cookie 鉴权。
+// GET /api/v1/papers/:id/figures/:name
 //
 // @Summary 读取论文图片
-// @Description 返回某篇论文解析出的图片文件。该接口供浏览器图片标签使用，鉴权使用 query token。
+// @Description 返回某篇论文解析出的图片文件。浏览器通过 HttpOnly Cookie 鉴权。
 // @Tags papers
 // @Produce octet-stream
+// @Security BearerAuth
 // @Param id path string true "论文 ID"
 // @Param name path string true "图片文件名"
-// @Param token query string true "JWT"
 // @Success 200 {file} file
 // @Failure 400 {object} dto.Response
 // @Failure 401 {object} dto.Response
@@ -363,12 +362,7 @@ func Delete(c *gin.Context) {
 // @Failure 500 {object} dto.Response
 // @Router /papers/{id}/figures/{name} [get]
 func Figure(c *gin.Context) {
-	claims, err := auth.Parse(c.Query("token"))
-	if err != nil {
-		response.Fail(c, http.StatusUnauthorized, "token 无效")
-		return
-	}
-	ownerID := claims.StudentID
+	ownerID := tenant.MustStudentID(c.Request.Context())
 	paperID := c.Param("id")
 	name := filepath.Base(c.Param("name")) // 防路径穿越,只取文件名
 	if name == "." || name == ".." || name == "/" {
@@ -389,15 +383,15 @@ func Figure(c *gin.Context) {
 }
 
 // File 返回某篇论文的原始 PDF 文件,供精读页 pdf.js 渲染。
-// 浏览器/pdf.js 带不了 Authorization 头,鉴权走 query token,过同一套 auth.Parse。
-// GET /api/v1/papers/:id/file?token=<jwt>
+// 浏览器/pdf.js 通过 HttpOnly Cookie 鉴权。
+// GET /api/v1/papers/:id/file
 //
 // @Summary 读取论文 PDF
-// @Description 返回某篇论文的原始 PDF 文件。该接口供 pdf.js 使用，鉴权使用 query token。
+// @Description 返回某篇论文的原始 PDF 文件。浏览器通过 HttpOnly Cookie 鉴权。
 // @Tags papers
 // @Produce octet-stream
+// @Security BearerAuth
 // @Param id path string true "论文 ID"
-// @Param token query string true "JWT"
 // @Success 200 {file} file
 // @Failure 401 {object} dto.Response
 // @Failure 403 {object} dto.Response
@@ -405,18 +399,14 @@ func Figure(c *gin.Context) {
 // @Failure 500 {object} dto.Response
 // @Router /papers/{id}/file [get]
 func File(c *gin.Context) {
-	claims, err := auth.Parse(c.Query("token"))
-	if err != nil {
-		response.Fail(c, http.StatusUnauthorized, "token 无效")
-		return
-	}
-	path, err := paperservice.PaperFile(c.Request.Context(), claims.StudentID, c.Param("id"))
+	ownerID := tenant.MustStudentID(c.Request.Context())
+	path, err := paperservice.PaperFile(c.Request.Context(), ownerID, c.Param("id"))
 	if err != nil {
 		writePaperErr(c, err, "查询失败")
 		return
 	}
 	if _, err := os.Stat(path); err != nil {
-		zlog.Warn("论文原始 PDF 文件不存在", "paper_id", c.Param("id"), "owner", claims.StudentID, "path", path, "err", err)
+		zlog.Warn("论文原始 PDF 文件不存在", "paper_id", c.Param("id"), "owner", ownerID, "path", path, "err", err)
 		response.Fail(c, http.StatusNotFound, "文件不存在")
 		return
 	}

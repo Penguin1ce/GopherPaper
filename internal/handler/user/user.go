@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"GopherPaper/internal/ai"
+	"GopherPaper/internal/auth"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/model"
 	"GopherPaper/internal/response"
@@ -82,11 +83,11 @@ func Register(c *gin.Context) {
 	response.OKMsg(c, "注册成功", nil)
 }
 
-// Login 校验账号密码并签发 JWT。
+// Login 校验账号密码并把 JWT 写入 HttpOnly Cookie。
 // POST /api/v1/user/login
 //
 // @Summary 登录
-// @Description 按学号或绑定邮箱和密码登录，返回 JWT 与用户基本信息。
+// @Description 按学号或绑定邮箱和密码登录，通过 HttpOnly Cookie 建立会话并返回用户基本信息。
 // @Tags user
 // @Accept json
 // @Produce json
@@ -121,8 +122,8 @@ func Login(c *gin.Context) {
 		}
 		return
 	}
+	auth.SetUserCookie(c.Writer, c.Request, token)
 	response.OK(c, dto.LoginResponse{
-		Token:     token,
 		StudentID: user.StudentID,
 		Name:      user.Name,
 		Email:     user.Email,
@@ -165,6 +166,7 @@ func ResetPassword(c *gin.Context) {
 		}
 		return
 	}
+	auth.ClearUserCookie(c.Writer, c.Request)
 	ai.EvictUser(req.StudentID)
 	response.OKMsg(c, "密码已重置，请重新登录", nil)
 }
@@ -219,6 +221,7 @@ func UpdateEmail(c *gin.Context) {
 		writeProfileErr(c, err)
 		return
 	}
+	auth.ClearUserCookie(c.Writer, c.Request)
 	ai.EvictUser(studentID)
 	response.OK(c, profileResponse(user))
 }
@@ -280,6 +283,7 @@ func Logout(c *gin.Context) {
 		response.Fail(c, http.StatusInternalServerError, "登出失败")
 		return
 	}
+	auth.ClearUserCookie(c.Writer, c.Request)
 	ai.EvictUser(studentID)
 	response.OKMsg(c, "已登出", nil)
 }

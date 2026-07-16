@@ -336,7 +336,6 @@ export interface PaperProgressResponse {
 }
 
 export interface LoginResponse {
-  token: string;
   student_id: string;
   name: string;
   email: string;

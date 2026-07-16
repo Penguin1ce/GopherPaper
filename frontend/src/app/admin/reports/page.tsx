@@ -54,7 +54,11 @@ const tooltipStyle = {
 
 type ReportTab = "summary" | "status" | "services" | "classes" | "latency";
 
-const REPORT_TABS: Array<{ key: ReportTab; label: string; icon: typeof Gauge }> = [
+const REPORT_TABS: Array<{
+  key: ReportTab;
+  label: string;
+  icon: typeof Gauge;
+}> = [
   { key: "summary", label: "摘要", icon: Gauge },
   { key: "status", label: "论文状态", icon: PieChartIcon },
   { key: "services", label: "服务调用", icon: Layers },
@@ -73,7 +77,7 @@ export default function AdminReportsPage() {
 
   useEffect(() => {
     setMounted(true);
-    setToken(readSavedAuth()?.token ?? null);
+    setToken(readSavedAuth()?.admin ? "cookie" : null);
   }, []);
 
   useEffect(() => {
@@ -112,7 +116,10 @@ export default function AdminReportsPage() {
       <main className="grid min-h-dvh place-items-center bg-background p-6 text-center">
         <div>
           <p className="text-sm text-muted-foreground">请先在管理后台登录。</p>
-          <Link href="/admin" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+          <Link
+            href="/admin"
+            className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+          >
             <ArrowLeft className="size-4" /> 返回后台
           </Link>
         </div>
@@ -129,8 +136,12 @@ export default function AdminReportsPage() {
               <FileBarChart className="size-5" />
             </span>
             <div>
-              <h1 className="text-base font-semibold tracking-tight">运营报表</h1>
-              <p className="text-xs text-muted-foreground">近 30 天综合运营概况</p>
+              <h1 className="text-base font-semibold tracking-tight">
+                运营报表
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                近 30 天综合运营概况
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -141,7 +152,10 @@ export default function AdminReportsPage() {
             >
               <Printer className="size-4" /> 打印 / 导出 PDF
             </button>
-            <Link href="/admin" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+            <Link
+              href="/admin"
+              className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+            >
               <ArrowLeft className="size-4" /> 返回
             </Link>
           </div>
@@ -155,7 +169,10 @@ export default function AdminReportsPage() {
         ) : (
           <article className="space-y-5">
             <ReportHeader />
-            <Tabs value={tab} onValueChange={(value) => setTab(value as ReportTab)}>
+            <Tabs
+              value={tab}
+              onValueChange={(value) => setTab(value as ReportTab)}
+            >
               <TabsList variant="line" className="flex-wrap print:hidden">
                 {REPORT_TABS.map(({ key, label, icon: Icon }) => (
                   <TabsTrigger key={key} value={key}>
@@ -175,9 +192,21 @@ export default function AdminReportsPage() {
                     <div className="h-52 w-52">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                          <Pie data={basic?.status_distribution ?? []} dataKey="count" nameKey="status" innerRadius="55%" outerRadius="90%" paddingAngle={2} stroke="var(--card)" strokeWidth={2}>
+                          <Pie
+                            data={basic?.status_distribution ?? []}
+                            dataKey="count"
+                            nameKey="status"
+                            innerRadius="55%"
+                            outerRadius="90%"
+                            paddingAngle={2}
+                            stroke="var(--card)"
+                            strokeWidth={2}
+                          >
                             {(basic?.status_distribution ?? []).map((s) => (
-                              <Cell key={s.status} fill={STATUS_COLORS[s.status] ?? "#94a3b8"} />
+                              <Cell
+                                key={s.status}
+                                fill={STATUS_COLORS[s.status] ?? "#94a3b8"}
+                              />
                             ))}
                           </Pie>
                           <Tooltip contentStyle={tooltipStyle} />
@@ -187,9 +216,18 @@ export default function AdminReportsPage() {
                     <ul className="space-y-1 text-sm">
                       {(basic?.status_distribution ?? []).map((s) => (
                         <li key={s.status} className="flex items-center gap-2">
-                          <span className="size-2.5 rounded-full" style={{ background: STATUS_COLORS[s.status] ?? "#94a3b8" }} />
-                          <span className="w-20 text-muted-foreground">{s.status}</span>
-                          <span className="font-medium tabular-nums">{s.count}</span>
+                          <span
+                            className="size-2.5 rounded-full"
+                            style={{
+                              background: STATUS_COLORS[s.status] ?? "#94a3b8",
+                            }}
+                          />
+                          <span className="w-20 text-muted-foreground">
+                            {s.status}
+                          </span>
+                          <span className="font-medium tabular-nums">
+                            {s.count}
+                          </span>
                         </li>
                       ))}
                     </ul>
@@ -212,12 +250,21 @@ export default function AdminReportsPage() {
                     </thead>
                     <tbody>
                       {(basic?.services ?? []).map((s) => (
-                        <tr key={s.service_type} className="border-b border-border/50">
+                        <tr
+                          key={s.service_type}
+                          className="border-b border-border/50"
+                        >
                           <td className="py-2 font-medium">{s.service_type}</td>
                           <td className="py-2 tabular-nums">{s.total}</td>
-                          <td className="py-2 tabular-nums text-emerald-600 dark:text-emerald-400">{s.success}</td>
-                          <td className="py-2 tabular-nums text-red-600 dark:text-red-400">{s.failed}</td>
-                          <td className="py-2 tabular-nums">{Math.round(s.avg_ms)}ms</td>
+                          <td className="py-2 tabular-nums text-emerald-600 dark:text-emerald-400">
+                            {s.success}
+                          </td>
+                          <td className="py-2 tabular-nums text-red-600 dark:text-red-400">
+                            {s.failed}
+                          </td>
+                          <td className="py-2 tabular-nums">
+                            {Math.round(s.avg_ms)}ms
+                          </td>
                           <td className="py-2 tabular-nums">{s.max_ms}ms</td>
                         </tr>
                       ))}
@@ -230,12 +277,45 @@ export default function AdminReportsPage() {
                 <Section title="班级维度概览">
                   <div className="h-56">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={classes} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
-                        <XAxis dataKey="class_id" tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} />
-                        <YAxis tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} width={30} allowDecimals={false} />
-                        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--muted)", opacity: 0.35 }} />
-                        <Bar dataKey="user_count" name="用户数" fill="#6366f1" radius={[3, 3, 0, 0]} />
-                        <Bar dataKey="paper_count" name="论文数" fill="#10b981" radius={[3, 3, 0, 0]} />
+                      <BarChart
+                        data={classes}
+                        margin={{ top: 6, right: 8, left: -20, bottom: 0 }}
+                      >
+                        <XAxis
+                          dataKey="class_id"
+                          tick={{
+                            fontSize: 11,
+                            fill: "var(--muted-foreground)",
+                          }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          tick={{
+                            fontSize: 11,
+                            fill: "var(--muted-foreground)",
+                          }}
+                          tickLine={false}
+                          axisLine={false}
+                          width={30}
+                          allowDecimals={false}
+                        />
+                        <Tooltip
+                          contentStyle={tooltipStyle}
+                          cursor={{ fill: "var(--muted)", opacity: 0.35 }}
+                        />
+                        <Bar
+                          dataKey="user_count"
+                          name="用户数"
+                          fill="#6366f1"
+                          radius={[3, 3, 0, 0]}
+                        />
+                        <Bar
+                          dataKey="paper_count"
+                          name="论文数"
+                          fill="#10b981"
+                          radius={[3, 3, 0, 0]}
+                        />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -246,11 +326,39 @@ export default function AdminReportsPage() {
                 <Section title="延迟分布">
                   <div className="h-52">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={advanced?.latency_histogram ?? []} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
-                        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} />
-                        <YAxis tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} width={30} allowDecimals={false} />
-                        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--muted)", opacity: 0.35 }} />
-                        <Bar dataKey="count" name="调用数" fill="#0ea5e9" radius={[3, 3, 0, 0]} />
+                      <BarChart
+                        data={advanced?.latency_histogram ?? []}
+                        margin={{ top: 6, right: 8, left: -20, bottom: 0 }}
+                      >
+                        <XAxis
+                          dataKey="label"
+                          tick={{
+                            fontSize: 11,
+                            fill: "var(--muted-foreground)",
+                          }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          tick={{
+                            fontSize: 11,
+                            fill: "var(--muted-foreground)",
+                          }}
+                          tickLine={false}
+                          axisLine={false}
+                          width={30}
+                          allowDecimals={false}
+                        />
+                        <Tooltip
+                          contentStyle={tooltipStyle}
+                          cursor={{ fill: "var(--muted)", opacity: 0.35 }}
+                        />
+                        <Bar
+                          dataKey="count"
+                          name="调用数"
+                          fill="#0ea5e9"
+                          radius={[3, 3, 0, 0]}
+                        />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -271,8 +379,12 @@ export default function AdminReportsPage() {
 function ReportHeader() {
   return (
     <div className="text-center">
-      <h2 className="font-serif text-2xl font-semibold">GopherPaper 运营报表</h2>
-      <p className="mt-1 text-sm text-muted-foreground">科研文献智能解析与知识服务系统</p>
+      <h2 className="font-serif text-2xl font-semibold">
+        GopherPaper 运营报表
+      </h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        科研文献智能解析与知识服务系统
+      </p>
     </div>
   );
 }
@@ -293,8 +405,13 @@ function SummarySection({
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {cards.map((c) => (
-        <div key={c.label} className="rounded-xl border border-border bg-card p-4 text-center">
-          <div className="text-2xl font-semibold tabular-nums">{c.value.toLocaleString("zh-CN")}</div>
+        <div
+          key={c.label}
+          className="rounded-xl border border-border bg-card p-4 text-center"
+        >
+          <div className="text-2xl font-semibold tabular-nums">
+            {c.value.toLocaleString("zh-CN")}
+          </div>
           <div className="mt-1 text-xs text-muted-foreground">{c.label}</div>
         </div>
       ))}
@@ -310,10 +427,18 @@ function SummarySection({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <section>
-      <h3 className="mb-3 border-l-4 border-primary pl-3 text-base font-semibold">{title}</h3>
+      <h3 className="mb-3 border-l-4 border-primary pl-3 text-base font-semibold">
+        {title}
+      </h3>
       {children}
     </section>
   );

@@ -66,19 +66,22 @@ export type SeedResult = {
 
 export async function dashboardRequest<T>(
   path: string,
-  token: string,
+  _token: string,
   options: RequestInit = {},
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers as Record<string, string> | undefined),
     },
   });
   const text = await res.text();
-  let body: { code: number; message: string; data?: T } = { code: 0, message: "" };
+  let body: { code: number; message: string; data?: T } = {
+    code: 0,
+    message: "",
+  };
   if (text) {
     try {
       body = JSON.parse(text);

@@ -116,7 +116,7 @@ func Login(ctx context.Context, email, password string) (string, *model.Admin, e
 	if bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(password)) != nil {
 		return "", nil, ErrWrongPassword
 	}
-	token, err := auth.GenerateAdmin(admin.ID, admin.Username)
+	token, err := auth.IssueAdmin(ctx, admin.ID, admin.Username)
 	if err != nil {
 		return "", nil, fmt.Errorf("admin: sign token failed: %w", err)
 	}
@@ -124,6 +124,13 @@ func Login(ctx context.Context, email, password string) (string, *model.Admin, e
 	_ = dao.DB.WithContext(ctx).Model(&admin).Update("last_login_at", now).Error
 	admin.LastLoginAt = &now
 	return token, &admin, nil
+}
+
+func Logout(ctx context.Context, adminID uint) error {
+	if err := auth.RevokeAdmin(ctx, adminID); err != nil {
+		return fmt.Errorf("admin: revoke login session: %w", err)
+	}
+	return nil
 }
 
 func Get(ctx context.Context, id uint) (*model.Admin, error) {

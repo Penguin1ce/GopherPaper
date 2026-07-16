@@ -178,6 +178,7 @@ report_concurrency = 6        # 报告消费者并发度,按模型并发配额�
 secret = "change-me-to-a-long-random-secret"  # 生产务必替换为强随机密钥
 issuer = "gopherpaper"
 expire_hours = 240
+enable_debug_token = false # 仅本地 debug/test 且回环来源可开启
 
 # 管理员邀请码
 [admin]

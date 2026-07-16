@@ -92,13 +92,7 @@ type PaperList = {
 
 type DateRangeFilter = "" | "today" | "7d" | "month";
 type TabKey =
-  | "dashboard"
-  | "users"
-  | "papers"
-  | "sessions"
-  | "logs"
-  | "storage"
-  | "admins";
+  "dashboard" | "users" | "papers" | "sessions" | "logs" | "storage" | "admins";
 
 const ADMIN_TABS: Array<{ key: TabKey; label: string; icon: typeof Gauge }> = [
   { key: "dashboard", label: "数据看板", icon: Gauge },
@@ -117,7 +111,10 @@ type PaperFilters = {
 
 const DEFAULT_PAPER_PAGE_SIZE = 10;
 
-function emptyPaperList(page = 1, pageSize = DEFAULT_PAPER_PAGE_SIZE): PaperList {
+function emptyPaperList(
+  page = 1,
+  pageSize = DEFAULT_PAPER_PAGE_SIZE,
+): PaperList {
   return {
     items: [],
     total: 0,
@@ -136,7 +133,9 @@ function normalizePaperList(
     total: typeof data?.total === "number" ? data.total : 0,
     page: typeof data?.page === "number" && data.page > 0 ? data.page : page,
     page_size:
-      typeof data?.page_size === "number" && data.page_size > 0 ? data.page_size : pageSize,
+      typeof data?.page_size === "number" && data.page_size > 0
+        ? data.page_size
+        : pageSize,
   };
 }
 
@@ -149,7 +148,10 @@ function AdminAuthBackdrop() {
   }, []);
 
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
+    >
       {mounted && !reduce && (
         <div className="absolute inset-0 opacity-[0.18] mix-blend-multiply dark:opacity-[0.24] dark:mix-blend-screen">
           <Threads
@@ -168,7 +170,8 @@ function AdminAuthBackdrop() {
           backgroundImage:
             "linear-gradient(to right, color-mix(in oklch, var(--border) 60%, transparent) 1px, transparent 1px)",
           backgroundSize: "min(7.5rem, 12vw) 100%",
-          maskImage: "radial-gradient(120% 80% at 50% 0%, #000 30%, transparent 78%)",
+          maskImage:
+            "radial-gradient(120% 80% at 50% 0%, #000 30%, transparent 78%)",
         }}
       />
       <div
@@ -200,7 +203,11 @@ function AdminBrand({ authed }: { authed: boolean }) {
         {authed ? (
           <ShieldCheck className="size-5" />
         ) : (
-          <img src="/mascot-gopher.png" alt="GopherPaper" className="size-full object-cover" />
+          <img
+            src="/mascot-gopher.png"
+            alt="GopherPaper"
+            className="size-full object-cover"
+          />
         )}
       </span>
       <span>
@@ -238,9 +245,10 @@ export default function AdminPage() {
   const [tableLoading, setTableLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [codeBusy, setCodeBusy] = useState(false);
-  const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(
-    null,
-  );
+  const [message, setMessage] = useState<{
+    type: "ok" | "error";
+    text: string;
+  } | null>(null);
   const [codeNotice, setCodeNotice] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminPaper | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState("");
@@ -248,7 +256,8 @@ export default function AdminPage() {
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const codeNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const token = auth?.token || "";
+  // 非敏感状态标记；实际凭据只存在 HttpOnly Cookie 中。
+  const token = auth ? "cookie" : "";
 
   const persistAuth = useCallback((next: AdminAuth | null) => {
     setAuth(next);
@@ -296,10 +305,15 @@ export default function AdminPage() {
           page: String(page),
           page_size: String(pageSize),
         });
-        if (nextFilters.query.trim()) params.set("query", nextFilters.query.trim());
+        if (nextFilters.query.trim())
+          params.set("query", nextFilters.query.trim());
         if (nextFilters.status) params.set("status", nextFilters.status);
-        if (nextFilters.date_range) params.set("date_range", nextFilters.date_range);
-        const data = await adminRequest<PaperList | null>(`/admin/papers?${params}`, jwt);
+        if (nextFilters.date_range)
+          params.set("date_range", nextFilters.date_range);
+        const data = await adminRequest<PaperList | null>(
+          `/admin/papers?${params}`,
+          jwt,
+        );
         setPapers(normalizePaperList(data, page, pageSize));
       } finally {
         setTableLoading(false);
@@ -330,9 +344,9 @@ export default function AdminPage() {
     if (hydratedRef.current) return;
     hydratedRef.current = true;
     const saved = readSavedAuth();
-    if (!saved?.token) return;
+    if (!saved?.admin) return;
     persistAuth(saved);
-    void refreshAll(saved.token);
+    void refreshAll("cookie");
   }, [persistAuth, refreshAll]);
 
   useEffect(() => {
@@ -351,13 +365,17 @@ export default function AdminPage() {
     if (busy) return;
     setBusy(true);
     try {
-      const data = await adminRequest<AdminAuth>("/admin/login", "", {
-        method: "POST",
-        body: JSON.stringify(loginForm),
-      });
-      persistAuth(data);
+      const data = await adminRequest<AdminAuth>(
+        "/admin/login",
+        "",
+        {
+          method: "POST",
+          body: JSON.stringify(loginForm),
+        },
+      );
+      persistAuth({ admin: data.admin });
       flash("ok", "管理员登录成功");
-      await refreshAll(data.token);
+      await refreshAll("cookie");
     } catch (err) {
       flash("error", err instanceof Error ? err.message : "登录失败");
     } finally {
@@ -376,7 +394,10 @@ export default function AdminPage() {
       });
       flash("ok", "管理员注册成功，请登录");
       setMode("login");
-      setLoginForm({ email: registerForm.email, password: registerForm.password });
+      setLoginForm({
+        email: registerForm.email,
+        password: registerForm.password,
+      });
     } catch (err) {
       flash("error", err instanceof Error ? err.message : "注册失败");
     } finally {
@@ -405,11 +426,20 @@ export default function AdminPage() {
     }
   };
 
-  const onLogout = () => {
-    persistAuth(null);
-    setPapers(emptyPaperList());
-    setTab("dashboard");
-    flash("ok", "已退出管理员后台");
+  const onLogout = async () => {
+    try {
+      await adminRequest<null>("/admin/logout", token, { method: "POST" });
+      persistAuth(null);
+      setPapers(emptyPaperList());
+      setTab("dashboard");
+      flash("ok", "已退出管理员后台");
+    } catch (err) {
+      if (err instanceof AdminApiError && err.status === 401) {
+        persistAuth(null);
+        return;
+      }
+      flash("error", err instanceof Error ? err.message : "退出失败");
+    }
   };
 
   const onSearch = async (e: FormEvent) => {
@@ -425,9 +455,13 @@ export default function AdminPage() {
     if (!deleteTarget || deleteConfirm !== deleteTarget.id || !token) return;
     setBusy(true);
     try {
-      await adminRequest<null>(`/admin/papers/${encodeURIComponent(deleteTarget.id)}`, token, {
-        method: "DELETE",
-      });
+      await adminRequest<null>(
+        `/admin/papers/${encodeURIComponent(deleteTarget.id)}`,
+        token,
+        {
+          method: "DELETE",
+        },
+      );
       flash("ok", "论文已删除");
       setDeleteTarget(null);
       setDeleteConfirm("");
@@ -485,11 +519,23 @@ export default function AdminPage() {
               >
                 运营报表
               </Link>
-              <Button variant="outline" size="sm" onClick={() => void refreshAll()}>
-                {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refreshAll()}
+              >
+                {loading ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
                 刷新
               </Button>
-              <Button variant="ghost" size="sm" onClick={onLogout}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void onLogout()}
+              >
                 <LogOut className="size-4" />
                 退出
               </Button>
@@ -536,7 +582,10 @@ export default function AdminPage() {
               </TabsList>
 
               <TabsContent value="dashboard" className="flex flex-col gap-5">
-                <AdminDashboard token={token} onChanged={() => void refreshAll()} />
+                <AdminDashboard
+                  token={token}
+                  onChanged={() => void refreshAll()}
+                />
               </TabsContent>
 
               <TabsContent value="users">
@@ -552,7 +601,9 @@ export default function AdminPage() {
                         全库搜索、筛选并删除论文及其派生数据。
                       </p>
                     </div>
-                    <span className="text-sm text-muted-foreground">共 {papers.total} 篇</span>
+                    <span className="text-sm text-muted-foreground">
+                      共 {papers.total} 篇
+                    </span>
                   </div>
                   <form
                     className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center"
@@ -564,13 +615,17 @@ export default function AdminPage() {
                         className="pl-9"
                         placeholder="标题、文件名、论文 ID、作者账号"
                         value={filters.query}
-                        onChange={(e) => setFilters((f) => ({ ...f, query: e.target.value }))}
+                        onChange={(e) =>
+                          setFilters((f) => ({ ...f, query: e.target.value }))
+                        }
                       />
                     </label>
                     <select
                       className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-40"
                       value={filters.status}
-                      onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
+                      onChange={(e) =>
+                        setFilters((f) => ({ ...f, status: e.target.value }))
+                      }
                     >
                       <option value="">全部状态</option>
                       <option value="uploaded">uploaded</option>
@@ -595,8 +650,14 @@ export default function AdminPage() {
                       <option value="7d">近 7 天</option>
                       <option value="month">近 1 个月</option>
                     </select>
-                    <Button className="w-full sm:w-24" type="submit" disabled={tableLoading}>
-                      {tableLoading && <Loader2 className="size-4 animate-spin" />}
+                    <Button
+                      className="w-full sm:w-24"
+                      type="submit"
+                      disabled={tableLoading}
+                    >
+                      {tableLoading && (
+                        <Loader2 className="size-4 animate-spin" />
+                      )}
                       查询
                     </Button>
                   </form>
@@ -678,13 +739,16 @@ export default function AdminPage() {
               <div>
                 <h2 className="text-base font-semibold">确认删除论文</h2>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  将删除 MySQL 记录、向量库 chunks、知识图谱节点、会话、PDF 和图片目录。
+                  将删除 MySQL 记录、向量库 chunks、知识图谱节点、会话、PDF
+                  和图片目录。
                 </p>
               </div>
             </div>
             <div className="mt-4 rounded-lg border border-border bg-muted/40 p-3 text-sm">
               <p className="font-medium">{paperTitle(deleteTarget)}</p>
-              <p className="mt-1 font-mono text-xs text-muted-foreground">{deleteTarget.id}</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">
+                {deleteTarget.id}
+              </p>
             </div>
             <Label className="mt-4 block" htmlFor="delete-confirm">
               输入完整论文 ID 确认删除
@@ -710,7 +774,11 @@ export default function AdminPage() {
                 disabled={busy || deleteConfirm !== deleteTarget.id}
                 onClick={() => void onDelete()}
               >
-                {busy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                {busy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
                 删除
               </Button>
             </div>
@@ -758,83 +826,83 @@ function AuthPanel(props: AdminAuthPanelProps) {
         className="w-full max-w-md"
       >
         <GlassSurface className="rounded-2xl" contentClassName="p-7 sm:p-8">
-        <div className="mb-6">
-          <h1 className="font-serif text-[1.7rem] font-semibold tracking-tight">
-            {isLogin ? "进入管理员后台" : "创建管理员账号"}
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            {isLogin
-              ? "使用管理员邮箱登录，继续管理论文库。"
-              : "使用注册码与邮箱验证码创建后台账号。"}
+          <div className="mb-6">
+            <h1 className="font-serif text-[1.7rem] font-semibold tracking-tight">
+              {isLogin ? "进入管理员后台" : "创建管理员账号"}
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {isLogin
+                ? "使用管理员邮箱登录，继续管理论文库。"
+                : "使用注册码与邮箱验证码创建后台账号。"}
+            </p>
+          </div>
+
+          <div className="mb-6 grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/50 p-1">
+            {(["login", "register"] as const).map((nextMode) => (
+              <button
+                key={nextMode}
+                type="button"
+                className={`h-9 rounded-md text-sm font-medium transition-colors ${
+                  mode === nextMode
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setMode(nextMode)}
+              >
+                {nextMode === "login" ? "登录" : "注册"}
+              </button>
+            ))}
+          </div>
+
+          <AnimatePresence mode="wait" initial={false}>
+            {isLogin ? (
+              <motion.div
+                key="admin-login"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.24, ease: ADMIN_AUTH_EASE }}
+              >
+                <AdminLoginForm {...props} />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="admin-register"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                transition={{ duration: 0.24, ease: ADMIN_AUTH_EASE }}
+              >
+                <AdminRegisterFormPanel {...props} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <p className="mt-6 text-center text-xs text-muted-foreground">
+            {isLogin ? (
+              <>
+                还没有管理员账号？
+                <button
+                  type="button"
+                  onClick={() => setMode("register")}
+                  className="ml-1 font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  立即注册
+                </button>
+              </>
+            ) : (
+              <>
+                已有管理员账号？
+                <button
+                  type="button"
+                  onClick={() => setMode("login")}
+                  className="ml-1 font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  直接登录
+                </button>
+              </>
+            )}
           </p>
-        </div>
-
-        <div className="mb-6 grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/50 p-1">
-          {(["login", "register"] as const).map((nextMode) => (
-            <button
-              key={nextMode}
-              type="button"
-              className={`h-9 rounded-md text-sm font-medium transition-colors ${
-                mode === nextMode
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              onClick={() => setMode(nextMode)}
-            >
-              {nextMode === "login" ? "登录" : "注册"}
-            </button>
-          ))}
-        </div>
-
-        <AnimatePresence mode="wait" initial={false}>
-          {isLogin ? (
-            <motion.div
-              key="admin-login"
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              transition={{ duration: 0.24, ease: ADMIN_AUTH_EASE }}
-            >
-              <AdminLoginForm {...props} />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="admin-register"
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 10 }}
-              transition={{ duration: 0.24, ease: ADMIN_AUTH_EASE }}
-            >
-              <AdminRegisterFormPanel {...props} />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          {isLogin ? (
-            <>
-              还没有管理员账号？
-              <button
-                type="button"
-                onClick={() => setMode("register")}
-                className="ml-1 font-medium text-primary underline-offset-4 hover:underline"
-              >
-                立即注册
-              </button>
-            </>
-          ) : (
-            <>
-              已有管理员账号？
-              <button
-                type="button"
-                onClick={() => setMode("login")}
-                className="ml-1 font-medium text-primary underline-offset-4 hover:underline"
-              >
-                直接登录
-              </button>
-            </>
-          )}
-        </p>
         </GlassSurface>
       </motion.div>
     </section>
@@ -856,7 +924,9 @@ function AdminLoginForm({
           value={loginForm.email}
           autoComplete="email"
           required
-          onChange={(e) => setLoginForm((f) => ({ ...f, email: e.target.value }))}
+          onChange={(e) =>
+            setLoginForm((f) => ({ ...f, email: e.target.value }))
+          }
         />
       </Field>
       <Field label="密码">
@@ -865,7 +935,9 @@ function AdminLoginForm({
           value={loginForm.password}
           autoComplete="current-password"
           required
-          onChange={(e) => setLoginForm((f) => ({ ...f, password: e.target.value }))}
+          onChange={(e) =>
+            setLoginForm((f) => ({ ...f, password: e.target.value }))
+          }
         />
       </Field>
       <Button className="h-11 w-full gap-2" type="submit" disabled={busy}>
@@ -892,7 +964,9 @@ function AdminRegisterFormPanel({
             className="h-10"
             value={registerForm.name}
             autoComplete="name"
-            onChange={(e) => setRegisterForm((f) => ({ ...f, name: e.target.value }))}
+            onChange={(e) =>
+              setRegisterForm((f) => ({ ...f, name: e.target.value }))
+            }
           />
         </Field>
         <Field label="用户名">
@@ -901,7 +975,9 @@ function AdminRegisterFormPanel({
             value={registerForm.username}
             autoComplete="username"
             required
-            onChange={(e) => setRegisterForm((f) => ({ ...f, username: e.target.value }))}
+            onChange={(e) =>
+              setRegisterForm((f) => ({ ...f, username: e.target.value }))
+            }
           />
         </Field>
       </div>
@@ -915,7 +991,9 @@ function AdminRegisterFormPanel({
           value={registerForm.email}
           autoComplete="email"
           required
-          onChange={(e) => setRegisterForm((f) => ({ ...f, email: e.target.value }))}
+          onChange={(e) =>
+            setRegisterForm((f) => ({ ...f, email: e.target.value }))
+          }
         />
       </div>
 
@@ -958,7 +1036,9 @@ function AdminRegisterFormPanel({
             autoComplete="new-password"
             minLength={6}
             required
-            onChange={(e) => setRegisterForm((f) => ({ ...f, password: e.target.value }))}
+            onChange={(e) =>
+              setRegisterForm((f) => ({ ...f, password: e.target.value }))
+            }
           />
         </Field>
         <Field label="管理员注册码">
@@ -967,7 +1047,10 @@ function AdminRegisterFormPanel({
             value={registerForm.registration_code}
             required
             onChange={(e) =>
-              setRegisterForm((f) => ({ ...f, registration_code: e.target.value }))
+              setRegisterForm((f) => ({
+                ...f,
+                registration_code: e.target.value,
+              }))
             }
           />
         </Field>
@@ -1017,14 +1100,20 @@ function PaperTable({
         <tbody>
           {loading ? (
             <tr>
-              <td className="px-4 py-10 text-center text-muted-foreground" colSpan={6}>
+              <td
+                className="px-4 py-10 text-center text-muted-foreground"
+                colSpan={6}
+              >
                 <Loader2 className="mx-auto mb-2 size-5 animate-spin" />
                 正在加载论文列表
               </td>
             </tr>
           ) : rows.length === 0 ? (
             <tr>
-              <td className="px-4 py-10 text-center text-muted-foreground" colSpan={6}>
+              <td
+                className="px-4 py-10 text-center text-muted-foreground"
+                colSpan={6}
+              >
                 暂无匹配论文
               </td>
             </tr>
@@ -1032,29 +1121,49 @@ function PaperTable({
             rows.map((paper) => (
               <tr key={paper.id} className="border-t border-border align-top">
                 <td className="max-w-[28rem] px-4 py-3">
-                  <p className="line-clamp-2 font-medium">{paperTitle(paper)}</p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">{paper.file_name}</p>
-                  <p className="mt-1 font-mono text-[11px] text-muted-foreground">{paper.id}</p>
+                  <p className="line-clamp-2 font-medium">
+                    {paperTitle(paper)}
+                  </p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    {paper.file_name}
+                  </p>
+                  <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                    {paper.id}
+                  </p>
                 </td>
                 <td className="px-4 py-3">
-                  <p className="font-medium">{paper.owner_name || paper.owner_id}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{paper.owner_email || paper.owner_id}</p>
+                  <p className="font-medium">
+                    {paper.owner_name || paper.owner_id}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {paper.owner_email || paper.owner_id}
+                  </p>
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${statusClass(paper.status)}`}>
+                  <span
+                    className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${statusClass(paper.status)}`}
+                  >
                     {paper.status}
                   </span>
                   {paper.fail_reason && (
-                    <p className="mt-2 max-w-[12rem] text-xs text-destructive">{paper.fail_reason}</p>
+                    <p className="mt-2 max-w-[12rem] text-xs text-destructive">
+                      {paper.fail_reason}
+                    </p>
                   )}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
                   <p>{formatBytes(paper.size)}</p>
                   <p className="mt-1 text-xs">{paper.page_count || "—"} 页</p>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">{formatDate(paper.updated_at || paper.created_at)}</td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {formatDate(paper.updated_at || paper.created_at)}
+                </td>
                 <td className="px-4 py-3 text-right">
-                  <Button variant="destructive" size="sm" onClick={() => onDelete(paper)}>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => onDelete(paper)}
+                  >
                     <Trash2 className="size-4" />
                     删除
                   </Button>

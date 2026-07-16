@@ -8,6 +8,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"GopherPaper/internal/auth"
 	"GopherPaper/internal/dao"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/model"
@@ -97,6 +98,11 @@ func SetAdminStatus(ctx context.Context, id uint, status string) error {
 			return fmt.Errorf("admin: 管理员不存在")
 		}
 		return fmt.Errorf("admin: 查询管理员失败: %w", err)
+	}
+	if status == "disabled" {
+		if err := auth.RevokeAdmin(ctx, id); err != nil {
+			return fmt.Errorf("admin: 撤销管理员会话失败: %w", err)
+		}
 	}
 	if err := db.Model(&admin).Update("status", status).Error; err != nil {
 		return fmt.Errorf("admin: 更新管理员状态失败: %w", err)

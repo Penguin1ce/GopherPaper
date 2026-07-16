@@ -78,7 +78,6 @@ import {
   WorkspacePanel,
 } from "@/components/gopherpaper/workspace-frame";
 
-const AUTH_KEY = "gopherpaper.auth";
 const LUCKIN_KEY = "gopherpaper.luckin";
 const LUCKIN_TTL_DAYS = 30;
 const LUCKIN_HEADER = "X-Luckin-Token";
@@ -86,18 +85,6 @@ const DELETE_CONFIRM_HEADER = "X-GopherPaper-Delete-Confirm";
 const AGENT_TYPE = "pioneer";
 const REFERENCE_DRAFT_KEY = "gopherpaper.pioneer.referenceDraft";
 const BACKGROUND_PENDING_WINDOW_MS = 30 * 60 * 1000;
-
-function loadAuth(): { token: string; user: AuthUser | null } {
-  if (typeof window === "undefined") return { token: "", user: null };
-  try {
-    const raw = localStorage.getItem(AUTH_KEY);
-    if (!raw) return { token: "", user: null };
-    const saved = JSON.parse(raw) as { token?: string; user?: AuthUser | null };
-    return { token: saved.token || "", user: saved.user ?? null };
-  } catch {
-    return { token: "", user: null };
-  }
-}
 
 interface LuckinCred {
   token: string;
@@ -411,7 +398,7 @@ function awaitingAssistant(messages: Message[]): boolean {
 }
 
 export default function PioneerPage() {
-  const [token, setToken] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -470,10 +457,22 @@ export default function PioneerPage() {
   }, []);
 
   useEffect(() => {
-    const saved = loadAuth();
-    setToken(saved.token);
-    setAuthUser(saved.user);
     setLuckin(loadLuckin());
+    let cancelled = false;
+    void api
+      .me()
+      .then((user) => {
+        if (!cancelled) setAuthUser(user);
+      })
+      .catch(() => {
+        if (!cancelled) setAuthUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAuthReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -486,10 +485,6 @@ export default function PioneerPage() {
     setError("");
     setInput(draft);
   }, []);
-
-  useEffect(() => {
-    api.setToken(token ?? "");
-  }, [token]);
 
   useEffect(() => {
     activeIDRef.current = activeID;
@@ -558,9 +553,9 @@ export default function PioneerPage() {
   );
 
   useEffect(() => {
-    if (!token) return;
+    if (!authReady || !authUser) return;
     void reloadSidebar(!incomingReferenceDraftRef.current);
-  }, [token, reloadSidebar]);
+  }, [authReady, authUser, reloadSidebar]);
 
   useEffect(() => {
     if (!activeID || !activeBackground || activeSending) return;
@@ -880,7 +875,7 @@ export default function PioneerPage() {
     });
   };
 
-  if (token === null) {
+  if (!authReady) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-muted/40 p-4">
         <Card className="max-w-md text-center">
@@ -896,7 +891,7 @@ export default function PioneerPage() {
     );
   }
 
-  if (!token) {
+  if (!authUser) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-muted/40 p-4">
         <Card className="max-w-md text-center">

@@ -50,6 +50,11 @@ func Get(ctx context.Context, key string) (string, error) {
 	return RDB.Get(ctx, key).Result()
 }
 
+// GetDel 原子读取并删除字符串值，用于只能消费一次的短期票据。
+func GetDel(ctx context.Context, key string) (string, error) {
+	return RDB.GetDel(ctx, key).Result()
+}
+
 // Del 删除一个或多个键，返回实际删除的数量。
 func Del(ctx context.Context, keys ...string) (int64, error) {
 	return RDB.Del(ctx, keys...).Result()

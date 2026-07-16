@@ -2,10 +2,13 @@ import { dashboardRequest } from "./dashboard-api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api/v1";
 
-// downloadExport 带鉴权头拉取 CSV 并触发浏览器下载。
-export async function downloadExport(token: string, kind: "papers" | "users" | "logs") {
+// downloadExport 通过 HttpOnly Cookie 拉取 CSV 并触发浏览器下载。
+export async function downloadExport(
+  _token: string,
+  kind: "papers" | "users" | "logs",
+) {
   const res = await fetch(`${API_BASE}/admin/export/${kind}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: "same-origin",
   });
   if (!res.ok) throw new Error("导出失败");
   const blob = await res.blob();
@@ -78,7 +81,12 @@ export type ClassStatsResponse = { items: ClassStat[] };
 
 export function fetchUsers(
   token: string,
-  params: { page?: number; page_size?: number; query?: string; class_id?: string } = {},
+  params: {
+    page?: number;
+    page_size?: number;
+    query?: string;
+    class_id?: string;
+  } = {},
 ) {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
@@ -139,7 +147,8 @@ export function fetchLogs(
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
   q.set("page_size", String(params.page_size ?? 20));
-  if (params.service_type?.trim()) q.set("service_type", params.service_type.trim());
+  if (params.service_type?.trim())
+    q.set("service_type", params.service_type.trim());
   if (params.result?.trim()) q.set("result", params.result.trim());
   if (params.actor?.trim()) q.set("actor", params.actor.trim());
   return dashboardRequest<LogListResponse>(`/admin/logs?${q}`, token);
@@ -164,7 +173,10 @@ export type AdvancedAnalytics = {
 };
 
 export function fetchAdvancedAnalytics(token: string) {
-  return dashboardRequest<AdvancedAnalytics>("/admin/analytics/advanced", token);
+  return dashboardRequest<AdvancedAnalytics>(
+    "/admin/analytics/advanced",
+    token,
+  );
 }
 
 // ── 会话管理 ─────────────────────────────────────────────────
@@ -195,7 +207,9 @@ export function fetchSessions(
   return dashboardRequest<SessionListResponse>(`/admin/sessions?${q}`, token);
 }
 export function deleteSession(token: string, id: string) {
-  return dashboardRequest<null>(`/admin/sessions/${id}`, token, { method: "DELETE" });
+  return dashboardRequest<null>(`/admin/sessions/${id}`, token, {
+    method: "DELETE",
+  });
 }
 
 // ── 管理员账号 ───────────────────────────────────────────────
@@ -244,7 +258,10 @@ export type BatchResult = {
   failed_ids?: string[];
 };
 
-export function fetchPapersForBatch(token: string, params: { page?: number; page_size?: number; query?: string } = {}) {
+export function fetchPapersForBatch(
+  token: string,
+  params: { page?: number; page_size?: number; query?: string } = {},
+) {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
   q.set("page_size", String(params.page_size ?? 20));
@@ -261,7 +278,11 @@ export function batchDeletePapers(token: string, ids: string[]) {
 
 // ── 存储管理 ─────────────────────────────────────────────────
 
-export type StorageStatusUsage = { status: string; count: number; bytes: number };
+export type StorageStatusUsage = {
+  status: string;
+  count: number;
+  bytes: number;
+};
 export type StorageBucket = { label: string; count: number; bytes: number };
 export type StorageTrendPoint = { month: string; count: number; bytes: number };
 export type StorageTopPaper = {
