@@ -1,5 +1,15 @@
 basePath: /api/v1
 definitions:
+  constant.AnnotationKind:
+    enum:
+    - selection
+    - freetext
+    - drawing
+    type: string
+    x-enum-varnames:
+    - AnnotationKindSelection
+    - AnnotationKindFreetext
+    - AnnotationKindDrawing
   constant.IntentType:
     enum:
     - chitchat
@@ -61,6 +71,7 @@ definitions:
     - result
     - innovation
     - related
+    - flow
     type: string
     x-enum-comments:
       ReportInnovation: 创新点与不足分析
@@ -74,17 +85,23 @@ definitions:
     - 实验结果总结
     - 创新点与不足分析
     - 相关研究/参考文献链接
+    - ""
     x-enum-varnames:
     - ReportQuickRead
     - ReportMethod
     - ReportResult
     - ReportInnovation
     - ReportRelated
+    - ReportFlow
   dto.AnnotationCreateRequest:
     properties:
       bounding_rect:
         $ref: '#/definitions/dto.AnnotationRect'
       color:
+        type: string
+      content_json:
+        $ref: '#/definitions/model.JSONMap'
+      kind:
         type: string
       note:
         type: string
@@ -95,6 +112,8 @@ definitions:
         items:
           $ref: '#/definitions/dto.AnnotationRect'
         type: array
+      style_json:
+        $ref: '#/definitions/model.JSONMap'
       text:
         type: string
       translation:
@@ -102,8 +121,6 @@ definitions:
     required:
     - bounding_rect
     - page_no
-    - rects
-    - text
     type: object
   dto.AnnotationRect:
     properties:
@@ -124,9 +141,21 @@ definitions:
     type: object
   dto.AnnotationUpdateRequest:
     properties:
+      bounding_rect:
+        $ref: '#/definitions/dto.AnnotationRect'
       color:
         type: string
+      content_json:
+        $ref: '#/definitions/model.JSONMap'
       note:
+        type: string
+      rects:
+        items:
+          $ref: '#/definitions/dto.AnnotationRect'
+        type: array
+      style_json:
+        $ref: '#/definitions/model.JSONMap'
+      text:
         type: string
       translation:
         type: string
@@ -210,8 +239,6 @@ definitions:
         type: string
       student_id:
         type: string
-      token:
-        type: string
     type: object
   dto.NameCount:
     properties:
@@ -263,6 +290,8 @@ definitions:
     type: object
   dto.ReadyReportsResponse:
     properties:
+      flow_ready:
+        type: boolean
       ready:
         items:
           $ref: '#/definitions/constant.ReportType'
@@ -404,6 +433,9 @@ definitions:
       y2:
         type: number
     type: object
+  model.JSONMap:
+    additionalProperties: {}
+    type: object
   model.Message:
     properties:
       content:
@@ -476,10 +508,14 @@ definitions:
         $ref: '#/definitions/model.AnnotationRect'
       color:
         type: string
+      content_json:
+        $ref: '#/definitions/model.JSONMap'
       created_at:
         type: string
       id:
         type: integer
+      kind:
+        $ref: '#/definitions/constant.AnnotationKind'
       note:
         type: string
       owner_id:
@@ -492,6 +528,8 @@ definitions:
         items:
           $ref: '#/definitions/model.AnnotationRect'
         type: array
+      style_json:
+        $ref: '#/definitions/model.JSONMap'
       text:
         type: string
       translation:
@@ -535,6 +573,10 @@ definitions:
         type: string
       publish_year:
         type: integer
+      references:
+        items:
+          type: string
+        type: array
       research_questions:
         items:
           type: string
@@ -610,7 +652,8 @@ definitions:
     type: object
 info:
   contact: {}
-  description: '科研文献智能解析与知识服务系统后端接口。受保护接口使用 Authorization: Bearer <jwt>。'
+  description: '科研文献智能解析与知识服务系统后端接口。浏览器使用 HttpOnly Cookie，外部客户端可使用 Authorization:
+    Bearer <jwt>。'
   title: GopherPaper API
   version: "1.0"
 paths:
@@ -618,7 +661,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 按 student_id 和 class_id 签发 JWT，主要用于本地调试或外部工具联调。
+      description: 仅在 enable_debug_token=true、debug/test 模式且请求来自回环地址时可用。生产环境不注册该路由。
       parameters:
       - description: 签发参数
         in: body
@@ -651,12 +694,11 @@ paths:
       - auth
   /events:
     get:
-      description: 建立 SSE 长连接，推送论文解析进度与报告就绪事件。浏览器 EventSource 无法携带 Authorization 头，因此鉴权使用
-        query token。
+      description: 建立 SSE 长连接，推送论文解析进度与报告就绪事件。票据须先通过受保护接口获取，30 秒内只可消费一次。
       parameters:
-      - description: JWT
+      - description: 短期一次性票据
         in: query
-        name: token
+        name: ticket
         required: true
         type: string
       produces:
@@ -671,6 +713,29 @@ paths:
           schema:
             $ref: '#/definitions/dto.Response'
       summary: 订阅事件流
+      tags:
+      - events
+  /events/ticket:
+    post:
+      description: 为当前登录用户签发 30 秒有效且只能消费一次的 SSE 连接票据。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/dto.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取 SSE 一次性票据
       tags:
       - events
   /graph/keywords:
@@ -1069,7 +1134,7 @@ paths:
     patch:
       consumes:
       - application/json
-      description: 更新某条精读批注的笔记或颜色。
+      description: 更新某条精读批注的内容、位置或样式。
       parameters:
       - description: 论文 ID
         in: path
@@ -1122,7 +1187,7 @@ paths:
       - papers
   /papers/{id}/figures/{name}:
     get:
-      description: 返回某篇论文解析出的图片文件。该接口供浏览器图片标签使用，鉴权使用 query token。
+      description: 返回某篇论文解析出的图片文件。浏览器通过 HttpOnly Cookie 鉴权。
       parameters:
       - description: 论文 ID
         in: path
@@ -1132,11 +1197,6 @@ paths:
       - description: 图片文件名
         in: path
         name: name
-        required: true
-        type: string
-      - description: JWT
-        in: query
-        name: token
         required: true
         type: string
       produces:
@@ -1166,21 +1226,18 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
       summary: 读取论文图片
       tags:
       - papers
   /papers/{id}/file:
     get:
-      description: 返回某篇论文的原始 PDF 文件。该接口供 pdf.js 使用，鉴权使用 query token。
+      description: 返回某篇论文的原始 PDF 文件。浏览器通过 HttpOnly Cookie 鉴权。
       parameters:
       - description: 论文 ID
         in: path
         name: id
-        required: true
-        type: string
-      - description: JWT
-        in: query
-        name: token
         required: true
         type: string
       produces:
@@ -1206,6 +1263,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/dto.Response'
+      security:
+      - BearerAuth: []
       summary: 读取论文 PDF
       tags:
       - papers
@@ -1854,7 +1913,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 按学号或绑定邮箱和密码登录，返回 JWT 与用户基本信息。
+      description: 按学号或绑定邮箱和密码登录，通过 HttpOnly Cookie 建立会话并返回用户基本信息。
       parameters:
       - description: 登录参数
         in: body

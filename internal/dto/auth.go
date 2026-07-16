@@ -45,9 +45,8 @@ type ResetPasswordRequest struct {
 	Password  string `json:"password" binding:"required,min=6"`
 }
 
-// LoginResponse 登录成功返回 JWT 与基本信息。
+// LoginResponse 登录成功返回基本信息，JWT 仅写入 HttpOnly Cookie。
 type LoginResponse struct {
-	Token     string `json:"token"`
 	StudentID string `json:"student_id"`
 	Name      string `json:"name"`
 	Email     string `json:"email"`

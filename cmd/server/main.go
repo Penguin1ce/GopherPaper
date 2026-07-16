@@ -3,7 +3,7 @@
 //
 // @title GopherPaper API
 // @version 1.0
-// @description 科研文献智能解析与知识服务系统后端接口。受保护接口使用 Authorization: Bearer <jwt>。
+// @description 科研文献智能解析与知识服务系统后端接口。浏览器使用 HttpOnly Cookie，外部客户端可使用 Authorization: Bearer <jwt>。
 // @BasePath /api/v1
 // @schemes http https
 // @securityDefinitions.apikey BearerAuth

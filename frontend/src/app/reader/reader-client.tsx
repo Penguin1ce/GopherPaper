@@ -89,7 +89,6 @@ import {
   type ReaderTool,
 } from "./lib/annotations";
 
-const AUTH_KEY = "gopherpaper.auth";
 const PDF_VIEWER_PATCH_FLAG = "__gopherpaperSkipSameDocumentSet";
 const READER_PREFS_KEY = "gopherpaper.reader.preferences";
 const RIGHT_PANEL_WIDTH = "24rem";
@@ -234,19 +233,9 @@ function patchPdfViewerSetDocument() {
 
 patchPdfViewerSetDocument();
 
-function loadToken(): string {
-  if (typeof window === "undefined") return "";
-  try {
-    const raw = localStorage.getItem(AUTH_KEY);
-    if (!raw) return "";
-    return (JSON.parse(raw) as { token?: string }).token || "";
-  } catch {
-    return "";
-  }
-}
-
 function requestedPageFromParams(params: Pick<URLSearchParams, "get">): number {
-  const raw = params.get("page") || params.get("page_no") || params.get("p") || "";
+  const raw =
+    params.get("page") || params.get("page_no") || params.get("p") || "";
   const page = Number.parseInt(raw, 10);
   return Number.isFinite(page) && page > 0 ? page : 0;
 }
@@ -257,13 +246,17 @@ function loadReaderPreferences(): ReaderPreferences {
     const raw = localStorage.getItem(READER_PREFS_KEY);
     if (!raw) return DEFAULT_PREFS;
     const saved = JSON.parse(raw) as Partial<ReaderPreferences>;
-    const color = READER_COLOR_KEYS.includes(saved.color as ReaderAnnotationColor)
+    const color = READER_COLOR_KEYS.includes(
+      saved.color as ReaderAnnotationColor,
+    )
       ? (saved.color as ReaderAnnotationColor)
       : DEFAULT_PREFS.color;
     const mindMapOpen = saved.mindMapOpen ?? DEFAULT_PREFS.mindMapOpen;
     const qaOpen = mindMapOpen ? false : (saved.qaOpen ?? DEFAULT_PREFS.qaOpen);
     const activeTool =
-      saved.activeTool === "freetext" || saved.activeTool === "drawing" || saved.activeTool === "select"
+      saved.activeTool === "freetext" ||
+      saved.activeTool === "drawing" ||
+      saved.activeTool === "select"
         ? saved.activeTool
         : DEFAULT_PREFS.activeTool;
     const textSize =
@@ -271,13 +264,20 @@ function loadReaderPreferences(): ReaderPreferences {
         ? clamp(saved.textSize, 10, 28)
         : DEFAULT_PREFS.textSize;
     const drawingSize =
-      typeof saved.drawingSize === "number" && Number.isFinite(saved.drawingSize)
+      typeof saved.drawingSize === "number" &&
+      Number.isFinite(saved.drawingSize)
         ? clamp(saved.drawingSize, DRAWING_SIZE_MIN, DRAWING_SIZE_MAX)
         : DEFAULT_PREFS.drawingSize;
     return {
       outlineOpen: saved.outlineOpen ?? DEFAULT_PREFS.outlineOpen,
-      translateOpen: mindMapOpen || qaOpen ? false : (saved.translateOpen ?? DEFAULT_PREFS.translateOpen),
-      annotationsOpen: mindMapOpen || qaOpen ? false : (saved.annotationsOpen ?? DEFAULT_PREFS.annotationsOpen),
+      translateOpen:
+        mindMapOpen || qaOpen
+          ? false
+          : (saved.translateOpen ?? DEFAULT_PREFS.translateOpen),
+      annotationsOpen:
+        mindMapOpen || qaOpen
+          ? false
+          : (saved.annotationsOpen ?? DEFAULT_PREFS.annotationsOpen),
       mindMapOpen,
       qaOpen,
       color,
@@ -331,11 +331,16 @@ const RECT_NUMBER_FIELDS = ["x1", "y1", "x2", "y2", "width", "height"] as const;
 function sameAnnotationRect(a: AnnotationRect, b: AnnotationRect) {
   return (
     a.pageNumber === b.pageNumber &&
-    RECT_NUMBER_FIELDS.every((field) => Math.abs(a[field] - b[field]) <= RECT_EPSILON)
+    RECT_NUMBER_FIELDS.every(
+      (field) => Math.abs(a[field] - b[field]) <= RECT_EPSILON,
+    )
   );
 }
 
-function sameAnnotationRects(a: AnnotationRect[] | undefined, b: AnnotationRect[]) {
+function sameAnnotationRects(
+  a: AnnotationRect[] | undefined,
+  b: AnnotationRect[],
+) {
   if ((a?.length ?? 0) !== b.length) return false;
   return b.every((rect, index) => {
     const candidate = a?.[index];
@@ -374,7 +379,8 @@ function isDraftFreetext(annotation: PaperAnnotation) {
 }
 
 function sameDraftFreetextLayer(a: PaperAnnotation, b: PaperAnnotation) {
-  if (annotationKind(a) !== "freetext" || annotationKind(b) !== "freetext") return false;
+  if (annotationKind(a) !== "freetext" || annotationKind(b) !== "freetext")
+    return false;
   if (!isDraftFreetext(a) && !isDraftFreetext(b)) return false;
   const ar = a.bounding_rect;
   const br = b.bounding_rect;
@@ -385,19 +391,27 @@ function sameDraftFreetextLayer(a: PaperAnnotation, b: PaperAnnotation) {
   );
 }
 
-function shouldPreferFreetext(candidate: PaperAnnotation, existing: PaperAnnotation) {
+function shouldPreferFreetext(
+  candidate: PaperAnnotation,
+  existing: PaperAnnotation,
+) {
   const candidateDraft = isDraftFreetext(candidate);
   const existingDraft = isDraftFreetext(existing);
   if (candidateDraft !== existingDraft) return !candidateDraft;
   const candidateTime = annotationUpdatedAt(candidate);
   const existingTime = annotationUpdatedAt(existing);
-  return candidateTime > existingTime || (candidateTime === existingTime && candidate.id > existing.id);
+  return (
+    candidateTime > existingTime ||
+    (candidateTime === existingTime && candidate.id > existing.id)
+  );
 }
 
 function compareReaderAnnotations(a: PaperAnnotation, b: PaperAnnotation) {
   if (a.page_no !== b.page_no) return a.page_no - b.page_no;
-  if (a.bounding_rect.y1 !== b.bounding_rect.y1) return a.bounding_rect.y1 - b.bounding_rect.y1;
-  if (a.bounding_rect.x1 !== b.bounding_rect.x1) return a.bounding_rect.x1 - b.bounding_rect.x1;
+  if (a.bounding_rect.y1 !== b.bounding_rect.y1)
+    return a.bounding_rect.y1 - b.bounding_rect.y1;
+  if (a.bounding_rect.x1 !== b.bounding_rect.x1)
+    return a.bounding_rect.x1 - b.bounding_rect.x1;
   return a.id - b.id;
 }
 
@@ -409,7 +423,10 @@ function visibleReaderAnnotations(items: PaperAnnotation[]) {
   for (const item of items) {
     const duplicatedIndex = indexById.get(item.id);
     if (duplicatedIndex != null) {
-      if (annotationUpdatedAt(item) >= annotationUpdatedAt(result[duplicatedIndex])) {
+      if (
+        annotationUpdatedAt(item) >=
+        annotationUpdatedAt(result[duplicatedIndex])
+      ) {
         result[duplicatedIndex] = item;
       }
       continue;
@@ -421,7 +438,9 @@ function visibleReaderAnnotations(items: PaperAnnotation[]) {
       continue;
     }
 
-    const existingIndex = freetextIndexes.find((index) => sameDraftFreetextLayer(result[index], item));
+    const existingIndex = freetextIndexes.find((index) =>
+      sameDraftFreetextLayer(result[index], item),
+    );
     if (existingIndex == null) {
       indexById.set(item.id, result.length);
       freetextIndexes.push(result.length);
@@ -480,13 +499,16 @@ function annotationWithPosition(
   };
 }
 
-function isRecentFreetextCreate(recent: RecentFreetextCreate | null, rect: AnnotationRect) {
+function isRecentFreetextCreate(
+  recent: RecentFreetextCreate | null,
+  rect: AnnotationRect,
+) {
   return Boolean(
     recent &&
-      Date.now() < recent.until &&
-      recent.pageNumber === rect.pageNumber &&
-      Math.abs(recent.x1 - rect.x1) <= FREETEXT_DUPLICATE_POSITION_EPSILON &&
-      Math.abs(recent.y1 - rect.y1) <= FREETEXT_DUPLICATE_POSITION_EPSILON,
+    Date.now() < recent.until &&
+    recent.pageNumber === rect.pageNumber &&
+    Math.abs(recent.x1 - rect.x1) <= FREETEXT_DUPLICATE_POSITION_EPSILON &&
+    Math.abs(recent.y1 - rect.y1) <= FREETEXT_DUPLICATE_POSITION_EPSILON,
   );
 }
 
@@ -521,14 +543,20 @@ interface OutlineNode extends OutlineEntry {
   children: OutlineNode[];
 }
 
-function pdfViewerWithScale(utils: PdfHighlighterUtils | null): PdfViewerScaleLike | null {
+function pdfViewerWithScale(
+  utils: PdfHighlighterUtils | null,
+): PdfViewerScaleLike | null {
   const viewer = utils?.getViewer();
   if (!viewer || typeof viewer !== "object") return null;
   return viewer as PdfViewerScaleLike;
 }
 
-function splitSectionNumber(title: string): { number: string; title: string } | null {
-  const match = title.trim().match(/^((?:\d+(?:\.\d+)*|[IVXLC]+|[A-Z])[.)]?)\s+(.+)$/i);
+function splitSectionNumber(
+  title: string,
+): { number: string; title: string } | null {
+  const match = title
+    .trim()
+    .match(/^((?:\d+(?:\.\d+)*|[IVXLC]+|[A-Z])[.)]?)\s+(.+)$/i);
   if (!match) return null;
   return {
     number: match[1].replace(/[.)]$/, ""),
@@ -542,7 +570,9 @@ function normalizedOutlineTitle(title: string) {
 
 function isPaperTitleSection(section: PaperSection, paperTitle?: string) {
   if (!paperTitle) return false;
-  return normalizedOutlineTitle(section.title) === normalizedOutlineTitle(paperTitle);
+  return (
+    normalizedOutlineTitle(section.title) === normalizedOutlineTitle(paperTitle)
+  );
 }
 
 function normalizedOutlinePhrase(title: string) {
@@ -550,33 +580,58 @@ function normalizedOutlinePhrase(title: string) {
 }
 
 function isStandaloneTopLevelTitle(title: string) {
-  const normalized = normalizedOutlinePhrase(title).toLowerCase().replace(/[.:\uFF1A]+$/, "");
-  return /^(abstract|acknowledg(?:e)?ments?|references|bibliography|appendix|appendices|supplementary materials?|limitations?|ethics statement|broader impacts?|impact statement|data availability|funding|conflicts? of interest)$/.test(normalized);
+  const normalized = normalizedOutlinePhrase(title)
+    .toLowerCase()
+    .replace(/[.:\uFF1A]+$/, "");
+  return /^(abstract|acknowledg(?:e)?ments?|references|bibliography|appendix|appendices|supplementary materials?|limitations?|ethics statement|broader impacts?|impact statement|data availability|funding|conflicts? of interest)$/.test(
+    normalized,
+  );
 }
 
 function isOutlineNoiseSection(section: PaperSection) {
   const title = normalizedOutlinePhrase(section.title);
-  if (!title || splitSectionNumber(title) || isStandaloneTopLevelTitle(title)) return false;
+  if (!title || splitSectionNumber(title) || isStandaloneTopLevelTitle(title))
+    return false;
   const lower = title.toLowerCase().replace(/[。]+$/, ".");
-  if (/^(fig(?:ure)?|table|algorithm|equation|eq\.?)\s*[\divxlc]+[.:：)\s]/i.test(title)) {
+  if (
+    /^(fig(?:ure)?|table|algorithm|equation|eq\.?)\s*[\divxlc]+[.:：)\s]/i.test(
+      title,
+    )
+  ) {
     return true;
   }
-  if (/\b(our|main|key)?\s*contributions?\s+(are|is|can be summarized)\s+as\s+follows\b/i.test(title)) {
+  if (
+    /\b(our|main|key)?\s*contributions?\s+(are|is|can be summarized)\s+as\s+follows\b/i.test(
+      title,
+    )
+  ) {
     return true;
   }
-  if (/\b(the|this)\s+(paper|article|work|section)\s+(is\s+organized|proceeds|is\s+structured)\s+as\s+follows\b/i.test(title)) {
+  if (
+    /\b(the|this)\s+(paper|article|work|section)\s+(is\s+organized|proceeds|is\s+structured)\s+as\s+follows\b/i.test(
+      title,
+    )
+  ) {
     return true;
   }
   if (/^(in\s+)?(this|our)\s+(paper|work|section|study)\b.+\.$/i.test(lower)) {
     return true;
   }
-  if (/^we\s+(make|propose|present|introduce|summarize|highlight|show|demonstrate|provide)\b.+\.$/i.test(lower)) {
+  if (
+    /^we\s+(make|propose|present|introduce|summarize|highlight|show|demonstrate|provide)\b.+\.$/i.test(
+      lower,
+    )
+  ) {
     return true;
   }
   return false;
 }
 
-function outlineLevel(section: PaperSection, parsed: ReturnType<typeof splitSectionNumber>, prevLevel: number) {
+function outlineLevel(
+  section: PaperSection,
+  parsed: ReturnType<typeof splitSectionNumber>,
+  prevLevel: number,
+) {
   let rawLevel = Math.max(1, Math.round(section.level || 1));
   if (parsed && /^\d+(\.\d+)*$/.test(parsed.number)) {
     rawLevel = parsed.number.split(".").length;
@@ -671,9 +726,13 @@ function findTitleElement(page: number, terms: string[]) {
   const pageElement = findPageElement(page);
   if (!pageElement) return null;
   const spans = Array.from(
-    pageElement.querySelectorAll<HTMLElement>(".textLayer span, .textLayer [role='presentation']"),
+    pageElement.querySelectorAll<HTMLElement>(
+      ".textLayer span, .textLayer [role='presentation']",
+    ),
   ).filter((span) => span.textContent?.trim());
-  const normalizedTerms = terms.map(normalizeSearchText).filter((term) => term.length >= 4);
+  const normalizedTerms = terms
+    .map(normalizeSearchText)
+    .filter((term) => term.length >= 4);
   if (normalizedTerms.length === 0 || spans.length === 0) return null;
 
   const longest = Math.max(...normalizedTerms.map((term) => term.length));
@@ -693,7 +752,8 @@ function findTitleElement(page: number, terms: string[]) {
       );
       if (hit) {
         const matchLen = Math.min(normalized.length, hit.length);
-        const fontSize = Number.parseFloat(getComputedStyle(spans[start]).fontSize) || 0;
+        const fontSize =
+          Number.parseFloat(getComputedStyle(spans[start]).fontSize) || 0;
         // 命中越长越可信;字号大的多半是真正的章节标题,用它在并列时做区分。
         const score = matchLen * 4 + fontSize;
         if (score > bestScore) {
@@ -712,7 +772,8 @@ function flashTitleElement(element: HTMLElement) {
   const previousOutlineOffset = element.style.outlineOffset;
   const previousBackground = element.style.backgroundColor;
   const previousTransition = element.style.transition;
-  element.style.transition = "background-color 160ms ease, outline-color 160ms ease";
+  element.style.transition =
+    "background-color 160ms ease, outline-color 160ms ease";
   element.style.backgroundColor = "rgba(250, 204, 21, 0.28)";
   element.style.outline = "2px solid rgba(245, 158, 11, 0.72)";
   element.style.outlineOffset = "2px";
@@ -731,7 +792,11 @@ function scrollTitleIntoView(page: number, terms: string[]) {
     if (target) {
       const previousScrollMarginTop = target.style.scrollMarginTop;
       target.style.scrollMarginTop = `${LOCATE_TOP_GAP}px`;
-      target.scrollIntoView({ block: "start", inline: "nearest", behavior: "smooth" });
+      target.scrollIntoView({
+        block: "start",
+        inline: "nearest",
+        behavior: "smooth",
+      });
       window.setTimeout(() => {
         target.style.scrollMarginTop = previousScrollMarginTop;
       }, 1600);
@@ -746,7 +811,10 @@ function scrollTitleIntoView(page: number, terms: string[]) {
   window.setTimeout(tick, 180);
 }
 
-async function outlinePage(pdfDocument: PDFDocumentProxy, dest: string | unknown[] | null | undefined) {
+async function outlinePage(
+  pdfDocument: PDFDocumentProxy,
+  dest: string | unknown[] | null | undefined,
+) {
   let explicitDest = dest;
   if (typeof explicitDest === "string") {
     explicitDest = await pdfDocument.getDestination(explicitDest);
@@ -755,7 +823,11 @@ async function outlinePage(pdfDocument: PDFDocumentProxy, dest: string | unknown
   const ref = explicitDest[0];
   if (typeof ref === "object" && ref !== null) {
     try {
-      return (await pdfDocument.getPageIndex(ref as Parameters<PDFDocumentProxy["getPageIndex"]>[0])) + 1;
+      return (
+        (await pdfDocument.getPageIndex(
+          ref as Parameters<PDFDocumentProxy["getPageIndex"]>[0],
+        )) + 1
+      );
     } catch {
       return 0;
     }
@@ -766,7 +838,10 @@ async function outlinePage(pdfDocument: PDFDocumentProxy, dest: string | unknown
   return 0;
 }
 
-async function extractPdfOutline(pdfDocument: PDFDocumentProxy, paperID: string): Promise<PaperSection[]> {
+async function extractPdfOutline(
+  pdfDocument: PDFDocumentProxy,
+  paperID: string,
+): Promise<PaperSection[]> {
   const outline = (await pdfDocument.getOutline()) as PdfOutlineItem[] | null;
   if (!outline?.length) return [];
   const sections: PaperSection[] = [];
@@ -855,7 +930,10 @@ async function annotationColorPatch(
   if (annotation.kind === "drawing") {
     const current = drawingStyle(annotation);
     const nextStyle = drawingStyleForColor(color, current.strokeWidth);
-    const contentJson = await recolorDrawingContent(annotation, nextStyle.strokeColor);
+    const contentJson = await recolorDrawingContent(
+      annotation,
+      nextStyle.strokeColor,
+    );
     return {
       color,
       style_json: {
@@ -869,14 +947,24 @@ async function annotationColorPatch(
   return { color };
 }
 
-async function recolorDrawingContent(annotation: PaperAnnotation, strokeColor: string) {
+async function recolorDrawingContent(
+  annotation: PaperAnnotation,
+  strokeColor: string,
+) {
   const content = annotation.content_json ?? {};
   const strokes = storedDrawingStrokes(content.strokes);
   if (!strokes || strokes.length === 0) return undefined;
 
-  const nextStrokes = strokes.map((stroke) => ({ ...stroke, color: strokeColor }));
+  const nextStrokes = strokes.map((stroke) => ({
+    ...stroke,
+    color: strokeColor,
+  }));
   const size = await drawingImageSize(content.image, nextStrokes);
-  const image = renderDrawingStrokesToImage(nextStrokes, size.width, size.height);
+  const image = renderDrawingStrokesToImage(
+    nextStrokes,
+    size.width,
+    size.height,
+  );
   if (!image) return { ...content, strokes: nextStrokes };
   return { ...content, image, strokes: nextStrokes };
 }
@@ -888,11 +976,12 @@ function storedDrawingStrokes(value: unknown): DrawingStroke[] | null {
     const candidate = stroke as DrawingStroke;
     return (
       Array.isArray(candidate.points) &&
-      candidate.points.every((point) =>
-        point &&
-        typeof point === "object" &&
-        typeof point.x === "number" &&
-        typeof point.y === "number",
+      candidate.points.every(
+        (point) =>
+          point &&
+          typeof point === "object" &&
+          typeof point.x === "number" &&
+          typeof point.y === "number",
       ) &&
       typeof candidate.width === "number"
     );
@@ -901,17 +990,27 @@ function storedDrawingStrokes(value: unknown): DrawingStroke[] | null {
 }
 
 async function drawingImageSize(value: unknown, strokes: DrawingStroke[]) {
-  if (typeof value === "string" && value.startsWith("data:image/") && typeof Image !== "undefined") {
-    const size = await new Promise<{ width: number; height: number } | null>((resolve) => {
-      const image = new Image();
-      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
-      image.onerror = () => resolve(null);
-      image.src = value;
-    });
+  if (
+    typeof value === "string" &&
+    value.startsWith("data:image/") &&
+    typeof Image !== "undefined"
+  ) {
+    const size = await new Promise<{ width: number; height: number } | null>(
+      (resolve) => {
+        const image = new Image();
+        image.onload = () =>
+          resolve({ width: image.naturalWidth, height: image.naturalHeight });
+        image.onerror = () => resolve(null);
+        image.src = value;
+      },
+    );
     if (size && size.width > 0 && size.height > 0) return size;
   }
 
-  const maxStrokeWidth = Math.max(1, ...strokes.map((stroke) => stroke.width || 1));
+  const maxStrokeWidth = Math.max(
+    1,
+    ...strokes.map((stroke) => stroke.width || 1),
+  );
   const padding = maxStrokeWidth * 2;
   let maxX = 1;
   let maxY = 1;
@@ -927,7 +1026,11 @@ async function drawingImageSize(value: unknown, strokes: DrawingStroke[]) {
   };
 }
 
-function renderDrawingStrokesToImage(strokes: DrawingStroke[], width: number, height: number) {
+function renderDrawingStrokesToImage(
+  strokes: DrawingStroke[],
+  width: number,
+  height: number,
+) {
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.ceil(width));
   canvas.height = Math.max(1, Math.ceil(height));
@@ -998,7 +1101,12 @@ function OutlineTreeNode({
             onClick={() => onToggle(node.section.id)}
             className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition hover:text-foreground"
           >
-            <ChevronRight className={cn("size-3.5 transition-transform", isOpen && "rotate-90")} />
+            <ChevronRight
+              className={cn(
+                "size-3.5 transition-transform",
+                isOpen && "rotate-90",
+              )}
+            />
           </button>
         ) : (
           <span className="size-5 shrink-0" aria-hidden="true" />
@@ -1009,7 +1117,9 @@ function OutlineTreeNode({
           className="flex min-w-0 flex-1 items-start gap-2 py-1.5 text-left leading-5"
         >
           {node.number && (
-            <span className="shrink-0 tabular-nums text-muted-foreground">{node.number}</span>
+            <span className="shrink-0 tabular-nums text-muted-foreground">
+              {node.number}
+            </span>
           )}
           <span className="gp-outline-title line-clamp-2 min-w-0">
             <Markdown compact>{node.title}</Markdown>
@@ -1070,7 +1180,10 @@ function OutlineDrawer({
   const entries = useMemo(() => numberedOutline(sorted), [sorted]);
   const tree = useMemo(() => buildOutlineTree(entries), [entries]);
   const pageActive = useMemo(
-    () => [...entries].reverse().find((entry) => entry.section.page_no <= currentPage) ?? null,
+    () =>
+      [...entries]
+        .reverse()
+        .find((entry) => entry.section.page_no <= currentPage) ?? null,
     [entries, currentPage],
   );
   const clickedActive = useMemo(
@@ -1088,7 +1201,8 @@ function OutlineDrawer({
     const dfs = (nodes: OutlineNode[]): boolean => {
       for (const node of nodes) {
         path.push(node.section.id);
-        if (node.section.id === active.section.id || dfs(node.children)) return true;
+        if (node.section.id === active.section.id || dfs(node.children))
+          return true;
         path.pop();
       }
       return false;
@@ -1138,7 +1252,10 @@ function OutlineDrawer({
     });
   }, [activeId, tree]);
 
-  const hasNested = useMemo(() => tree.some((node) => node.children.length > 0), [tree]);
+  const hasNested = useMemo(
+    () => tree.some((node) => node.children.length > 0),
+    [tree],
+  );
   const allExpanded = useMemo(() => {
     const ids: number[] = [];
     const collect = (nodes: OutlineNode[]) => {
@@ -1192,7 +1309,13 @@ function OutlineDrawer({
                 {allExpanded ? "全部收起" : "全部展开"}
               </Button>
             )}
-            <Button type="button" variant="ghost" size="icon-xs" aria-label="关闭目录" onClick={onClose}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label="关闭目录"
+              onClick={onClose}
+            >
               <X className="size-3.5" />
             </Button>
           </div>
@@ -1240,8 +1363,10 @@ function figuresFromRefs(refs: Reference[]): Record<string, string> {
 }
 
 function readerSourceLabel(ref: Reference, index: number) {
-  if (ref.block_type === "selection") return ref.page_no ? `选段 p.${ref.page_no}` : "选段";
-  if (ref.fallback_scope === "paper" && ref.page_no) return `全文补充 p.${ref.page_no}`;
+  if (ref.block_type === "selection")
+    return ref.page_no ? `选段 p.${ref.page_no}` : "选段";
+  if (ref.fallback_scope === "paper" && ref.page_no)
+    return `全文补充 p.${ref.page_no}`;
   if (ref.page_no) return `p.${ref.page_no}`;
   return `来源 ${index + 1}`;
 }
@@ -1257,7 +1382,9 @@ function ReaderQASources({ refs }: { refs: Reference[] }) {
             key={`${ref.id ?? index}`}
             className={cn(
               "rounded-full border px-2 py-0.5 text-[11px]",
-              selectionRef ? "border-primary/25 bg-primary/5 text-primary" : "bg-muted/40 text-muted-foreground",
+              selectionRef
+                ? "border-primary/25 bg-primary/5 text-primary"
+                : "bg-muted/40 text-muted-foreground",
             )}
           >
             {readerSourceLabel(ref, index)}
@@ -1272,7 +1399,12 @@ function ReaderQAMessage({ message }: { message: Message }) {
   const assistant = message.role === "assistant";
   const refs = assistant ? refsFromMeta(message.meta) : [];
   return (
-    <article className={cn("flex flex-col gap-1.5", assistant ? "items-start" : "items-end")}>
+    <article
+      className={cn(
+        "flex flex-col gap-1.5",
+        assistant ? "items-start" : "items-end",
+      )}
+    >
       {assistant ? (
         <div className="w-full text-sm leading-6">
           <Markdown figures={figuresFromRefs(refs)}>{message.content}</Markdown>
@@ -1283,7 +1415,9 @@ function ReaderQAMessage({ message }: { message: Message }) {
           {message.content}
         </div>
       )}
-      <span className="px-0.5 text-[11px] text-muted-foreground">{assistant ? "小耄耋" : "我"}</span>
+      <span className="px-0.5 text-[11px] text-muted-foreground">
+        {assistant ? "小耄耋" : "我"}
+      </span>
     </article>
   );
 }
@@ -1330,18 +1464,27 @@ function ReaderQAPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
-  const [scope, setScope] = useState<ReaderQAScope>(selection ? "selection" : "page");
+  const [scope, setScope] = useState<ReaderQAScope>(
+    selection ? "selection" : "page",
+  );
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
   const localIDSeq = useRef(0);
   const paperID = paper?.id || "";
   const hasDraft = input.trim().length > 0;
-  const effectiveScope: ReaderQAScope = scope === "selection" && !selection ? "page" : scope;
-  const contextPage = effectiveScope === "selection" ? selection?.pageNo || currentPage : currentPage;
+  const effectiveScope: ReaderQAScope =
+    scope === "selection" && !selection ? "page" : scope;
+  const contextPage =
+    effectiveScope === "selection"
+      ? selection?.pageNo || currentPage
+      : currentPage;
   const selectedText = selection?.text || "";
-  const selectionPreview = selection ? readerSelectionPreview(selection.text) : "";
-  const contextLabel = effectiveScope === "paper" ? "全文" : `p.${contextPage || "-"}`;
+  const selectionPreview = selection
+    ? readerSelectionPreview(selection.text)
+    : "";
+  const contextLabel =
+    effectiveScope === "paper" ? "全文" : `p.${contextPage || "-"}`;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1374,8 +1517,14 @@ function ReaderQAPanel({
       .then((sessions) => {
         if (cancelled) return null;
         const session = sessions
-          .filter((item) => item.paper_id === paperID && item.agent_type === "maodie")
-          .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0];
+          .filter(
+            (item) => item.paper_id === paperID && item.agent_type === "maodie",
+          )
+          .sort(
+            (a, b) =>
+              new Date(b.updated_at).getTime() -
+              new Date(a.updated_at).getTime(),
+          )[0];
         if (!session) return null;
         setSessionID(session.id);
         return api.listMessages(session.id);
@@ -1384,7 +1533,8 @@ function ReaderQAPanel({
         if (!cancelled && Array.isArray(list)) setMessages(list);
       })
       .catch((err) => {
-        if (!cancelled) setError((err as Error)?.message || "加载小耄耋会话失败");
+        if (!cancelled)
+          setError((err as Error)?.message || "加载小耄耋会话失败");
       });
     return () => {
       cancelled = true;
@@ -1394,7 +1544,11 @@ function ReaderQAPanel({
   const ensureSession = async () => {
     if (sessionID) return sessionID;
     if (!paperID) throw new Error("缺少论文 id");
-    const session = await api.createSession(`${paperName(paper)} 小耄耋`, paperID, "maodie");
+    const session = await api.createSession(
+      `${paperName(paper)} 小耄耋`,
+      paperID,
+      "maodie",
+    );
     setSessionID(session.id);
     return session.id;
   };
@@ -1409,7 +1563,11 @@ function ReaderQAPanel({
     setMessages([]);
     localIDSeq.current = 0;
     try {
-      const session = await api.createSession(`${paperName(paper)} 小耄耋`, paperID, "maodie");
+      const session = await api.createSession(
+        `${paperName(paper)} 小耄耋`,
+        paperID,
+        "maodie",
+      );
       if (!mountedRef.current) return;
       setSessionID(session.id);
     } catch (err) {
@@ -1421,7 +1579,11 @@ function ReaderQAPanel({
   const readerContextForSubmit = (): ReaderContext => {
     if (effectiveScope === "paper") return { scope: "paper" };
     if (effectiveScope === "selection" && selection) {
-      return { scope: "selection", page_no: selection.pageNo, selected_text: selectedText };
+      return {
+        scope: "selection",
+        page_no: selection.pageNo,
+        selected_text: selectedText,
+      };
     }
     return { scope: "page", page_no: currentPage };
   };
@@ -1474,7 +1636,10 @@ function ReaderQAPanel({
             setMessages((list) =>
               list.map((message) =>
                 message.id === placeholderID
-                  ? { ...message, content: reset ? text : message.content + text }
+                  ? {
+                      ...message,
+                      content: reset ? text : message.content + text,
+                    }
                   : message,
               ),
             );
@@ -1487,14 +1652,21 @@ function ReaderQAPanel({
       setMessages((list) =>
         list.map((message) =>
           message.id === placeholderID
-            ? { ...data.message, id: data.message.id || placeholderID, meta: data.meta ?? data.message.meta }
+            ? {
+                ...data.message,
+                id: data.message.id || placeholderID,
+                meta: data.meta ?? data.message.meta,
+              }
             : message,
         ),
       );
     } catch (err) {
       if (isAbortError(err)) return;
       if (!mountedRef.current) return;
-      if (placeholderID) setMessages((list) => list.filter((message) => message.id !== placeholderID));
+      if (placeholderID)
+        setMessages((list) =>
+          list.filter((message) => message.id !== placeholderID),
+        );
       setError((err as Error)?.message || "小耄耋应答失败");
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
@@ -1505,7 +1677,11 @@ function ReaderQAPanel({
   return (
     <aside
       className="h-full min-h-0 w-full self-stretch overflow-hidden border-l bg-background"
-      style={{ width: RIGHT_PANEL_WIDTH, minWidth: RIGHT_PANEL_WIDTH, maxWidth: RIGHT_PANEL_WIDTH }}
+      style={{
+        width: RIGHT_PANEL_WIDTH,
+        minWidth: RIGHT_PANEL_WIDTH,
+        maxWidth: RIGHT_PANEL_WIDTH,
+      }}
     >
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
@@ -1529,7 +1705,13 @@ function ReaderQAPanel({
             >
               <Plus className="size-3.5" />
             </Button>
-            <Button type="button" variant="ghost" size="icon-xs" aria-label="关闭问答" onClick={closePanel}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label="关闭问答"
+              onClick={closePanel}
+            >
               <X className="size-3.5" />
             </Button>
           </div>
@@ -1547,14 +1729,22 @@ function ReaderQAPanel({
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {MAODIE_PROMPT_HINTS.map((hint) => (
-                    <Button key={hint} type="button" size="sm" variant="outline" onClick={() => void submit(hint)}>
+                    <Button
+                      key={hint}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void submit(hint)}
+                    >
                       {hint}
                     </Button>
                   ))}
                 </div>
               </div>
             ) : (
-              messages.map((message) => <ReaderQAMessage key={String(message.id)} message={message} />)
+              messages.map((message) => (
+                <ReaderQAMessage key={String(message.id)} message={message} />
+              ))
             )}
             {sending && !messages.some((message) => message.streaming) && (
               <div className="inline-flex items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground">
@@ -1578,11 +1768,13 @@ function ReaderQAPanel({
           }}
         >
           <div className="mb-2 grid grid-cols-3 rounded-lg border bg-muted/30 p-0.5 text-xs">
-            {([
-              ["selection", "选段"],
-              ["page", "本页"],
-              ["paper", "全文"],
-            ] as const).map(([value, label]) => {
+            {(
+              [
+                ["selection", "选段"],
+                ["page", "本页"],
+                ["paper", "全文"],
+              ] as const
+            ).map(([value, label]) => {
               const disabled = value === "selection" && !selection;
               const active = effectiveScope === value;
               return (
@@ -1606,7 +1798,9 @@ function ReaderQAPanel({
               <span className="shrink-0 rounded-md bg-background/80 px-1.5 py-0.5 font-medium text-primary">
                 p.{selection.pageNo}
               </span>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">{selectionPreview}</span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                {selectionPreview}
+              </span>
               <Button
                 type="button"
                 variant="ghost"
@@ -1644,7 +1838,11 @@ function ReaderQAPanel({
                 disabled={sending || !hasDraft}
                 aria-label={sending ? "正在发送" : "发送"}
               >
-                {sending ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4 stroke-[2.6]" />}
+                {sending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ArrowUp className="size-4 stroke-[2.6]" />
+                )}
               </Button>
             )}
           </div>
@@ -1655,11 +1853,14 @@ function ReaderQAPanel({
 }
 
 export function ReaderClient() {
-  const { activePaperID, selectPaper } = useApp();
+  const { activePaperID, authReady, authed, selectPaper } = useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
   const id = (searchParams.get("id") || "").trim();
-  const requestedPage = useMemo(() => requestedPageFromParams(searchParams), [searchParams]);
+  const requestedPage = useMemo(
+    () => requestedPageFromParams(searchParams),
+    [searchParams],
+  );
   const [ready, setReady] = useState(false);
   const [paper, setPaper] = useState<Paper | null>(null);
   const [sections, setSections] = useState<PaperSection[]>([]);
@@ -1669,29 +1870,61 @@ export function ReaderClient() {
   const [scaleValue, setScaleValue] = useState<PdfScaleValue>(1);
   const [error, setError] = useState("");
   const [annotations, setAnnotations] = useState<PaperAnnotation[]>([]);
-  const [translation, setTranslation] = useState<TranslationResult | null>(null);
-  const [qaSelection, setQASelection] = useState<ReaderQASelection | null>(null);
-  const [translationErrors, setTranslationErrors] = useState<Record<number, string>>({});
-  const [translatingIDs, setTranslatingIDs] = useState<Set<number>>(() => new Set());
-  const [expandedAnnotationTextIDs, setExpandedAnnotationTextIDs] = useState<Set<number>>(() => new Set());
-  const [expandedAnnotationTransIDs, setExpandedAnnotationTransIDs] = useState<Set<number>>(() => new Set());
-  const [expandedAnnotationNoteIDs, setExpandedAnnotationNoteIDs] = useState<Set<number>>(() => new Set());
-  const [mindMapPanelWidth, setMindMapPanelWidth] = useState(MIND_MAP_PANEL_DEFAULT_WIDTH);
+  const [translation, setTranslation] = useState<TranslationResult | null>(
+    null,
+  );
+  const [qaSelection, setQASelection] = useState<ReaderQASelection | null>(
+    null,
+  );
+  const [translationErrors, setTranslationErrors] = useState<
+    Record<number, string>
+  >({});
+  const [translatingIDs, setTranslatingIDs] = useState<Set<number>>(
+    () => new Set(),
+  );
+  const [expandedAnnotationTextIDs, setExpandedAnnotationTextIDs] = useState<
+    Set<number>
+  >(() => new Set());
+  const [expandedAnnotationTransIDs, setExpandedAnnotationTransIDs] = useState<
+    Set<number>
+  >(() => new Set());
+  const [expandedAnnotationNoteIDs, setExpandedAnnotationNoteIDs] = useState<
+    Set<number>
+  >(() => new Set());
+  const [mindMapPanelWidth, setMindMapPanelWidth] = useState(
+    MIND_MAP_PANEL_DEFAULT_WIDTH,
+  );
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteColor, setNoteColor] = useState<AnnotationColor>("yellow");
-  const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<PdfSelection | null>(
+    null,
+  );
   const [busy, setBusy] = useState("");
-  const [prefs, setPrefs] = useState<ReaderPreferences>(() => loadReaderPreferences());
+  const [prefs, setPrefs] = useState<ReaderPreferences>(() =>
+    loadReaderPreferences(),
+  );
   const [pdfUtils, setPdfUtils] = useState<PdfHighlighterUtils | null>(null);
-  const [outlineActiveSectionId, setOutlineActiveSectionId] = useState<number | null>(null);
-  const [locatedAnnotationId, setLocatedAnnotationId] = useState<number | null>(null);
-  const [selectedAnnotationId, setSelectedAnnotationId] = useState<number | null>(null);
-  const [pendingFreetextFocusId, setPendingFreetextFocusId] = useState<number | null>(null);
+  const [outlineActiveSectionId, setOutlineActiveSectionId] = useState<
+    number | null
+  >(null);
+  const [locatedAnnotationId, setLocatedAnnotationId] = useState<number | null>(
+    null,
+  );
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<
+    number | null
+  >(null);
+  const [pendingFreetextFocusId, setPendingFreetextFocusId] = useState<
+    number | null
+  >(null);
   const translateSeq = useRef(0);
   const progressLoadedRef = useRef(false);
   const outlineFallbackTriedRef = useRef(false);
-  const outlineJumpRef = useRef<{ sectionId: number; pageNo: number; ignoreUntil: number } | null>(null);
+  const outlineJumpRef = useRef<{
+    sectionId: number;
+    pageNo: number;
+    ignoreUntil: number;
+  } | null>(null);
   const locatedScrollTimerRef = useRef<number | null>(null);
   const locatedScrollCleanupRef = useRef<(() => void) | null>(null);
   const annotationFocusScrollIgnoreUntilRef = useRef(0);
@@ -1713,15 +1946,24 @@ export function ReaderClient() {
     idleTimer: 0,
   });
 
-  const visibleAnnotations = useMemo(() => visibleReaderAnnotations(annotations), [annotations]);
+  const visibleAnnotations = useMemo(
+    () => visibleReaderAnnotations(annotations),
+    [annotations],
+  );
   const highlights = useMemo(
     () => visibleAnnotations.map(splitAnnotationToHighlight),
     [visibleAnnotations],
   );
   const initialPage = Math.max(1, requestedPage || paper?.last_read_page || 1);
-  const pdfUrl = useMemo(() => (ready && id ? api.paperFileUrl(id) : ""), [ready, id]);
+  const pdfUrl = useMemo(
+    () => (ready && id ? api.paperFileUrl(id) : ""),
+    [ready, id],
+  );
   const qaPanelOpen = !prefs.mindMapOpen && prefs.qaOpen;
-  const rightPanelOpen = !prefs.mindMapOpen && !prefs.qaOpen && (prefs.translateOpen || prefs.annotationsOpen);
+  const rightPanelOpen =
+    !prefs.mindMapOpen &&
+    !prefs.qaOpen &&
+    (prefs.translateOpen || prefs.annotationsOpen);
   const sidePanelOpen = qaPanelOpen || rightPanelOpen;
   const gridClass = prefs.outlineOpen
     ? prefs.mindMapOpen
@@ -1746,7 +1988,8 @@ export function ReaderClient() {
     saveDrawingDraftRef.current?.();
     setPrefs((cur) => ({
       ...cur,
-      activeTool: cur.activeTool === tool && tool !== "select" ? "select" : tool,
+      activeTool:
+        cur.activeTool === tool && tool !== "select" ? "select" : tool,
     }));
   }, []);
 
@@ -1759,7 +2002,8 @@ export function ReaderClient() {
   }, [pdfUtils]);
 
   useEffect(() => {
-    annotationFocusActiveRef.current = selectedAnnotationId != null || locatedAnnotationId != null;
+    annotationFocusActiveRef.current =
+      selectedAnnotationId != null || locatedAnnotationId != null;
   }, [locatedAnnotationId, selectedAnnotationId]);
 
   const handleFreetextFocusHandled = useCallback((annotationID: number) => {
@@ -1835,7 +2079,10 @@ export function ReaderClient() {
         );
         if (frame) return;
         frame = window.requestAnimationFrame(() => {
-          mindMapGridRef.current?.style.setProperty("--mind-map-panel-width", `${nextWidth}px`);
+          mindMapGridRef.current?.style.setProperty(
+            "--mind-map-panel-width",
+            `${nextWidth}px`,
+          );
           frame = 0;
         });
       };
@@ -1844,7 +2091,10 @@ export function ReaderClient() {
           window.cancelAnimationFrame(frame);
           frame = 0;
         }
-        mindMapGridRef.current?.style.setProperty("--mind-map-panel-width", `${nextWidth}px`);
+        mindMapGridRef.current?.style.setProperty(
+          "--mind-map-panel-width",
+          `${nextWidth}px`,
+        );
         setMindMapPanelWidth(nextWidth);
         document.body.style.cursor = previousCursor;
         document.body.style.userSelect = previousSelect;
@@ -1878,7 +2128,7 @@ export function ReaderClient() {
   }, [activePaperID, id, selectPaper]);
 
   useEffect(() => {
-    const token = loadToken();
+    if (!authReady) return;
     setError("");
     setReady(false);
     setPaper(null);
@@ -1890,11 +2140,10 @@ export function ReaderClient() {
     setTranslation(null);
     setPdfUtils(null);
     progressLoadedRef.current = false;
-    if (!token) {
+    if (!authed) {
       location.replace("/");
       return;
     }
-    api.setToken(token);
     if (!id) {
       setError("缺少论文 id");
       return;
@@ -1904,10 +2153,16 @@ export function ReaderClient() {
     setReady(true);
     Promise.all([api.paperDetail(id), api.listAnnotations(id)])
       .then(([detail, list]) => {
-        const initialSections = Array.isArray(detail.sections) ? detail.sections : [];
+        const initialSections = Array.isArray(detail.sections)
+          ? detail.sections
+          : [];
         setPaper(detail.paper);
-        setSections((cur) => (initialSections.length > 0 ? initialSections : cur));
-        setCurrentPage(Math.max(1, requestedPage || detail.paper.last_read_page || 1));
+        setSections((cur) =>
+          initialSections.length > 0 ? initialSections : cur,
+        );
+        setCurrentPage(
+          Math.max(1, requestedPage || detail.paper.last_read_page || 1),
+        );
         if (detail.paper.page_count > 0) setNumPages(detail.paper.page_count);
         setAnnotations(Array.isArray(list) ? list : []);
         progressLoadedRef.current = true;
@@ -1923,7 +2178,7 @@ export function ReaderClient() {
         }
       })
       .catch((err) => setError((err as Error)?.message || "加载论文失败"));
-  }, [id, requestedPage]);
+  }, [authReady, authed, id, requestedPage]);
 
   useEffect(() => {
     if (!ready || !id || !progressLoadedRef.current || currentPage <= 0) return;
@@ -1936,90 +2191,101 @@ export function ReaderClient() {
     return () => window.clearTimeout(timer);
   }, [currentPage, id, numPages, paper?.page_count, ready]);
 
-  const zoomPdfAtWheel = useCallback(
-    (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
+  const zoomPdfAtWheel = useCallback((event: WheelEvent) => {
+    if (!event.ctrlKey && !event.metaKey) return;
 
-      const viewer = pdfViewerWithScale(pdfUtilsRef.current);
-      const scrollElement = viewer?.container || pdfWheelRef.current;
-      if (!scrollElement || event.deltaY === 0) return;
+    const viewer = pdfViewerWithScale(pdfUtilsRef.current);
+    const scrollElement = viewer?.container || pdfWheelRef.current;
+    if (!scrollElement || event.deltaY === 0) return;
 
-      event.preventDefault();
-      event.stopPropagation();
+    event.preventDefault();
+    event.stopPropagation();
 
-      const zoom = wheelZoomRef.current;
-      zoom.deltaY += wheelDeltaPixels(event, scrollElement.clientHeight);
-      zoom.clientX = event.clientX;
-      zoom.clientY = event.clientY;
-      if (zoom.idleTimer) window.clearTimeout(zoom.idleTimer);
-      zoom.idleTimer = window.setTimeout(() => {
+    const zoom = wheelZoomRef.current;
+    zoom.deltaY += wheelDeltaPixels(event, scrollElement.clientHeight);
+    zoom.clientX = event.clientX;
+    zoom.clientY = event.clientY;
+    if (zoom.idleTimer) window.clearTimeout(zoom.idleTimer);
+    zoom.idleTimer = window.setTimeout(() => {
+      zoom.deltaY = 0;
+      zoom.idleTimer = 0;
+    }, PDF_WHEEL_ZOOM_IDLE_MS);
+
+    if (zoom.frame) return;
+    zoom.frame = window.requestAnimationFrame(() => {
+      zoom.frame = 0;
+      const deltaY = zoom.deltaY;
+      const stepCount = Math.min(
+        PDF_WHEEL_ZOOM_MAX_STEPS,
+        Math.trunc(Math.abs(deltaY) / PDF_WHEEL_ZOOM_DELTA),
+      );
+      if (stepCount <= 0) return;
+      zoom.deltaY =
+        deltaY - Math.sign(deltaY) * stepCount * PDF_WHEEL_ZOOM_DELTA;
+
+      const currentViewer = pdfViewerWithScale(pdfUtilsRef.current);
+      const currentScrollElement =
+        currentViewer?.container || pdfWheelRef.current;
+      if (!currentScrollElement) return;
+
+      const viewerScale = currentViewer?.currentScale;
+      const refScale = scaleValueRef.current;
+      const baseScale =
+        typeof refScale === "number"
+          ? refScale
+          : typeof viewerScale === "number" &&
+              Number.isFinite(viewerScale) &&
+              viewerScale > 0
+            ? viewerScale
+            : 1;
+      const direction = deltaY < 0 ? 1 : -1;
+      const nextScale = roundPdfScale(
+        clamp(
+          baseScale + direction * PDF_WHEEL_ZOOM_STEP * stepCount,
+          PDF_MIN_SCALE,
+          PDF_MAX_SCALE,
+        ),
+      );
+      if (nextScale === roundPdfScale(baseScale)) {
         zoom.deltaY = 0;
-        zoom.idleTimer = 0;
-      }, PDF_WHEEL_ZOOM_IDLE_MS);
+        return;
+      }
 
-      if (zoom.frame) return;
-      zoom.frame = window.requestAnimationFrame(() => {
-        zoom.frame = 0;
-        const deltaY = zoom.deltaY;
-        const stepCount = Math.min(
-          PDF_WHEEL_ZOOM_MAX_STEPS,
-          Math.trunc(Math.abs(deltaY) / PDF_WHEEL_ZOOM_DELTA),
-        );
-        if (stepCount <= 0) return;
-        zoom.deltaY = deltaY - Math.sign(deltaY) * stepCount * PDF_WHEEL_ZOOM_DELTA;
+      const rect = currentScrollElement.getBoundingClientRect();
+      const clientX = zoom.clientX;
+      const clientY = zoom.clientY;
+      const anchorX = currentScrollElement.scrollLeft + clientX - rect.left;
+      const anchorY = currentScrollElement.scrollTop + clientY - rect.top;
+      const restoreSeq = zoom.restoreSeq + 1;
+      zoom.restoreSeq = restoreSeq;
+      scaleValueRef.current = nextScale;
+      setScaleValue(nextScale);
 
-        const currentViewer = pdfViewerWithScale(pdfUtilsRef.current);
-        const currentScrollElement = currentViewer?.container || pdfWheelRef.current;
-        if (!currentScrollElement) return;
-
-        const viewerScale = currentViewer?.currentScale;
-        const refScale = scaleValueRef.current;
-        const baseScale =
-          typeof refScale === "number"
-            ? refScale
-            : typeof viewerScale === "number" && Number.isFinite(viewerScale) && viewerScale > 0
-              ? viewerScale
-              : 1;
-        const direction = deltaY < 0 ? 1 : -1;
-        const nextScale = roundPdfScale(
-          clamp(baseScale + direction * PDF_WHEEL_ZOOM_STEP * stepCount, PDF_MIN_SCALE, PDF_MAX_SCALE),
-        );
-        if (nextScale === roundPdfScale(baseScale)) {
-          zoom.deltaY = 0;
-          return;
-        }
-
-        const rect = currentScrollElement.getBoundingClientRect();
-        const clientX = zoom.clientX;
-        const clientY = zoom.clientY;
-        const anchorX = currentScrollElement.scrollLeft + clientX - rect.left;
-        const anchorY = currentScrollElement.scrollTop + clientY - rect.top;
-        const restoreSeq = zoom.restoreSeq + 1;
-        zoom.restoreSeq = restoreSeq;
-        scaleValueRef.current = nextScale;
-        setScaleValue(nextScale);
-
+      window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
-          window.requestAnimationFrame(() => {
-            if (wheelZoomRef.current.restoreSeq !== restoreSeq) return;
-            const nextViewer = pdfViewerWithScale(pdfUtilsRef.current);
-            const nextScrollElement = nextViewer?.container || currentScrollElement;
-            const nextRect = nextScrollElement.getBoundingClientRect();
-            const ratio = nextScale / baseScale;
-            nextScrollElement.scrollLeft = anchorX * ratio - (clientX - nextRect.left);
-            nextScrollElement.scrollTop = anchorY * ratio - (clientY - nextRect.top);
-          });
+          if (wheelZoomRef.current.restoreSeq !== restoreSeq) return;
+          const nextViewer = pdfViewerWithScale(pdfUtilsRef.current);
+          const nextScrollElement =
+            nextViewer?.container || currentScrollElement;
+          const nextRect = nextScrollElement.getBoundingClientRect();
+          const ratio = nextScale / baseScale;
+          nextScrollElement.scrollLeft =
+            anchorX * ratio - (clientX - nextRect.left);
+          nextScrollElement.scrollTop =
+            anchorY * ratio - (clientY - nextRect.top);
         });
       });
-    },
-    [],
-  );
+    });
+  }, []);
 
   useEffect(() => {
     const element = pdfWheelRef.current;
     if (!element) return;
     const zoom = wheelZoomRef.current;
-    element.addEventListener("wheel", zoomPdfAtWheel, { passive: false, capture: true });
+    element.addEventListener("wheel", zoomPdfAtWheel, {
+      passive: false,
+      capture: true,
+    });
     return () => {
       element.removeEventListener("wheel", zoomPdfAtWheel, { capture: true });
       if (zoom.frame) {
@@ -2045,15 +2311,24 @@ export function ReaderClient() {
     if (!scrollElement || currentPage <= 0) return;
 
     const pageElement =
-      scrollElement.querySelector<HTMLElement>(`.page[data-page-number="${currentPage}"]`) ??
-      findPageElement(currentPage);
+      scrollElement.querySelector<HTMLElement>(
+        `.page[data-page-number="${currentPage}"]`,
+      ) ?? findPageElement(currentPage);
     if (!pageElement) return;
 
     const scrollRect = scrollElement.getBoundingClientRect();
     const pageRect = pageElement.getBoundingClientRect();
-    const pageCenter = scrollElement.scrollLeft + pageRect.left - scrollRect.left + pageRect.width / 2;
+    const pageCenter =
+      scrollElement.scrollLeft +
+      pageRect.left -
+      scrollRect.left +
+      pageRect.width / 2;
     const nextLeft = Math.max(0, pageCenter - scrollElement.clientWidth / 2);
-    scrollElement.scrollTo({ left: nextLeft, top: scrollElement.scrollTop, behavior: "instant" });
+    scrollElement.scrollTo({
+      left: nextLeft,
+      top: scrollElement.scrollTop,
+      behavior: "instant",
+    });
   }, [currentPage]);
 
   useEffect(() => {
@@ -2127,7 +2402,9 @@ export function ReaderClient() {
       clearAnnotationFocus();
     };
 
-    container.addEventListener("scroll", clearOnReaderScroll, { passive: true });
+    container.addEventListener("scroll", clearOnReaderScroll, {
+      passive: true,
+    });
     return () => container.removeEventListener("scroll", clearOnReaderScroll);
   }, [clearAnnotationFocus, pdfUtils]);
 
@@ -2145,18 +2422,21 @@ export function ReaderClient() {
     setOutlineActiveSectionId(null);
   }, []);
 
-  const handlePdfPageChange = useCallback((page: number) => {
-    const jumped = outlineJumpRef.current;
-    if (jumped) {
-      if (page === jumped.pageNo) {
-        setCurrentPage(page);
-        return;
+  const handlePdfPageChange = useCallback(
+    (page: number) => {
+      const jumped = outlineJumpRef.current;
+      if (jumped) {
+        if (page === jumped.pageNo) {
+          setCurrentPage(page);
+          return;
+        }
+        if (Date.now() < jumped.ignoreUntil) return;
+        clearOutlineActive();
       }
-      if (Date.now() < jumped.ignoreUntil) return;
-      clearOutlineActive();
-    }
-    setCurrentPage(page);
-  }, [clearOutlineActive]);
+      setCurrentPage(page);
+    },
+    [clearOutlineActive],
+  );
 
   const goToPage = useCallback(
     (page: number, outlineEntry?: OutlineEntry) => {
@@ -2177,7 +2457,13 @@ export function ReaderClient() {
       setPageDraft(String(next));
       pdfUtils?.goToPage(next);
     },
-    [clearAnnotationFocus, clearOutlineActive, numPages, paper?.page_count, pdfUtils],
+    [
+      clearAnnotationFocus,
+      clearOutlineActive,
+      numPages,
+      paper?.page_count,
+      pdfUtils,
+    ],
   );
 
   const goToAnnotation = useCallback(
@@ -2186,9 +2472,15 @@ export function ReaderClient() {
       const page = annotation?.page_no || pageNumber || 1;
       setSelectedAnnotationId(annotationID);
       if (openAnnotations) {
-        updatePrefs({ annotationsOpen: true, mindMapOpen: false, qaOpen: false });
+        updatePrefs({
+          annotationsOpen: true,
+          mindMapOpen: false,
+          qaOpen: false,
+        });
         if (annotation?.note) {
-          setExpandedAnnotationNoteIDs((prev) => new Set(prev).add(annotation.id));
+          setExpandedAnnotationNoteIDs((prev) =>
+            new Set(prev).add(annotation.id),
+          );
         }
         scrollSideAnnotationIntoView(annotationID);
       }
@@ -2196,8 +2488,12 @@ export function ReaderClient() {
       setCurrentPage(page);
       setPageDraft(String(page));
       if (annotation && pdfUtils) {
-        annotationFocusScrollIgnoreUntilRef.current = Date.now() + LOCATED_ANNOTATION_SCROLL_RESUME_MS;
-        const container = scrollSplitHighlightToTop(pdfUtils, splitAnnotationToHighlight(annotation));
+        annotationFocusScrollIgnoreUntilRef.current =
+          Date.now() + LOCATED_ANNOTATION_SCROLL_RESUME_MS;
+        const container = scrollSplitHighlightToTop(
+          pdfUtils,
+          splitAnnotationToHighlight(annotation),
+        );
         if (container) {
           setLocatedAnnotationId(annotation.id);
           scheduleLocatedAnnotationScrollClear(container);
@@ -2244,32 +2540,41 @@ export function ReaderClient() {
     [id, sections.length],
   );
 
-  const toggleAnnotationTextExpanded = useCallback((annotation: PaperAnnotation) => {
-    setExpandedAnnotationTextIDs((prev) => {
-      const next = new Set(prev);
-      if (next.has(annotation.id)) next.delete(annotation.id);
-      else next.add(annotation.id);
-      return next;
-    });
-  }, []);
+  const toggleAnnotationTextExpanded = useCallback(
+    (annotation: PaperAnnotation) => {
+      setExpandedAnnotationTextIDs((prev) => {
+        const next = new Set(prev);
+        if (next.has(annotation.id)) next.delete(annotation.id);
+        else next.add(annotation.id);
+        return next;
+      });
+    },
+    [],
+  );
 
-  const toggleAnnotationTransExpanded = useCallback((annotation: PaperAnnotation) => {
-    setExpandedAnnotationTransIDs((prev) => {
-      const next = new Set(prev);
-      if (next.has(annotation.id)) next.delete(annotation.id);
-      else next.add(annotation.id);
-      return next;
-    });
-  }, []);
+  const toggleAnnotationTransExpanded = useCallback(
+    (annotation: PaperAnnotation) => {
+      setExpandedAnnotationTransIDs((prev) => {
+        const next = new Set(prev);
+        if (next.has(annotation.id)) next.delete(annotation.id);
+        else next.add(annotation.id);
+        return next;
+      });
+    },
+    [],
+  );
 
-  const toggleAnnotationNoteExpanded = useCallback((annotation: PaperAnnotation) => {
-    setExpandedAnnotationNoteIDs((prev) => {
-      const next = new Set(prev);
-      if (next.has(annotation.id)) next.delete(annotation.id);
-      else next.add(annotation.id);
-      return next;
-    });
-  }, []);
+  const toggleAnnotationNoteExpanded = useCallback(
+    (annotation: PaperAnnotation) => {
+      setExpandedAnnotationNoteIDs((prev) => {
+        const next = new Set(prev);
+        if (next.has(annotation.id)) next.delete(annotation.id);
+        else next.add(annotation.id);
+        return next;
+      });
+    },
+    [],
+  );
 
   const submitPage = useCallback(() => {
     const next = Number.parseInt(pageDraft, 10);
@@ -2282,7 +2587,8 @@ export function ReaderClient() {
 
   const translateAnnotation = useCallback(
     async (annotation: PaperAnnotation) => {
-      if (!id || annotation.kind === "drawing" || !annotation.text.trim()) return;
+      if (!id || annotation.kind === "drawing" || !annotation.text.trim())
+        return;
       setTranslatingIDs((prev) => new Set(prev).add(annotation.id));
       setTranslationErrors((prev) => {
         const next = { ...prev };
@@ -2335,7 +2641,11 @@ export function ReaderClient() {
         });
         setAnnotations((prev) => [annotation, ...prev]);
         setSelectedAnnotationId(annotation.id);
-        updatePrefs({ annotationsOpen: true, mindMapOpen: false, qaOpen: false });
+        updatePrefs({
+          annotationsOpen: true,
+          mindMapOpen: false,
+          qaOpen: false,
+        });
         scrollSideAnnotationIntoView(annotation.id);
         window.getSelection()?.removeAllRanges();
         if (!note) void translateAnnotation(annotation);
@@ -2358,14 +2668,26 @@ export function ReaderClient() {
       translateSeq.current = seq;
       const pageNo = selection.position.boundingRect.pageNumber;
       updatePrefs({ translateOpen: true, mindMapOpen: false, qaOpen: false });
-      setTranslation({ original: text, translation: "", pageNo, loading: true, error: "" });
+      setTranslation({
+        original: text,
+        translation: "",
+        pageNo,
+        loading: true,
+        error: "",
+      });
       window.getSelection()?.removeAllRanges();
 
       api
         .translate(id, text)
         .then((r) => {
           if (translateSeq.current !== seq) return;
-          setTranslation({ original: text, translation: r.translation, pageNo, loading: false, error: "" });
+          setTranslation({
+            original: text,
+            translation: r.translation,
+            pageNo,
+            loading: false,
+            error: "",
+          });
         })
         .catch((err) => {
           if (translateSeq.current !== seq) return;
@@ -2415,8 +2737,12 @@ export function ReaderClient() {
       setBusy(`delete-${annotation.id}`);
       try {
         await api.deleteAnnotation(id, annotation.id);
-        setAnnotations((prev) => prev.filter((item) => item.id !== annotation.id));
-        setPendingFreetextFocusId((cur) => (cur === annotation.id ? null : cur));
+        setAnnotations((prev) =>
+          prev.filter((item) => item.id !== annotation.id),
+        );
+        setPendingFreetextFocusId((cur) =>
+          cur === annotation.id ? null : cur,
+        );
         setSelectedAnnotationId((cur) => (cur === annotation.id ? null : cur));
         if (locatedAnnotationId === annotation.id) {
           clearLocatedAnnotation();
@@ -2442,7 +2768,13 @@ export function ReaderClient() {
   useEffect(() => {
     const handleDeleteSelectedAnnotation = (event: KeyboardEvent) => {
       if (event.key !== "Delete") return;
-      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey
+      )
+        return;
       const target = event.target;
       if (
         target instanceof HTMLElement &&
@@ -2452,7 +2784,9 @@ export function ReaderClient() {
       }
       if (busy || selectedAnnotationId == null) return;
 
-      const annotation = visibleAnnotations.find((item) => item.id === selectedAnnotationId);
+      const annotation = visibleAnnotations.find(
+        (item) => item.id === selectedAnnotationId,
+      );
       if (!annotation) return;
 
       event.preventDefault();
@@ -2460,7 +2794,8 @@ export function ReaderClient() {
     };
 
     document.addEventListener("keydown", handleDeleteSelectedAnnotation);
-    return () => document.removeEventListener("keydown", handleDeleteSelectedAnnotation);
+    return () =>
+      document.removeEventListener("keydown", handleDeleteSelectedAnnotation);
   }, [busy, deleteAnnotation, selectedAnnotationId, visibleAnnotations]);
 
   const changeAnnotationColor = useCallback(
@@ -2469,7 +2804,9 @@ export function ReaderClient() {
       try {
         const payload = await annotationColorPatch(annotation, color);
         const updated = await api.updateAnnotation(id, annotation.id, payload);
-        setAnnotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+        setAnnotations((prev) =>
+          prev.map((item) => (item.id === updated.id ? updated : item)),
+        );
       } catch (err) {
         setError((err as Error)?.message || "更新批注失败");
       } finally {
@@ -2494,7 +2831,8 @@ export function ReaderClient() {
       if (freetextCreateInFlightRef.current) return;
       const normalizedPosition = defaultFreetextPosition(position);
       const { boundingRect, rects } = positionToRects(normalizedPosition);
-      if (isRecentFreetextCreate(recentFreetextCreateRef.current, boundingRect)) return;
+      if (isRecentFreetextCreate(recentFreetextCreateRef.current, boundingRect))
+        return;
       freetextCreateInFlightRef.current = true;
       recentFreetextCreateRef.current = {
         pageNumber: boundingRect.pageNumber,
@@ -2512,12 +2850,24 @@ export function ReaderClient() {
           color: prefs.color,
           bounding_rect: boundingRect,
           rects,
-          style_json: freetextStyleForColor(prefs.color, prefs.textSize, boundingRect.width),
+          style_json: freetextStyleForColor(
+            prefs.color,
+            prefs.textSize,
+            boundingRect.width,
+          ),
         });
-        setAnnotations((prev) => [{ ...annotation, text: FREETEXT_EMPTY_DRAFT }, ...prev]);
+        setAnnotations((prev) => [
+          { ...annotation, text: FREETEXT_EMPTY_DRAFT },
+          ...prev,
+        ]);
         setSelectedAnnotationId(annotation.id);
         setPendingFreetextFocusId(annotation.id);
-        updatePrefs({ activeTool: "select", annotationsOpen: true, mindMapOpen: false, qaOpen: false });
+        updatePrefs({
+          activeTool: "select",
+          annotationsOpen: true,
+          mindMapOpen: false,
+          qaOpen: false,
+        });
         scrollSideAnnotationIntoView(annotation.id);
       } catch (err) {
         setError((err as Error)?.message || "保存文字批注失败");
@@ -2562,7 +2912,11 @@ export function ReaderClient() {
         });
         setAnnotations((prev) => [annotation, ...prev]);
         setSelectedAnnotationId(annotation.id);
-        updatePrefs({ annotationsOpen: true, mindMapOpen: false, qaOpen: false });
+        updatePrefs({
+          annotationsOpen: true,
+          mindMapOpen: false,
+          qaOpen: false,
+        });
         scrollSideAnnotationIntoView(annotation.id);
         return true;
       } catch (err) {
@@ -2576,11 +2930,17 @@ export function ReaderClient() {
   );
 
   const patchAnnotation = useCallback(
-    async (annotation: PaperAnnotation, payload: Parameters<typeof api.updateAnnotation>[2], busyKey: string) => {
+    async (
+      annotation: PaperAnnotation,
+      payload: Parameters<typeof api.updateAnnotation>[2],
+      busyKey: string,
+    ) => {
       setBusy(busyKey);
       try {
         const updated = await api.updateAnnotation(id, annotation.id, payload);
-        setAnnotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+        setAnnotations((prev) =>
+          prev.map((item) => (item.id === updated.id ? updated : item)),
+        );
       } catch (err) {
         setError((err as Error)?.message || "更新批注失败");
       } finally {
@@ -2591,7 +2951,11 @@ export function ReaderClient() {
   );
 
   const updateAnnotationPosition = useCallback(
-    (annotation: PaperAnnotation, position: ScaledPosition, snapshot?: string) => {
+    (
+      annotation: PaperAnnotation,
+      position: ScaledPosition,
+      snapshot?: string,
+    ) => {
       const { boundingRect, rects } = positionToRects(position);
       const nextContentJson =
         annotation.kind === "drawing" && snapshot
@@ -2649,7 +3013,9 @@ export function ReaderClient() {
                     page_no: updated.page_no,
                     bounding_rect: updated.bounding_rect,
                     rects: updated.rects,
-                    ...(nextContentJson ? { content_json: updated.content_json } : {}),
+                    ...(nextContentJson
+                      ? { content_json: updated.content_json }
+                      : {}),
                     updated_at: updated.updated_at,
                   }
                 : item,
@@ -2685,11 +3051,18 @@ export function ReaderClient() {
   const updateAnnotationText = useCallback(
     (annotation: PaperAnnotation, text: string) => {
       const nextText = normalizeFreetextText(text);
-      if (annotation.kind === "freetext" && (!nextText || nextText === FREETEXT_CREATE_TEXT)) {
+      if (
+        annotation.kind === "freetext" &&
+        (!nextText || nextText === FREETEXT_CREATE_TEXT)
+      ) {
         void deleteAnnotation(annotation);
         return;
       }
-      void patchAnnotation(annotation, { text: nextText }, `text-${annotation.id}`);
+      void patchAnnotation(
+        annotation,
+        { text: nextText },
+        `text-${annotation.id}`,
+      );
     },
     [deleteAnnotation, patchAnnotation],
   );
@@ -2707,7 +3080,9 @@ export function ReaderClient() {
     saveDrawingDraftRef.current?.();
     setScaleValue((cur) => {
       const base = typeof cur === "number" ? cur : 1;
-      return Number((clamp(base + delta, PDF_MIN_SCALE, PDF_MAX_SCALE)).toFixed(2));
+      return Number(
+        clamp(base + delta, PDF_MIN_SCALE, PDF_MAX_SCALE).toFixed(2),
+      );
     });
   };
 
@@ -2748,7 +3123,11 @@ export function ReaderClient() {
         onDeleteLatestDrawing={deleteLatestDrawingAnnotation}
       />
 
-      <div ref={mindMapGridRef} className={cn("grid min-h-0 flex-1 grid-cols-1", gridClass)} style={gridStyle}>
+      <div
+        ref={mindMapGridRef}
+        className={cn("grid min-h-0 flex-1 grid-cols-1", gridClass)}
+        style={gridStyle}
+      >
         {prefs.outlineOpen && (
           <OutlineDrawer
             sections={sections}
@@ -2764,7 +3143,11 @@ export function ReaderClient() {
             <div className="absolute left-1/2 top-4 z-50 max-w-md -translate-x-1/2 rounded-lg border border-destructive/30 bg-background px-4 py-3 text-sm text-destructive shadow-lg">
               <div className="flex items-start gap-2">
                 <span className="min-w-0 flex-1">{error}</span>
-                <button type="button" onClick={() => setError("")} aria-label="关闭提示">
+                <button
+                  type="button"
+                  onClick={() => setError("")}
+                  aria-label="关闭提示"
+                >
                   <X className="size-4" />
                 </button>
               </div>
@@ -2774,7 +3157,10 @@ export function ReaderClient() {
             outlineOpen={prefs.outlineOpen}
             onToggleOutline={() => updatePrefs({ outlineOpen: true })}
           />
-          <div ref={pdfWheelRef} className="relative h-full min-h-0 overflow-hidden">
+          <div
+            ref={pdfWheelRef}
+            className="relative h-full min-h-0 overflow-hidden"
+          >
             {ready && pdfUrl ? (
               <InteractiveReaderPdf
                 pdfUrl={pdfUrl}
@@ -2785,11 +3171,18 @@ export function ReaderClient() {
                 onPageChange={handlePdfPageChange}
                 onPageCount={setPageCount}
                 onTranslateSelection={onTranslateSelection}
-                onSaveHighlight={(selection) => void saveAnnotation(selection, "", prefs.color)}
+                onSaveHighlight={(selection) =>
+                  void saveAnnotation(selection, "", prefs.color)
+                }
                 onAnnotateSelection={onAnnotateSelection}
                 onAskSelection={onAskSelection}
-                onCreateFreetext={(position) => void createFreetextAnnotation(position)}
-                drawingColor={drawingStyleForColor(prefs.color, prefs.drawingSize).strokeColor}
+                onCreateFreetext={(position) =>
+                  void createFreetextAnnotation(position)
+                }
+                drawingColor={
+                  drawingStyleForColor(prefs.color, prefs.drawingSize)
+                    .strokeColor
+                }
                 drawingSize={prefs.drawingSize}
                 onCreateDrawing={(image, position, strokes, meta) =>
                   createDrawingAnnotation(image, position, strokes, meta)
@@ -2805,7 +3198,9 @@ export function ReaderClient() {
                 pendingFreetextFocusId={pendingFreetextFocusId}
                 onSelectAnnotation={selectAnnotation}
                 onFreetextFocusHandled={handleFreetextFocusHandled}
-                onDocumentReady={(pdfDocument) => void loadPdfOutlineFallback(pdfDocument)}
+                onDocumentReady={(pdfDocument) =>
+                  void loadPdfOutlineFallback(pdfDocument)
+                }
                 onUtilsReady={setPdfUtils}
               />
             ) : (
@@ -2842,8 +3237,12 @@ export function ReaderClient() {
             onToggleAnnotationNoteExpanded={toggleAnnotationNoteExpanded}
             onDelete={deleteAnnotation}
             onColorChange={changeAnnotationColor}
-            onRetryTranslate={(annotation) => void translateAnnotation(annotation)}
-            onLocateAnnotation={(annotation) => goToAnnotation(annotation.id, annotation.page_no, true)}
+            onRetryTranslate={(annotation) =>
+              void translateAnnotation(annotation)
+            }
+            onLocateAnnotation={(annotation) =>
+              goToAnnotation(annotation.id, annotation.page_no, true)
+            }
           />
         )}
         {qaPanelOpen && (
@@ -2884,11 +3283,21 @@ export function ReaderClient() {
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setNoteOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setNoteOpen(false)}
+            >
               取消
             </Button>
-            <Button type="button" disabled={Boolean(busy)} onClick={() => void saveNote()}>
-              {busy === "annotation" && <Loader2 className="size-4 animate-spin" />}
+            <Button
+              type="button"
+              disabled={Boolean(busy)}
+              onClick={() => void saveNote()}
+            >
+              {busy === "annotation" && (
+                <Loader2 className="size-4 animate-spin" />
+              )}
               保存
             </Button>
           </DialogFooter>

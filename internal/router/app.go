@@ -9,6 +9,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"GopherPaper/docs"
+	"GopherPaper/internal/auth"
 	"GopherPaper/internal/handler"
 	adminhandler "GopherPaper/internal/handler/admin"
 	chathandler "GopherPaper/internal/handler/chat"
@@ -41,7 +42,9 @@ func Init(mode string) *gin.Engine {
 
 	api := r.Group("/api/v1")
 	{
-		api.POST("/auth/token", handler.Token)
+		if auth.DebugTokenEnabled() && mode != gin.ReleaseMode {
+			api.POST("/auth/token", handler.Token)
+		}
 
 		// 公开接口：用户注册登录与邮箱验证码。
 		api.POST("/user/send-code", user.SendCode) // 下发邮箱验证码
@@ -55,8 +58,6 @@ func Init(mode string) *gin.Engine {
 		api.POST("/admin/login", adminhandler.Login)
 
 		api.GET("/events", ssehandler.Subscribe)
-		api.GET("/papers/:id/figures/:name", paperhandler.Figure)
-		api.GET("/papers/:id/file", paperhandler.File)
 
 		authed := api.Group("")
 		authed.Use(middleware.JWTAuth())
@@ -70,6 +71,7 @@ func Init(mode string) *gin.Engine {
 			authed.POST("/user/logout", user.Logout)
 			authed.POST("/user/avatar", user.UploadAvatar)
 			authed.DELETE("/user/avatar", user.ClearAvatar)
+			authed.POST("/events/ticket", ssehandler.Ticket)
 
 			authed.POST("/papers", paperhandler.Upload)
 			authed.GET("/papers", paperhandler.List)
@@ -79,6 +81,8 @@ func Init(mode string) *gin.Engine {
 			authed.GET("/papers/compare/reports", paperhandler.CompareReports)
 			authed.DELETE("/papers/compare/reports/:report_id", paperhandler.DeleteCompareReport)
 			authed.GET("/papers/:id", paperhandler.Detail)
+			authed.GET("/papers/:id/figures/:name", paperhandler.Figure)
+			authed.GET("/papers/:id/file", paperhandler.File)
 			authed.DELETE("/papers/:id", paperhandler.Delete)
 			authed.GET("/papers/:id/status", paperhandler.Status)
 			authed.POST("/papers/:id/reparse", paperhandler.Reparse)
@@ -124,6 +128,7 @@ func Init(mode string) *gin.Engine {
 		adminAuthed.Use(middleware.AdminJWTAuth())
 		{
 			adminAuthed.GET("/me", adminhandler.Me)
+			adminAuthed.POST("/logout", adminhandler.Logout)
 			adminAuthed.GET("/overview", adminhandler.Overview)
 			adminAuthed.GET("/analytics", adminhandler.Analytics)
 			adminAuthed.GET("/health", adminhandler.Health)

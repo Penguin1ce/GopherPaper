@@ -1,7 +1,7 @@
 "use client";
 
 // 管理员登录/注册卡片 — 首页 / 与 /admin 控制台共用,避免两套会走样的登录 UI。
-// 自带内联提示与验证码状态,登录成功经 onAuthed 回调交给调用方(写 localStorage / 刷新 / 跳转)。
+// 自带内联提示与验证码状态，登录态由后端 HttpOnly Cookie 承载。
 
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -36,9 +36,10 @@ export type AdminProfile = {
 };
 
 export type AdminAuth = {
-  token: string;
   admin: AdminProfile;
 };
+
+type AdminLoginResponse = AdminAuth;
 
 type AdminRegisterForm = {
   username: string;
@@ -66,14 +67,14 @@ export class AdminApiError extends Error {
 
 export async function adminRequest<T>(
   path: string,
-  token: string,
+  _token: string,
   options: RequestInit = {},
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers as Record<string, string> | undefined),
     },
   });
@@ -93,7 +94,10 @@ export async function adminRequest<T>(
     }
   }
   if (!res.ok || body.code !== 0) {
-    throw new AdminApiError(body.message || `请求失败 ${res.status}`, res.status);
+    throw new AdminApiError(
+      body.message || `请求失败 ${res.status}`,
+      res.status,
+    );
   }
   return body.data as T;
 }
@@ -102,14 +106,26 @@ export function readSavedAuth(): AdminAuth | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(ADMIN_AUTH_KEY);
-    return raw ? (JSON.parse(raw) as AdminAuth) : null;
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as Partial<AdminAuth> & { token?: string };
+    if (!saved.admin) {
+      window.localStorage.removeItem(ADMIN_AUTH_KEY);
+      return null;
+    }
+    const sanitized: AdminAuth = { admin: saved.admin };
+    window.localStorage.setItem(ADMIN_AUTH_KEY, JSON.stringify(sanitized));
+    return sanitized;
   } catch {
     window.localStorage.removeItem(ADMIN_AUTH_KEY);
     return null;
   }
 }
 
-export function AdminAuthCard({ onAuthed }: { onAuthed: (auth: AdminAuth) => void }) {
+export function AdminAuthCard({
+  onAuthed,
+}: {
+  onAuthed: (auth: AdminAuth) => void;
+}) {
   const [mode, setMode] = useState<Mode>("login");
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [registerForm, setRegisterForm] = useState<AdminRegisterForm>({
@@ -122,7 +138,10 @@ export function AdminAuthCard({ onAuthed }: { onAuthed: (auth: AdminAuth) => voi
   });
   const [busy, setBusy] = useState(false);
   const [codeBusy, setCodeBusy] = useState(false);
-  const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: "ok" | "error";
+    text: string;
+  } | null>(null);
   const [codeNotice, setCodeNotice] = useState<string | null>(null);
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const codeNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -157,11 +176,11 @@ export function AdminAuthCard({ onAuthed }: { onAuthed: (auth: AdminAuth) => voi
     if (busy) return;
     setBusy(true);
     try {
-      const data = await adminRequest<AdminAuth>("/admin/login", "", {
+      const data = await adminRequest<AdminLoginResponse>("/admin/login", "", {
         method: "POST",
         body: JSON.stringify(loginForm),
       });
-      onAuthed(data);
+      onAuthed({ admin: data.admin });
     } catch (err) {
       flash("error", err instanceof Error ? err.message : "登录失败");
     } finally {
@@ -180,7 +199,10 @@ export function AdminAuthCard({ onAuthed }: { onAuthed: (auth: AdminAuth) => voi
       });
       flash("ok", "管理员注册成功，请登录");
       setMode("login");
-      setLoginForm({ email: registerForm.email, password: registerForm.password });
+      setLoginForm({
+        email: registerForm.email,
+        password: registerForm.password,
+      });
     } catch (err) {
       flash("error", err instanceof Error ? err.message : "注册失败");
     } finally {
@@ -349,7 +371,12 @@ type AdminLoginFormProps = {
   onLogin: (e: FormEvent) => void;
 };
 
-function AdminLoginForm({ busy, loginForm, setLoginForm, onLogin }: AdminLoginFormProps) {
+function AdminLoginForm({
+  busy,
+  loginForm,
+  setLoginForm,
+  onLogin,
+}: AdminLoginFormProps) {
   return (
     <form className="space-y-4" onSubmit={onLogin}>
       <Field label="邮箱">
@@ -359,7 +386,9 @@ function AdminLoginForm({ busy, loginForm, setLoginForm, onLogin }: AdminLoginFo
           value={loginForm.email}
           autoComplete="email"
           required
-          onChange={(e) => setLoginForm((f) => ({ ...f, email: e.target.value }))}
+          onChange={(e) =>
+            setLoginForm((f) => ({ ...f, email: e.target.value }))
+          }
         />
       </Field>
       <Field label="密码">
@@ -368,7 +397,9 @@ function AdminLoginForm({ busy, loginForm, setLoginForm, onLogin }: AdminLoginFo
           value={loginForm.password}
           autoComplete="current-password"
           required
-          onChange={(e) => setLoginForm((f) => ({ ...f, password: e.target.value }))}
+          onChange={(e) =>
+            setLoginForm((f) => ({ ...f, password: e.target.value }))
+          }
         />
       </Field>
       <Button className="h-11 w-full gap-2" type="submit" disabled={busy}>
@@ -404,7 +435,9 @@ function AdminRegisterFormPanel({
             className="h-10"
             value={registerForm.name}
             autoComplete="name"
-            onChange={(e) => setRegisterForm((f) => ({ ...f, name: e.target.value }))}
+            onChange={(e) =>
+              setRegisterForm((f) => ({ ...f, name: e.target.value }))
+            }
           />
         </Field>
         <Field label="用户名">
@@ -413,7 +446,9 @@ function AdminRegisterFormPanel({
             value={registerForm.username}
             autoComplete="username"
             required
-            onChange={(e) => setRegisterForm((f) => ({ ...f, username: e.target.value }))}
+            onChange={(e) =>
+              setRegisterForm((f) => ({ ...f, username: e.target.value }))
+            }
           />
         </Field>
       </div>
@@ -427,7 +462,9 @@ function AdminRegisterFormPanel({
           value={registerForm.email}
           autoComplete="email"
           required
-          onChange={(e) => setRegisterForm((f) => ({ ...f, email: e.target.value }))}
+          onChange={(e) =>
+            setRegisterForm((f) => ({ ...f, email: e.target.value }))
+          }
         />
       </div>
 
@@ -470,7 +507,9 @@ function AdminRegisterFormPanel({
             autoComplete="new-password"
             minLength={6}
             required
-            onChange={(e) => setRegisterForm((f) => ({ ...f, password: e.target.value }))}
+            onChange={(e) =>
+              setRegisterForm((f) => ({ ...f, password: e.target.value }))
+            }
           />
         </Field>
         <Field label="管理员注册码">
@@ -479,7 +518,10 @@ function AdminRegisterFormPanel({
             value={registerForm.registration_code}
             required
             onChange={(e) =>
-              setRegisterForm((f) => ({ ...f, registration_code: e.target.value }))
+              setRegisterForm((f) => ({
+                ...f,
+                registration_code: e.target.value,
+              }))
             }
           />
         </Field>

@@ -133,7 +133,7 @@ export function SidebarUserCard({ onCollapse }: { onCollapse?: () => void }) {
           type="button"
           variant="ghost"
           size="icon-sm"
-          onClick={() => logout()}
+          onClick={() => void logout()}
           title="退出登录"
           className="text-muted-foreground hover:text-foreground"
         >

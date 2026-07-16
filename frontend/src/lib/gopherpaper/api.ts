@@ -52,23 +52,17 @@ export class ApiError extends Error {
   }
 }
 
-let token = "";
 let onUnauthorized: (() => void) | null = null;
 
-export function setToken(value: string) {
-  token = value || "";
-}
-
-// figureUrl 拼出取图接口地址,带 query token(img 标签发不了 Authorization 头)。
+// 图片和 PDF 通过同源 BFF 转发，浏览器自动携带 HttpOnly Cookie。
 export function figureUrl(docId: string, imgName: string): string {
   return `${API_BASE}/papers/${encodeURIComponent(docId)}/figures/${encodeURIComponent(
     imgName,
-  )}?token=${encodeURIComponent(token)}`;
+  )}`;
 }
 
-// paperFileUrl 拼出取原始 PDF 的地址,带 query token,供精读页 pdf.js 加载。
 export function paperFileUrl(id: string): string {
-  return `${API_BASE}/papers/${encodeURIComponent(id)}/file?token=${encodeURIComponent(token)}`;
+  return `${API_BASE}/papers/${encodeURIComponent(id)}/file`;
 }
 
 // translate 把精读页选中的英文原文送后端小模型翻成中文。
@@ -80,14 +74,19 @@ export function translate(id: string, text: string) {
 }
 
 export function updatePaperProgress(id: string, payload: PaperProgressPayload) {
-  return request<PaperProgressResponse>(`/papers/${encodeURIComponent(id)}/progress`, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
+  return request<PaperProgressResponse>(
+    `/papers/${encodeURIComponent(id)}/progress`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function listAnnotations(id: string) {
-  return request<PaperAnnotation[]>(`/papers/${encodeURIComponent(id)}/annotations`);
+  return request<PaperAnnotation[]>(
+    `/papers/${encodeURIComponent(id)}/annotations`,
+  );
 }
 
 export function createAnnotation(
@@ -105,10 +104,13 @@ export function createAnnotation(
     content_json?: Record<string, unknown>;
   },
 ) {
-  return request<PaperAnnotation>(`/papers/${encodeURIComponent(id)}/annotations`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return request<PaperAnnotation>(
+    `/papers/${encodeURIComponent(id)}/annotations`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function updateAnnotation(
@@ -172,9 +174,7 @@ export function clearUnauthorizedHandler(fn: () => void) {
 function authHeaders(
   extra: Record<string, string> = {},
 ): Record<string, string> {
-  const headers: Record<string, string> = { ...extra };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
+  return { ...extra };
 }
 
 async function readEnvelope<T>(res: Response): Promise<T> {
@@ -198,6 +198,7 @@ async function readEnvelope<T>(res: Response): Promise<T> {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "same-origin",
     headers: authHeaders({
       "Content-Type": "application/json",
       ...(options.headers as Record<string, string>),
@@ -215,19 +216,9 @@ export function login(account: string, password: string) {
   });
 }
 
-// logout best-effort 通知后端清登录态与该用户常驻的 agent/模型缓存。
-// 故意不走 request/readEnvelope:失败静默(本地登出才是关键),也避免 401 触发
-// 全局未授权处理形成「登出又登出」的循环。须在 setToken("") 清 token 前调用,才能带上 Authorization。
-export async function logout(): Promise<void> {
-  if (!token) return;
-  try {
-    await fetch(`${API_BASE}/user/logout`, {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-    });
-  } catch {
-    // 忽略网络错误,本地登出照常进行
-  }
+// HttpOnly Cookie 只能由服务端清除，主动登出必须等待后端确认。
+export function logout(): Promise<null> {
+  return request<null>("/user/logout", { method: "POST" });
 }
 
 export function register(payload: RegisterPayload) {
@@ -303,6 +294,7 @@ export async function uploadAvatar(file: File): Promise<AvatarResponse> {
   formData.append("file", file);
   const res = await fetch(`${API_BASE}/user/avatar`, {
     method: "POST",
+    credentials: "same-origin",
     headers: authHeaders(),
     body: formData,
   });
@@ -796,22 +788,22 @@ function sseBase(): string {
 
 // openStatusStream 用 SSE 订阅解析进度与报告就绪。
 // 基址见 sseBase:dev 直连后端、prod 同源走代理;EventSource 自带断线重连,调用方登出时 close。
+export interface StatusStream {
+  close: () => void;
+}
+
 export function openStatusStream(
-  jwt: string,
   onEvent: (e: PaperStatusEvent) => void,
   onReport?: (e: ReportReadyEvent) => void,
   onProgress?: (e: ReportProgressEvent) => void,
   onCompareProgress?: (e: CompareProgressEvent) => void,
-): EventSource | null {
-  if (!jwt || typeof EventSource === "undefined") return null;
-  const url = `${sseBase()}/events?token=${encodeURIComponent(jwt)}`;
-  let source: EventSource;
-  try {
-    source = new EventSource(url);
-  } catch {
-    return null;
-  }
-  source.addEventListener("message", (event) => {
+): StatusStream | null {
+  if (typeof EventSource === "undefined") return null;
+  let source: EventSource | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let closed = false;
+
+  const handleMessage = (event: MessageEvent) => {
     let msg: WsMessage;
     try {
       msg = JSON.parse(event.data) as WsMessage;
@@ -828,6 +820,38 @@ export function openStatusStream(
     else if (msg.type === "report_ready") onReport?.(msg as ReportReadyEvent);
     else if (msg.type === "report_progress")
       onProgress?.(msg as ReportProgressEvent);
-  });
-  return source;
+  };
+
+  const connect = async () => {
+    try {
+      const { ticket } = await request<{ ticket: string; expires_in: number }>(
+        "/events/ticket",
+        {
+          method: "POST",
+        },
+      );
+      if (closed) return;
+      source = new EventSource(
+        `${sseBase()}/events?ticket=${encodeURIComponent(ticket)}`,
+      );
+      source.addEventListener("message", handleMessage);
+      source.onerror = () => {
+        source?.close();
+        source = null;
+        if (!closed) retryTimer = setTimeout(() => void connect(), 1200);
+      };
+    } catch {
+      if (!closed) retryTimer = setTimeout(() => void connect(), 2000);
+    }
+  };
+
+  void connect();
+  return {
+    close: () => {
+      closed = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      source?.close();
+      source = null;
+    },
+  };
 }

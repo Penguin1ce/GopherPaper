@@ -49,8 +49,6 @@ import {
   sessionsForPaper,
 } from "./utils";
 
-const AUTH_KEY = "gopherpaper.auth";
-
 // sessions/messages/papers Query 未就绪时的稳定空数组,避免每次 render 新建 [] 触发下游 memo 失效。
 const EMPTY_SESSIONS: Session[] = [];
 const EMPTY_MESSAGES: Message[] = [];
@@ -68,11 +66,6 @@ export interface ToastItem {
   id: number;
   message: string;
   type: "ok" | "error";
-}
-
-interface PersistedAuth {
-  user: AuthUser | null;
-  token: string;
 }
 
 interface AppContextValue {
@@ -111,7 +104,7 @@ interface AppContextValue {
   sendCode: (email: string) => Promise<void>;
   sendPasswordResetCode: (payload: PasswordResetCodePayload) => Promise<void>;
   resetPassword: (payload: ResetPasswordPayload) => Promise<void>;
-  logout: (notifyServer?: boolean) => void;
+  logout: (notifyServer?: boolean) => Promise<void>;
   refreshUser: () => Promise<void>;
   updateProfile: (payload: UpdateProfilePayload) => Promise<void>;
   updateEmail: (payload: UpdateEmailPayload) => Promise<void>;
@@ -138,30 +131,17 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-function loadAuth(): PersistedAuth {
-  if (typeof window === "undefined") return { user: null, token: "" };
-  try {
-    const raw = localStorage.getItem(AUTH_KEY);
-    if (!raw) return { user: null, token: "" };
-    const saved = JSON.parse(raw) as PersistedAuth;
-    return { user: saved.user ?? null, token: saved.token ?? "" };
-  } catch {
-    localStorage.removeItem(AUTH_KEY);
-    return { user: null, token: "" };
-  }
-}
-
 function AppProviderInner({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [preference, setPreference] = useState<UserPreference>(DEFAULT_PREFERENCE);
-  const [token, setTokenState] = useState<string>("");
+  const [preference, setPreference] =
+    useState<UserPreference>(DEFAULT_PREFERENCE);
   const [authReady, setAuthReady] = useState(false);
   // papers 由 Query 接管:paperSearch 空→listPapers,非空→searchPapers,搜索词进 query key。
   const [paperSearch, setPaperSearch] = useState("");
   const papersQuery = useQuery({
     queryKey: ["papers", paperSearch],
-    enabled: Boolean(token),
+    enabled: Boolean(user),
     queryFn: async () => {
       const list = paperSearch
         ? await api.searchPapers(paperSearch)
@@ -183,7 +163,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   // sessions 由 Query 接管:listSessions 拉取 + chatSessions 过滤;乐观更新走 setQueryData。
   const sessionsQuery = useQuery({
     queryKey: ["sessions"],
-    enabled: Boolean(token),
+    enabled: Boolean(user),
     queryFn: async () => chatSessions(await api.listSessions()),
   });
   const sessions = sessionsQuery.data ?? EMPTY_SESSIONS;
@@ -219,13 +199,17 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   const [reportReady, setReportReady] = useState<
     Record<string, Partial<Record<ReportType, boolean>>>
   >({});
-  const [paperFlowReady, setPaperFlowReady] = useState<Record<string, boolean>>({});
+  const [paperFlowReady, setPaperFlowReady] = useState<Record<string, boolean>>(
+    {},
+  );
   const [reportProgress, setReportProgress] = useState<
     Record<string, Partial<Record<ReportType, ReportRun>>>
   >({});
-  const [compareProgress, setCompareProgress] = useState<CompareRun | null>(null);
+  const [compareProgress, setCompareProgress] = useState<CompareRun | null>(
+    null,
+  );
 
-  const wsRef = useRef<EventSource | null>(null);
+  const wsRef = useRef<api.StatusStream | null>(null);
   const toastSeq = useRef(0);
   const hydratedRef = useRef(false);
   const mountedRef = useRef(true);
@@ -241,10 +225,6 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     reportProgressRef.current = reportProgress;
   }, [reportProgress]);
 
-  useEffect(() => {
-    api.setToken(token);
-  }, [token]);
-
   // ---- Toast ----
   const dismissToast = useCallback((id: number) => {
     setToasts((list) => list.filter((t) => t.id !== id));
@@ -259,21 +239,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     [dismissToast],
   );
 
-  // ---- 鉴权持久化 ----
+  // 浏览器会话由 HttpOnly Cookie 持久化，JS 仅保存当前用户展示状态。
   const persist = useCallback(
-    (nextUser: AuthUser | null, nextToken: string) => {
-      setUser(nextUser);
-      setTokenState(nextToken);
-      api.setToken(nextToken);
-      if (nextToken) {
-        localStorage.setItem(
-          AUTH_KEY,
-          JSON.stringify({ user: nextUser, token: nextToken }),
-        );
-      } else {
-        localStorage.removeItem(AUTH_KEY);
-      }
-    },
+    (nextUser: AuthUser | null) => setUser(nextUser),
     [],
   );
 
@@ -297,34 +265,45 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     };
   }, [disconnectWs]);
 
-  // notifyServer 为真时先通知后端清登录态与常驻缓存(趁 token 未清,fire-and-forget 不阻塞);
-  // 401 被动登出时 token 已失效,传 false 跳过这次注定失败的请求。
+  const clearSessionState = useCallback(() => {
+    disconnectWs();
+    persist(null);
+    setAuthReady(true);
+    queryClient.clear();
+    setPaperSearch("");
+    setActivePaperID("");
+    setActiveSessionID("");
+    setSending(false);
+    setSendingSessionID("");
+    setSendingPaperID("");
+    setToolNote("");
+    setReportReady({});
+    setPaperFlowReady({});
+    setReportProgress({});
+    setCompareProgress(null);
+    setPreference(DEFAULT_PREFERENCE);
+  }, [disconnectWs, persist, queryClient]);
+
+  // 主动登出须等待后端撤销会话并清 Cookie；401 被动登出只清本地状态。
   const logout = useCallback(
-    (notifyServer = true) => {
-      if (notifyServer) void api.logout();
-      disconnectWs();
-      persist(null, "");
-      setAuthReady(true);
-      // 清空所有 Query 缓存(sessions/messages/papers/轮询),与下方业务 state 一并归零。
-      queryClient.clear();
-      setPaperSearch("");
-      setActivePaperID("");
-      setActiveSessionID("");
-      setSending(false);
-      setSendingSessionID("");
-      setSendingPaperID("");
-      setToolNote("");
-      setReportReady({});
-      setPaperFlowReady({});
-      setReportProgress({});
-      setCompareProgress(null);
-      setPreference(DEFAULT_PREFERENCE);
+    async (notifyServer = true) => {
+      if (notifyServer) {
+        try {
+          await api.logout();
+        } catch (err) {
+          if (!(err instanceof api.ApiError && err.status === 401)) {
+            toast(err instanceof Error ? err.message : "退出登录失败", "error");
+            return;
+          }
+        }
+      }
+      clearSessionState();
     },
-    [disconnectWs, persist, queryClient],
+    [clearSessionState, toast],
   );
 
   // 401 统一登出,被动登出不再回调后端(token 已失效)。
-  const handleUnauthorized = useCallback(() => logout(false), [logout]);
+  const handleUnauthorized = useCallback(() => void logout(false), [logout]);
 
   useEffect(() => {
     api.setUnauthorizedHandler(handleUnauthorized);
@@ -436,21 +415,24 @@ function AppProviderInner({ children }: { children: ReactNode }) {
               },
       },
     }));
-    void api.reportStatus(paperID).then((status) => {
-      const run = status.running?.find((item) => item.type === type);
-      if (!run) return;
-      setReportProgress((prev) => ({
-        ...prev,
-        [paperID]: {
-          ...(prev[paperID] || {}),
-          [type]: {
-            steps: run.steps ?? [],
-            live: Boolean(run.live),
-            failed: Boolean(run.failed),
+    void api
+      .reportStatus(paperID)
+      .then((status) => {
+        const run = status.running?.find((item) => item.type === type);
+        if (!run) return;
+        setReportProgress((prev) => ({
+          ...prev,
+          [paperID]: {
+            ...(prev[paperID] || {}),
+            [type]: {
+              steps: run.steps ?? [],
+              live: Boolean(run.live),
+              failed: Boolean(run.failed),
+            },
           },
-        },
-      }));
-    }).catch(() => {});
+        }));
+      })
+      .catch(() => {});
   }, []);
 
   const markPaperFlowReady = useCallback((paperID: string, ready = true) => {
@@ -606,7 +588,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
 
   // 进入某篇论文时回填已落库报告的就绪态,让报告面板免点击自动展示历史报告。
   useEffect(() => {
-    if (!token || !activePaperID) return;
+    if (!user || !activePaperID) return;
     let cancelled = false;
     api
       .reportStatus(activePaperID)
@@ -618,31 +600,26 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [token, activePaperID, applyReportStatus]);
+  }, [user, activePaperID, applyReportStatus]);
 
-  const connectWs = useCallback(
-    (jwt: string) => {
-      disconnectWs();
-      const source = api.openStatusStream(
-        jwt,
-        (e) => applyStatusEvent(e),
-        (e) => applyReportReady(e.paper_id, e.report_type),
-        (e) =>
-          applyReportProgress(e.paper_id, e.report_type, e.phase, e.detail),
-        applyCompareProgress,
-      );
-      if (!source) return;
-      wsRef.current = source;
-      // EventSource 自带断线重连,无需手动重试;登出时经 disconnectWs 关闭即止。
-    },
-    [
-      applyStatusEvent,
-      applyReportReady,
-      applyReportProgress,
+  const connectWs = useCallback(() => {
+    disconnectWs();
+    const source = api.openStatusStream(
+      (e) => applyStatusEvent(e),
+      (e) => applyReportReady(e.paper_id, e.report_type),
+      (e) => applyReportProgress(e.paper_id, e.report_type, e.phase, e.detail),
       applyCompareProgress,
-      disconnectWs,
-    ],
-  );
+    );
+    if (!source) return;
+    wsRef.current = source;
+    // EventSource 自带断线重连,无需手动重试;登出时经 disconnectWs 关闭即止。
+  }, [
+    applyStatusEvent,
+    applyReportReady,
+    applyReportProgress,
+    applyCompareProgress,
+    disconnectWs,
+  ]);
 
   // ---- 轮询兜底(Query refetchInterval 接管手写 setInterval) ----
   // 实时通道(SSE)瞬断时,轮询补齐「可提问/失败」状态。enabled 仅在有未就绪论文时开,
@@ -651,7 +628,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   const hasPendingPapers = papers.some((p) => !isSettled(p.status));
   useQuery({
     queryKey: ["paper-status-poll"],
-    enabled: Boolean(token) && hasPendingPapers,
+    enabled: Boolean(user) && hasPendingPapers,
     refetchInterval: 4200,
     queryFn: async () => {
       const pending = papersRef.current.filter((p) => !isSettled(p.status));
@@ -683,7 +660,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   );
   useQuery({
     queryKey: ["report-ready-poll"],
-    enabled: Boolean(token) && hasLiveReport,
+    enabled: Boolean(user) && hasLiveReport,
     refetchInterval: 5000,
     queryFn: async () => {
       const livePaperIds = Object.entries(reportProgressRef.current)
@@ -710,15 +687,15 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     const onVisibility = () => {
       if (document.hidden) {
         disconnectWs();
-      } else if (token) {
-        connectWs(token);
+      } else if (user) {
+        connectWs();
         void queryClient.invalidateQueries({ queryKey: ["paper-status-poll"] });
         void queryClient.invalidateQueries({ queryKey: ["report-ready-poll"] });
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [token, connectWs, disconnectWs, queryClient]);
+  }, [user, connectWs, disconnectWs, queryClient]);
 
   // ---- 数据加载 ----
   // 设搜索词切换 papers query key(空→全列表,非空→搜索);invalidate 让同词刷新也强制重拉。
@@ -748,69 +725,59 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     [queryClient],
   );
 
-  const bootstrapSession = useCallback(
-    async (jwt: string) => {
-      connectWs(jwt);
-      // sessions 经 fetchQuery 拉取并写入缓存(useQuery 随即反映,无需 setSessions);
-      // 返回值供初始化时选中首篇论文的最新会话。
-      const [paperList, sessionList] = await Promise.all([
-        queryClient.fetchQuery({
-          queryKey: ["papers", ""],
-          queryFn: async () => {
-            const l = await api.listPapers();
-            return Array.isArray(l) ? l : [];
-          },
-        }),
-        queryClient.fetchQuery({
-          queryKey: ["sessions"],
-          queryFn: async () => chatSessions(await api.listSessions()),
-        }),
-      ]);
-      if (!mountedRef.current) return;
-      if (paperList.length > 0) {
-        const first = paperList[0];
-        setActivePaperID(first.id);
-        const list = sessionsForPaper(sessionList, first.id);
-        if (list.length > 0) await openSession(list[0].id);
-      } else if (sessionList.length > 0) {
-        await openSession(sessionList[0].id);
-      }
-    },
-    [connectWs, openSession, queryClient],
-  );
+  const bootstrapSession = useCallback(async () => {
+    connectWs();
+    // sessions 经 fetchQuery 拉取并写入缓存(useQuery 随即反映,无需 setSessions);
+    // 返回值供初始化时选中首篇论文的最新会话。
+    const [paperList, sessionList] = await Promise.all([
+      queryClient.fetchQuery({
+        queryKey: ["papers", ""],
+        queryFn: async () => {
+          const l = await api.listPapers();
+          return Array.isArray(l) ? l : [];
+        },
+      }),
+      queryClient.fetchQuery({
+        queryKey: ["sessions"],
+        queryFn: async () => chatSessions(await api.listSessions()),
+      }),
+    ]);
+    if (!mountedRef.current) return;
+    if (paperList.length > 0) {
+      const first = paperList[0];
+      setActivePaperID(first.id);
+      const list = sessionsForPaper(sessionList, first.id);
+      if (list.length > 0) await openSession(list[0].id);
+    } else if (sessionList.length > 0) {
+      await openSession(sessionList[0].id);
+    }
+  }, [connectWs, openSession, queryClient]);
 
   useEffect(() => {
     if (hydratedRef.current) return;
     hydratedRef.current = true;
-    const saved = loadAuth();
-    if (!saved.token) {
-      setAuthReady(true);
-      return;
-    }
-    setUser(saved.user);
-    setTokenState(saved.token);
-    api.setToken(saved.token);
-    api.me().then((profile) => persist(profile, saved.token)).catch(() => {});
-    bootstrapSession(saved.token)
-      .catch(() => {})
+    api
+      .me()
+      .then(async (profile) => {
+        persist(profile);
+        await bootstrapSession();
+      })
+      .catch(() => persist(null))
       .finally(() => setAuthReady(true));
   }, [bootstrapSession, persist]);
 
   const login = useCallback(
     async (account: string, password: string) => {
       const data = await api.login(account, password);
-      persist(
-        {
-          student_id: data.student_id,
-          name: data.name,
-          email: data.email,
-          avatar_url: data.avatar_url,
-          class_id: data.class_id,
-        },
-        data.token,
-      );
+      persist({
+        student_id: data.student_id,
+        name: data.name,
+        email: data.email,
+        avatar_url: data.avatar_url,
+        class_id: data.class_id,
+      });
       setAuthReady(true);
-      await bootstrapSession(data.token);
+      await bootstrapSession();
       toast("登录成功");
     },
     [bootstrapSession, persist, toast],
@@ -843,15 +810,16 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   const resetPassword = useCallback(
     async (payload: ResetPasswordPayload) => {
       await api.resetPassword(payload);
+      await logout(false);
       toast("密码已重置，请重新登录");
     },
-    [toast],
+    [logout, toast],
   );
 
   const refreshUser = useCallback(async () => {
     const profile = await api.me();
-    persist(profile, token);
-  }, [persist, token]);
+    persist(profile);
+  }, [persist]);
 
   const refreshPreferences = useCallback(async () => {
     const data = await api.preferences();
@@ -861,18 +829,19 @@ function AppProviderInner({ children }: { children: ReactNode }) {
   const updateProfile = useCallback(
     async (payload: UpdateProfilePayload) => {
       const profile = await api.updateProfile(payload);
-      persist(profile, token);
+      persist(profile);
       toast("个人资料已更新");
     },
-    [persist, toast, token],
+    [persist, toast],
   );
 
   const updateEmail = useCallback(
     async (payload: UpdateEmailPayload) => {
       await api.updateEmail(payload);
+      await logout(false);
       toast("邮箱已更新，请重新登录");
     },
-    [toast],
+    [logout, toast],
   );
 
   const updatePreferences = useCallback(
@@ -888,18 +857,18 @@ function AppProviderInner({ children }: { children: ReactNode }) {
     async (file: File) => {
       const data = await api.uploadAvatar(file);
       const nextUser = user ? { ...user, avatar_url: data.avatar_url } : null;
-      persist(nextUser, token);
+      persist(nextUser);
       toast("头像已更新");
     },
-    [persist, toast, token, user],
+    [persist, toast, user],
   );
 
   const clearAvatar = useCallback(async () => {
     await api.clearAvatar();
     const nextUser = user ? { ...user, avatar_url: "" } : null;
-    persist(nextUser, token);
+    persist(nextUser);
     toast("已恢复默认头像");
-  }, [persist, toast, token, user]);
+  }, [persist, toast, user]);
 
   const uploadPaper = useCallback(
     async (file: File) => {
@@ -1176,7 +1145,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
             // 规划/检索/思考阶段文本:累积成 plan 步,实时流进「执行过程」活动条。
             onPlan: (phase, content) => {
               const last = planSteps[planSteps.length - 1];
-              if (last && last.phase === phase && last.kind !== "tool") last.text += content;
+              if (last && last.phase === phase && last.kind !== "tool")
+                last.text += content;
               else planSteps.push({ phase, text: content });
               if (planRafID === null)
                 planRafID = requestAnimationFrame(flushPlan);
@@ -1185,7 +1155,8 @@ function AppProviderInner({ children }: { children: ReactNode }) {
             // 兜底防重:同一论文本轮已收到骨架则忽略后续重复推送,避免把已点亮的图打回占位再重画
             // (清空重画闪烁)。后端已对重复调用幂等,这里再防一层任何来源的重复骨架。
             onPaperFlow: (payload) => {
-              if (capturedFlow && capturedFlow.paper_id === payload.paper_id) return;
+              if (capturedFlow && capturedFlow.paper_id === payload.paper_id)
+                return;
               capturedFlow = payload;
               patch((m) => ({ ...m, flow: payload }));
             },
@@ -1198,7 +1169,9 @@ function AppProviderInner({ children }: { children: ReactNode }) {
               capturedFlow = {
                 ...capturedFlow,
                 nodes: capturedFlow.nodes.map((n) =>
-                  n.id === payload.node_id ? { ...n, detail: payload.detail } : n,
+                  n.id === payload.node_id
+                    ? { ...n, detail: payload.detail }
+                    : n,
                 ),
                 figures,
               };
@@ -1262,7 +1235,7 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       user,
       preference,
       authReady,
-      authed: Boolean(token),
+      authed: Boolean(user),
       papers,
       sessions,
       messages,
@@ -1313,7 +1286,6 @@ function AppProviderInner({ children }: { children: ReactNode }) {
       user,
       preference,
       authReady,
-      token,
       papers,
       sessions,
       messages,

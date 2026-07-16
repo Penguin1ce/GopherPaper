@@ -159,7 +159,6 @@ export function ProfileCenter() {
     setEmailError("");
     try {
       await updateEmail({ email: nextEmail.trim(), code: emailCode.trim() });
-      logout(false);
     } catch (err) {
       setEmailError(err instanceof Error ? err.message : "邮箱更新失败");
     } finally {
@@ -206,7 +205,6 @@ export function ProfileCenter() {
         code: passwordCode.trim(),
         password: nextPassword,
       });
-      logout(false);
     } catch (err) {
       setPasswordError(err instanceof Error ? err.message : "密码修改失败");
     } finally {
@@ -353,7 +351,11 @@ export function ProfileCenter() {
                   <ArrowLeft className="size-4" />
                   返回工作台
                 </Link>
-                <Button type="button" variant="ghost" onClick={() => logout()}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => void logout()}
+                >
                   <LogOut className="size-4" />
                   退出
                 </Button>

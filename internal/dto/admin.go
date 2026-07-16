@@ -25,7 +25,6 @@ type AdminProfile struct {
 }
 
 type AdminLoginResponse struct {
-	Token string       `json:"token"`
 	Admin AdminProfile `json:"admin"`
 }
 

@@ -48,18 +48,19 @@ Next 前端,并对 `/api/v1/events` 和聊天消息 SSE 关闭代理缓冲。
 
 ## 核心接口
 
-受保护接口走 `Authorization: Bearer <jwt>`;浏览器直连的 SSE、图片与 PDF 文件接口带不了头,鉴权改走 `?token=<jwt>`。
+浏览器登录后使用 `HttpOnly + SameSite=Lax` Cookie,前端 JavaScript 不接触 JWT;外部客户端仍可使用 `Authorization: Bearer <jwt>`。JWT 带 `jti`,Redis 只保存当前会话的 SHA-256 指纹,因此重新登录、登出、改邮箱、重置密码或停用管理员后旧 Token 会立即失效。
 
 | 鉴权 | 方法 | 路径 | 说明 |
 | --- | --- | --- | --- |
-| 公开 | POST | `/api/v1/auth/token` | 按 `student_id`、`class_id` 签发调试 JWT |
+| 本地调试 | POST | `/api/v1/auth/token` | 仅 `enable_debug_token=true`、debug/test 模式和回环来源同时满足时注册 |
 | 公开 | POST | `/api/v1/user/send-code` | 下发邮箱验证码,body `email` |
 | 公开 | POST | `/api/v1/user/register` | 校验验证码并注册,body `student_id`、`name`、`email`、`class_id`、`password`、`code` |
-| 公开 | POST | `/api/v1/user/login` | 学号密码登录,返回 JWT 与用户信息 |
-| Query Token | GET | `/api/v1/events?token=<jwt>` | SSE 订阅论文解析进度 |
-| Query Token | GET | `/api/v1/papers/:id/figures/:name?token=<jwt>` | 取问答召回引用的图片 |
-| Query Token | GET | `/api/v1/papers/:id/file?token=<jwt>` | 取原始 PDF,供精读页 pdf.js 渲染 |
-| JWT | POST | `/api/v1/user/logout` | 注销当前登录,清服务端登录态与用户模型缓存 |
+| 公开 | POST | `/api/v1/user/login` | 学号或邮箱密码登录,设置 HttpOnly Cookie 并返回用户信息 |
+| 会话 | POST | `/api/v1/events/ticket` | 签发 30 秒有效、只能消费一次的 SSE 票据 |
+| 一次性票据 | GET | `/api/v1/events?ticket=<ticket>` | SSE 订阅论文解析进度 |
+| 会话 | GET | `/api/v1/papers/:id/figures/:name` | 取问答召回引用的图片 |
+| 会话 | GET | `/api/v1/papers/:id/file` | 取原始 PDF,供精读页 pdf.js 渲染 |
+| 会话 | POST | `/api/v1/user/logout` | 撤销服务端会话,清 Cookie 与用户模型缓存 |
 | JWT | POST | `/api/v1/papers` | 上传 PDF,multipart `file`,上限 50MB,触发异步解析 |
 | JWT | GET | `/api/v1/papers` | 列出当前用户论文 |
 | JWT | GET | `/api/v1/papers/search?q=` | 历史文献检索,支持标题、文件名、作者和关键词 |

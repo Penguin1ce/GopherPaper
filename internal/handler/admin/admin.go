@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"GopherPaper/internal/auth"
 	"GopherPaper/internal/dto"
 	"GopherPaper/internal/middleware"
 	"GopherPaper/internal/response"
@@ -64,7 +65,23 @@ func Login(c *gin.Context) {
 		writeAdminErr(c, err, "login failed")
 		return
 	}
-	response.OK(c, dto.AdminLoginResponse{Token: token, Admin: adminservice.Profile(admin)})
+	auth.SetAdminCookie(c.Writer, c.Request, token)
+	response.OK(c, dto.AdminLoginResponse{Admin: adminservice.Profile(admin)})
+}
+
+func Logout(c *gin.Context) {
+	adminID, ok := currentAdminID(c)
+	if !ok {
+		response.Fail(c, http.StatusUnauthorized, "not logged in")
+		return
+	}
+	if err := adminservice.Logout(c.Request.Context(), adminID); err != nil {
+		zlog.Error("admin logout failed", "admin_id", adminID, "err", err)
+		response.Fail(c, http.StatusInternalServerError, "logout failed")
+		return
+	}
+	auth.ClearAdminCookie(c.Writer, c.Request)
+	response.OKMsg(c, "logged out", nil)
 }
 
 func Me(c *gin.Context) {

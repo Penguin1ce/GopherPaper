@@ -202,12 +202,12 @@ type AdminConfig struct {
 	RegistrationCode string `toml:"registration_code"`
 }
 
-// JWTConfig JWT 鉴权配置。学生登录后签发 token，请求时带
-// Authorization: Bearer <token>，中间件校验并取出租户身份。
+// JWTConfig JWT 鉴权配置。浏览器使用 HttpOnly Cookie，外部客户端可使用 Bearer token。
 type JWTConfig struct {
-	Secret      string `toml:"secret"`       // 签名密钥，生产务必用强随机值并保密
-	Issuer      string `toml:"issuer"`       // 签发方标识
-	ExpireHours int    `toml:"expire_hours"` // token 有效期，单位小时
+	Secret           string `toml:"secret"`             // 签名密钥，生产务必用强随机值并保密
+	Issuer           string `toml:"issuer"`             // 签发方标识
+	ExpireHours      int    `toml:"expire_hours"`       // token 有效期，单位小时
+	EnableDebugToken bool   `toml:"enable_debug_token"` // 仅 debug/test 且回环来源可用
 }
 
 // Load 从指定路径读取 toml 配置。

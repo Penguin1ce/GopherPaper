@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/auth/token": {
             "post": {
-                "description": "按 student_id 和 class_id 签发 JWT，主要用于本地调试或外部工具联调。",
+                "description": "仅在 enable_debug_token=true、debug/test 模式且请求来自回环地址时可用。生产环境不注册该路由。",
                 "consumes": [
                     "application/json"
                 ],
@@ -75,7 +75,7 @@ const docTemplate = `{
         },
         "/events": {
             "get": {
-                "description": "建立 SSE 长连接，推送论文解析进度与报告就绪事件。浏览器 EventSource 无法携带 Authorization 头，因此鉴权使用 query token。",
+                "description": "建立 SSE 长连接，推送论文解析进度与报告就绪事件。票据须先通过受保护接口获取，30 秒内只可消费一次。",
                 "produces": [
                     "text/event-stream"
                 ],
@@ -86,8 +86,8 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "JWT",
-                        "name": "token",
+                        "description": "短期一次性票据",
+                        "name": "ticket",
                         "in": "query",
                         "required": true
                     }
@@ -101,6 +101,43 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/ticket": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "为当前登录用户签发 30 秒有效且只能消费一次的 SSE 连接票据。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "获取 SSE 一次性票据",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/dto.Response"
                         }
@@ -822,7 +859,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "更新某条精读批注的笔记或颜色。",
+                "description": "更新某条精读批注的内容、位置或样式。",
                 "consumes": [
                     "application/json"
                 ],
@@ -906,7 +943,12 @@ const docTemplate = `{
         },
         "/papers/{id}/figures/{name}": {
             "get": {
-                "description": "返回某篇论文解析出的图片文件。该接口供浏览器图片标签使用，鉴权使用 query token。",
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回某篇论文解析出的图片文件。浏览器通过 HttpOnly Cookie 鉴权。",
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -927,13 +969,6 @@ const docTemplate = `{
                         "description": "图片文件名",
                         "name": "name",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "JWT",
-                        "name": "token",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -979,7 +1014,12 @@ const docTemplate = `{
         },
         "/papers/{id}/file": {
             "get": {
-                "description": "返回某篇论文的原始 PDF 文件。该接口供 pdf.js 使用，鉴权使用 query token。",
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回某篇论文的原始 PDF 文件。浏览器通过 HttpOnly Cookie 鉴权。",
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -993,13 +1033,6 @@ const docTemplate = `{
                         "description": "论文 ID",
                         "name": "id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "JWT",
-                        "name": "token",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -2044,7 +2077,7 @@ const docTemplate = `{
         },
         "/user/login": {
             "post": {
-                "description": "按学号或绑定邮箱和密码登录，返回 JWT 与用户基本信息。",
+                "description": "按学号或绑定邮箱和密码登录，通过 HttpOnly Cookie 建立会话并返回用户基本信息。",
                 "consumes": [
                     "application/json"
                 ],
@@ -2237,6 +2270,19 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "constant.AnnotationKind": {
+            "type": "string",
+            "enum": [
+                "selection",
+                "freetext",
+                "drawing"
+            ],
+            "x-enum-varnames": [
+                "AnnotationKindSelection",
+                "AnnotationKindFreetext",
+                "AnnotationKindDrawing"
+            ]
+        },
         "constant.IntentType": {
             "type": "string",
             "enum": [
@@ -2308,7 +2354,8 @@ const docTemplate = `{
                 "method",
                 "result",
                 "innovation",
-                "related"
+                "related",
+                "flow"
             ],
             "x-enum-comments": {
                 "ReportInnovation": "创新点与不足分析",
@@ -2322,29 +2369,35 @@ const docTemplate = `{
                 "研究方法总结",
                 "实验结果总结",
                 "创新点与不足分析",
-                "相关研究/参考文献链接"
+                "相关研究/参考文献链接",
+                ""
             ],
             "x-enum-varnames": [
                 "ReportQuickRead",
                 "ReportMethod",
                 "ReportResult",
                 "ReportInnovation",
-                "ReportRelated"
+                "ReportRelated",
+                "ReportFlow"
             ]
         },
         "dto.AnnotationCreateRequest": {
             "type": "object",
             "required": [
                 "bounding_rect",
-                "page_no",
-                "rects",
-                "text"
+                "page_no"
             ],
             "properties": {
                 "bounding_rect": {
                     "$ref": "#/definitions/dto.AnnotationRect"
                 },
                 "color": {
+                    "type": "string"
+                },
+                "content_json": {
+                    "$ref": "#/definitions/model.JSONMap"
+                },
+                "kind": {
                     "type": "string"
                 },
                 "note": {
@@ -2359,6 +2412,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/dto.AnnotationRect"
                     }
+                },
+                "style_json": {
+                    "$ref": "#/definitions/model.JSONMap"
                 },
                 "text": {
                     "type": "string"
@@ -2397,10 +2453,28 @@ const docTemplate = `{
         "dto.AnnotationUpdateRequest": {
             "type": "object",
             "properties": {
+                "bounding_rect": {
+                    "$ref": "#/definitions/dto.AnnotationRect"
+                },
                 "color": {
                     "type": "string"
                 },
+                "content_json": {
+                    "$ref": "#/definitions/model.JSONMap"
+                },
                 "note": {
+                    "type": "string"
+                },
+                "rects": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.AnnotationRect"
+                    }
+                },
+                "style_json": {
+                    "$ref": "#/definitions/model.JSONMap"
+                },
+                "text": {
                     "type": "string"
                 },
                 "translation": {
@@ -2527,9 +2601,6 @@ const docTemplate = `{
                 },
                 "student_id": {
                     "type": "string"
-                },
-                "token": {
-                    "type": "string"
                 }
             }
         },
@@ -2610,6 +2681,9 @@ const docTemplate = `{
         "dto.ReadyReportsResponse": {
             "type": "object",
             "properties": {
+                "flow_ready": {
+                    "type": "boolean"
+                },
                 "ready": {
                     "type": "array",
                     "items": {
@@ -2825,6 +2899,10 @@ const docTemplate = `{
                 }
             }
         },
+        "model.JSONMap": {
+            "type": "object",
+            "additionalProperties": {}
+        },
         "model.Message": {
             "type": "object",
             "properties": {
@@ -2930,11 +3008,17 @@ const docTemplate = `{
                 "color": {
                     "type": "string"
                 },
+                "content_json": {
+                    "$ref": "#/definitions/model.JSONMap"
+                },
                 "created_at": {
                     "type": "string"
                 },
                 "id": {
                     "type": "integer"
+                },
+                "kind": {
+                    "$ref": "#/definitions/constant.AnnotationKind"
                 },
                 "note": {
                     "type": "string"
@@ -2953,6 +3037,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/model.AnnotationRect"
                     }
+                },
+                "style_json": {
+                    "$ref": "#/definitions/model.JSONMap"
                 },
                 "text": {
                     "type": "string"
@@ -3018,6 +3105,12 @@ const docTemplate = `{
                 },
                 "publish_year": {
                     "type": "integer"
+                },
+                "references": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "research_questions": {
                     "type": "array",
@@ -3147,7 +3240,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/api/v1",
 	Schemes:          []string{"http", "https"},
 	Title:            "GopherPaper API",
-	Description:      "科研文献智能解析与知识服务系统后端接口。受保护接口使用 Authorization: Bearer <jwt>。",
+	Description:      "科研文献智能解析与知识服务系统后端接口。浏览器使用 HttpOnly Cookie，外部客户端可使用 Authorization: Bearer <jwt>。",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

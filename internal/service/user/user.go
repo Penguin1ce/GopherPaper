@@ -97,7 +97,7 @@ func Register(ctx context.Context, req dto.RegisterRequest) error {
 	return nil
 }
 
-// Login 校验学号或绑定邮箱与密码，签发 JWT 并以邮箱前缀为键写入 Redis，返回 token 与用户。
+// Login 校验学号或绑定邮箱与密码，签发并登记可撤销 JWT 会话。
 func Login(ctx context.Context, account, password string) (string, *model.User, error) {
 	var user model.User
 	query, arg := loginLookup(account)
@@ -112,12 +112,9 @@ func Login(ctx context.Context, account, password string) (string, *model.User, 
 		return "", nil, errs.ErrWrongPassword
 	}
 
-	token, err := auth.Generate(user.StudentID, user.ClassID)
+	token, err := auth.Issue(ctx, user.StudentID, user.ClassID)
 	if err != nil {
 		return "", nil, fmt.Errorf("service: 签发 token 失败: %w", err)
-	}
-	if err := dao.SetTTL(ctx, tokenKey(user.Email), token, auth.TTL()); err != nil {
-		return "", nil, fmt.Errorf("service: 存储 token 失败: %w", err)
 	}
 	return token, &user, nil
 }
@@ -346,14 +343,13 @@ func UpdateEmail(ctx context.Context, studentID string, req dto.UpdateEmailReque
 		return nil, errs.ErrUserExists
 	}
 
-	oldEmail := user.Email
+	if err := auth.RevokeUser(ctx, studentID); err != nil {
+		return nil, fmt.Errorf("service: 撤销旧登录会话失败: %w", err)
+	}
 	if err := dao.DB.WithContext(ctx).Model(&user).Update("email", nextEmail).Error; err != nil {
 		return nil, fmt.Errorf("service: 更新绑定邮箱失败: %w", err)
 	}
 	_, _ = dao.Del(ctx, codeKey(nextEmail))
-	if oldEmail != "" {
-		_, _ = dao.Del(ctx, tokenKey(oldEmail))
-	}
 	return Profile(ctx, studentID)
 }
 
@@ -387,24 +383,21 @@ func ResetPassword(ctx context.Context, req dto.ResetPasswordRequest) error {
 	if err != nil {
 		return fmt.Errorf("service: 密码加密失败: %w", err)
 	}
+	if err := auth.RevokeUser(ctx, studentID); err != nil {
+		return fmt.Errorf("service: 撤销旧登录会话失败: %w", err)
+	}
 	if err := dao.DB.WithContext(ctx).Model(&user).Update("password_hash", string(hash)).Error; err != nil {
 		return fmt.Errorf("service: 更新密码失败: %w", err)
 	}
 	_, _ = dao.Del(ctx, codeKey)
-	_, _ = dao.Del(ctx, tokenKey(user.Email))
 	return nil
 }
 
+// Logout 撤销该用户当前登记的登录会话。
 func Logout(ctx context.Context, studentID string) error {
-	var user model.User
-	err := dao.DB.WithContext(ctx).Select("email").Where("student_id = ?", studentID).First(&user).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil
+	if err := auth.RevokeUser(ctx, studentID); err != nil {
+		return fmt.Errorf("service: 撤销登录会话失败: %w", err)
 	}
-	if err != nil {
-		return fmt.Errorf("service: 查询用户失败: %w", err)
-	}
-	_, _ = dao.Del(ctx, tokenKey(user.Email))
 	return nil
 }
 
@@ -424,15 +417,4 @@ func codeKey(email string) string { return constant.RedisKeyVerifyCode + email }
 
 func passwordResetKey(studentID, email string) string {
 	return constant.RedisKeyPasswordReset + strings.TrimSpace(studentID) + ":" + strings.TrimSpace(email)
-}
-
-// tokenKey 登录 token 的 Redis 键，前缀取邮箱 @ 之前部分。
-func tokenKey(email string) string { return constant.RedisKeyUserToken + emailPrefix(email) }
-
-// emailPrefix 取邮箱 @ 之前的本地部分，无 @ 则返回原串。
-func emailPrefix(email string) string {
-	if i := strings.IndexByte(email, '@'); i > 0 {
-		return email[:i]
-	}
-	return email
 }
