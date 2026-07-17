@@ -34,9 +34,11 @@ func TestClassifyIntent(t *testing.T) {
 
 	cases := map[string]constant.IntentType{
 		"你好，辛苦啦": constant.IntentChitchat,
-		"这篇论文在 DBLP 数据集上的准确率是多少？": constant.IntentSummary,
+		"这篇论文在 DBLP 数据集上的准确率是多少？": constant.IntentFact,
 		"帮我概括一下这篇论文讲了什么":          constant.IntentSummary,
 		"它用了什么模型结构和实验设计？":         constant.IntentMethod,
+		"为什么作者要用对比学习来建模？":         constant.IntentReason,
+		"这个方法和 BERT 相比有什么优势？":     constant.IntentComparison,
 	}
 
 	for q, want := range cases {
@@ -75,12 +77,19 @@ func TestChat(t *testing.T) {
 
 func TestParseIntent(t *testing.T) {
 	cases := map[string]constant.IntentType{
-		`{"type":"chitchat"}`: constant.IntentChitchat,
-		`{"type":"summary"}`:  constant.IntentSummary,
-		`{"type":"method"}`:   constant.IntentMethod,
-		`{"type":"fact"}`:     constant.IntentSummary,
-		"闲聊":                  constant.IntentChitchat,
-		"fact":                constant.IntentSummary,
+		`{"type":"chitchat"}`:   constant.IntentChitchat,
+		`{"type":"fact"}`:       constant.IntentFact,
+		`{"type":"summary"}`:    constant.IntentSummary,
+		`{"type":"method"}`:     constant.IntentMethod,
+		`{"type":"reason"}`:     constant.IntentReason,
+		`{"type":"comparison"}`: constant.IntentComparison,
+		`{"type":"resource"}`:   constant.IntentResource,
+		`{"type":"unknown"}`:    constant.IntentSummary,
+		"闲聊":                    constant.IntentChitchat,
+		"fact":                  constant.IntentFact,
+		"comparison":            constant.IntentComparison,
+		"resource":              constant.IntentResource,
+		"reason":                constant.IntentReason,
 	}
 	for raw, want := range cases {
 		if got := parseIntent(raw); got != want {
@@ -133,12 +142,12 @@ func TestClassifyIntentReproductionKeyword(t *testing.T) {
 func TestPaperResourceIntentOverride(t *testing.T) {
 	boundCtx := core.WithPaperTitle(core.WithPaperID(context.Background(), "paper-1"), "Test Paper")
 	cases := map[string]constant.IntentType{
-		"有 github 仓库吗":               constant.IntentSummary,
-		"有代码仓库吗":                     constant.IntentSummary,
-		"这篇论文开源了吗":                   constant.IntentSummary,
-		"project page 在哪":            constant.IntentSummary,
-		"有没有 supplementary material": constant.IntentSummary,
-		"作者提供数据集地址了吗":                constant.IntentSummary,
+		"有 github 仓库吗":               constant.IntentResource,
+		"有代码仓库吗":                     constant.IntentResource,
+		"这篇论文开源了吗":                   constant.IntentResource,
+		"project page 在哪":            constant.IntentResource,
+		"有没有 supplementary material": constant.IntentResource,
+		"作者提供数据集地址了吗":                constant.IntentResource,
 	}
 	for q, want := range cases {
 		got, ok := paperResourceIntentOverride(boundCtx, q)
@@ -188,10 +197,16 @@ func TestWithBoundPaper(t *testing.T) {
 	}
 }
 
-// TestPolicyFor 验证意图到 agentic 工具迭代预算的映射:method 放宽,其余按概括预算。
+// TestPolicyFor 验证意图到 agentic 工具迭代预算的映射:method/reason 放宽,comparison 最宽,其余按概括预算。
 func TestPolicyFor(t *testing.T) {
 	if got := policyFor(constant.IntentMethod).MaxIter; got != constant.AgenticMaxIterMethod {
 		t.Errorf("method MaxIter = %d, want %d", got, constant.AgenticMaxIterMethod)
+	}
+	if got := policyFor(constant.IntentReason).MaxIter; got != constant.AgenticMaxIterReason {
+		t.Errorf("reason MaxIter = %d, want %d", got, constant.AgenticMaxIterReason)
+	}
+	if got := policyFor(constant.IntentComparison).MaxIter; got != constant.AgenticMaxIterComparison {
+		t.Errorf("comparison MaxIter = %d, want %d", got, constant.AgenticMaxIterComparison)
 	}
 	if got := policyFor(constant.IntentSummary).MaxIter; got != constant.AgenticMaxIterSummary {
 		t.Errorf("summary MaxIter = %d, want %d", got, constant.AgenticMaxIterSummary)
